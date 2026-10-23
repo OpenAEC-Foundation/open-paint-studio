@@ -15,6 +15,8 @@ Versions follow `YYYY.WW.N`: the ISO year and week of the release, then a patch 
 3. `.github/workflows/release.yml` checks that the tag matches every version file, runs the tests and creates the draft release **OpenAEC Paint Studio v2026.43.2**. It uploads the Windows NSIS installer (current user), the universal macOS DMG, the Linux DEB and AppImage, and `SHA256SUMS`.
 4. Write the release notes in the draft and publish it. The release stays a draft until someone publishes it.
 
+To build a tag again, for example after a failed job, run **Release** by hand with that tag: `gh workflow run release.yml -f tag=v2026.43.2`. It reuses the draft and replaces its assets, so the tag never moves.
+
 The Windows installer embeds the WebView2 bootstrapper and installs the runtime silently when it is missing. `src-tauri/WebView2Loader.dll` is committed and installed next to the executable through `src-tauri/tauri.windows.conf.json`.
 
 The tags `v0.1.0`, `2026.43` and `2026.43.1` predate this scheme.

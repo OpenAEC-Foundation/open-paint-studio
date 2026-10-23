@@ -3,19 +3,28 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build again, for example v2026.43.2
+        required: true
 permissions:
   contents: read
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.tag || github.ref_name }}
 jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+      - run: node scripts/check-release-tag.mjs "$TAG"
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -35,14 +44,14 @@ jobs:
       - name: Create the draft release
         run: |
           # A rerun reuses the existing release; the uploads below replace its assets.
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists."
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists."
             exit 0
           fi
           cat > notes.md <<EOF
           ## 🇳🇱 Nederlands
 
-          ### Wat is nieuw in $GITHUB_REF_NAME
+          ### Wat is nieuw in $TAG
 
           OpenAEC Paint Studio is een eenvoudige afbeeldingseditor in OpenAEC-stijl.
 
@@ -57,7 +66,7 @@ jobs:
 
           ## 🇬🇧 English
 
-          ### What's new in $GITHUB_REF_NAME
+          ### What's new in $TAG
 
           OpenAEC Paint Studio is a simple image editor in the OpenAEC style.
 
@@ -68,7 +77,7 @@ jobs:
 
           Check a download against \`SHA256SUMS\`.
           EOF
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "OpenAEC Paint Studio $GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$TAG" --draft --verify-tag --title "OpenAEC Paint Studio $TAG" --notes-file notes.md
   desktop:
     needs: create-release
     permissions:
@@ -91,6 +100,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -172,12 +183,13 @@ jobs:
       - name: Collect installers
         shell: bash
         run: |
-          shopt -s globstar nullglob
+          # macOS ships bash 3.2, which has no globstar.
           mkdir release-assets
-          for file in '${{ matrix.bundle-dir }}'/**/*.{deb,AppImage,exe,dmg}; do
+          find '${{ matrix.bundle-dir }}' -mindepth 2 -maxdepth 2 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) | while IFS= read -r file; do
             name="$(basename "$file")"
             cp "$file" "release-assets/${name// /-}"
           done
+          shopt -s nullglob
           files=(release-assets/*)
           test ${#files[@]} -gt 0 || { echo 'No installers were built'; exit 1; }
           ls -l release-assets
@@ -196,7 +208,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+        run: gh release upload "$TAG" release-assets/* --clobber
       - name: Remove temporary macOS keychain
         if: always() && runner.os == 'macOS'
         shell: bash
@@ -217,7 +229,7 @@ jobs:
         run: |
           mkdir assets
           cd assets
-          gh release download "$GITHUB_REF_NAME" --pattern '*.deb' --pattern '*.AppImage' --pattern '*.exe' --pattern '*.dmg'
+          gh release download "$TAG" --pattern '*.deb' --pattern '*.AppImage' --pattern '*.exe' --pattern '*.dmg'
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber
+          gh release upload "$TAG" SHA256SUMS --clobber
