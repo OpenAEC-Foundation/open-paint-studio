@@ -1,6 +1,6 @@
 [package]
 name = "openaec-paint-studio"
-version = "2026.43.1"
+version = "2026.43.2"
 description = "OpenAEC Paint Studio — raster drawing for the built environment"
 authors = ["OpenAEC contributors"]
 edition = "2021"

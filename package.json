@@ -1,6 +1,6 @@
 {
   "name": "openaec-paint-studio",
-  "version": "2026.43.1",
+  "version": "2026.43.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",

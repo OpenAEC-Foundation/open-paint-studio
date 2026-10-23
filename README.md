@@ -2,7 +2,7 @@
 
 A small image editor inspired by MS Paint, using the OpenAEC application style. Runs as a browser app or a Tauri 2 desktop application.
 
-[Download installers](https://github.com/JanAdriaan891/OpenAEC-Paint-Studio/releases/latest) · [Watch the demo preview (MP4, 55 seconds)](docs/demo/OpenAEC-Paint-Studio-2026.43.1-demo-preview.mp4)
+[Download installers](https://github.com/OpenAEC-Foundation/open-paint-studio/releases/latest) · [Watch the demo preview (MP4, 55 seconds)](docs/demo/OpenAEC-Paint-Studio-2026.43.1-demo-preview.mp4)
 
 ## Screenshots
 

@@ -4,7 +4,20 @@
 
 `pnpm build` checks TypeScript, builds the frontend and emits the standalone service JavaScript. `pnpm tauri build --bundles deb,appimage` produces Linux installers. Windows NSIS and macOS DMG builds run on their respective platforms using `.github/workflows/build.yml`.
 
-CI runs tests before the native build matrix. It uploads artifacts to the workflow run; it does not publish a release or create a GitHub repository. Release `2026.43` uses Git tag `2026.43` and package version `2026.43.0`. Patch release `2026.43.1` adds canvas navigation and select-all shortcuts; its tag and package version are both `2026.43.1`.
+CI runs tests before the native build matrix on every push to `main` and on pull requests. It uploads artifacts to the workflow run; it does not publish a release.
+
+## Releases
+
+Versions follow `YYYY.WW.N`: the ISO year and week of the release, then a patch counter that starts at 0 each week. Week numbers have no leading zero (`2026.5.0`), because Cargo rejects them. The Git tag is the version with a `v` prefix, for example `v2026.43.2`.
+
+1. Set the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and `shared/version.ts`.
+2. Commit, then push the tag: `git tag v2026.43.2 && git push origin v2026.43.2`.
+3. `.github/workflows/release.yml` checks that the tag matches every version file, runs the tests and creates the draft release **OpenAEC Paint Studio v2026.43.2**. It uploads the Windows NSIS installer (current user), the universal macOS DMG, the Linux DEB and AppImage, and `SHA256SUMS`.
+4. Write the release notes in the draft and publish it. The release stays a draft until someone publishes it.
+
+The Windows installer embeds the WebView2 bootstrapper and installs the runtime silently when it is missing. `src-tauri/WebView2Loader.dll` is committed and installed next to the executable through `src-tauri/tauri.windows.conf.json`.
+
+The tags `v0.1.0`, `2026.43` and `2026.43.1` predate this scheme.
 
 ## Detached release signing
 
@@ -29,7 +42,7 @@ pnpm verify path/to/app.deb release-public.pem
 
 Distribute the artifact and its `.manifest.json`, `.sig` and `.pub.pem` files. Verification requires an independently trusted public key; downloading a public key from the same untrusted source as the binary does not establish publisher identity. This is artifact signing, not a trusted OS publisher certificate or Tauri automatic updater signature.
 
-CI: add the PEM private key as `PAINT_RELEASE_SIGNING_KEY`, then run **Build and verify → sign=true**. Missing key material fails that signing step instead of producing a purportedly signed release. No private key is stored in CI artifacts.
+CI: add the PEM private key as `PAINT_RELEASE_SIGNING_KEY`, then run **Build and verify → sign=true**. Missing key material fails that signing step instead of producing a purportedly signed release. The release workflow signs the installers whenever this secret exists and uploads them without detached signatures when it does not. No private key is stored in CI artifacts.
 
 ## Native code signing
 

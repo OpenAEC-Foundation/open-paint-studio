@@ -1,0 +1,223 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref_name }}
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - name: Use the runner-provided Chrome browser
+        run: google-chrome --version
+      - run: PAINT_TEST_PRODUCTION=1 PAINT_TEST_BROWSER_CHANNEL=chrome pnpm test:ui
+  create-release:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Create the draft release
+        run: |
+          # A rerun reuses the existing release; the uploads below replace its assets.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists."
+            exit 0
+          fi
+          cat > notes.md <<EOF
+          ## 🇳🇱 Nederlands
+
+          ### Wat is nieuw in $GITHUB_REF_NAME
+
+          OpenAEC Paint Studio is een eenvoudige afbeeldingseditor in OpenAEC-stijl.
+
+          ### Downloads
+          - **Windows**: \`*_x64-setup.exe\`, installatie voor de huidige gebruiker (geen admin nodig). Ontbreekt WebView2, dan installeert de installer die zelf.
+          - **macOS**: \`*_universal.dmg\` (universeel, Intel en Apple Silicon)
+          - **Linux**: \`*_amd64.deb\` of \`*_amd64.AppImage\`
+
+          Controleer een download met \`SHA256SUMS\`.
+
+          ---
+
+          ## 🇬🇧 English
+
+          ### What's new in $GITHUB_REF_NAME
+
+          OpenAEC Paint Studio is a simple image editor in the OpenAEC style.
+
+          ### Downloads
+          - **Windows**: \`*_x64-setup.exe\`, installs for the current user (no admin required). If WebView2 is missing, the installer installs it.
+          - **macOS**: \`*_universal.dmg\` (universal, Intel and Apple Silicon)
+          - **Linux**: \`*_amd64.deb\` or \`*_amd64.AppImage\`
+
+          Check a download against \`SHA256SUMS\`.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "OpenAEC Paint Studio $GITHUB_REF_NAME" --notes-file notes.md
+  desktop:
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            bundles: deb,appimage
+            bundle-dir: src-tauri/target/release/bundle
+          - os: windows-latest
+            bundles: nsis
+            bundle-dir: src-tauri/target/release/bundle
+          - os: macos-latest
+            bundles: app,dmg
+            target: universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundle-dir: src-tauri/target/universal-apple-darwin/release/bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
+      - name: Check the bundled WebView2 loader
+        if: runner.os == 'Windows'
+        shell: bash
+        run: test -f src-tauri/WebView2Loader.dll || { echo 'src-tauri/WebView2Loader.dll is missing; the installer would lack the WebView2 loader'; exit 1; }
+      - run: pnpm install --frozen-lockfile
+      - name: Import optional Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ($env:CERTIFICATE) {
+            $path = Join-Path $env:RUNNER_TEMP 'paint-signing.pfx'
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:CERTIFICATE))
+            $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $password | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+            if (-not $cert) { throw 'The PFX does not contain a signing private key' }
+            @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = 'http://timestamp.digicert.com' } } } | ConvertTo-Json -Depth 5 | Set-Content -Path native-signing.json
+            Remove-Item $path
+          }
+      - name: Import optional macOS signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            test -n "$APPLE_SIGNING_IDENTITY" || { echo 'APPLE_SIGNING_IDENTITY is required'; exit 1; }
+            node -e 'require("fs").writeFileSync(process.env.RUNNER_TEMP + "/paint.p12", Buffer.from(process.env.APPLE_CERTIFICATE,"base64"), {mode:384})'
+            PAINT_KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+            security create-keychain -p "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
+            security set-keychain-settings -lut 21600 "$RUNNER_TEMP/paint.keychain-db"
+            security unlock-keychain -p "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
+            security import "$RUNNER_TEMP/paint.p12" -k "$RUNNER_TEMP/paint.keychain-db" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
+            security list-keychains -d user -s "$RUNNER_TEMP/paint.keychain-db" login.keychain-db
+            rm "$RUNNER_TEMP/paint.p12"
+          fi
+      - name: Native build
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # The certificate was already imported above. Empty certificate variables
+          # still trigger Tauri's certificate importer, so remove them entirely.
+          unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
+          if [ -z "$APPLE_ID" ]; then
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          args=(--bundles '${{ matrix.bundles }}')
+          if [ -n '${{ matrix.target }}' ]; then
+            args+=(--target '${{ matrix.target }}')
+          fi
+          if [ -f native-signing.json ]; then
+            args+=(--config native-signing.json)
+          fi
+          pnpm tauri build "${args[@]}"
+      - name: Collect installers
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          mkdir release-assets
+          for file in '${{ matrix.bundle-dir }}'/**/*.{deb,AppImage,exe,dmg}; do
+            name="$(basename "$file")"
+            cp "$file" "release-assets/${name// /-}"
+          done
+          files=(release-assets/*)
+          test ${#files[@]} -gt 0 || { echo 'No installers were built'; exit 1; }
+          ls -l release-assets
+      - name: Sign installers with the optional release key
+        shell: bash
+        env:
+          RELEASE_KEY: ${{ secrets.PAINT_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$RELEASE_KEY" ]; then
+            echo 'PAINT_RELEASE_SIGNING_KEY is not configured; the installers get no detached signatures.'
+            exit 0
+          fi
+          node scripts/sign-builds.mjs release-assets
+      - name: Upload installers to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+      - name: Remove temporary macOS keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/paint.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/paint.keychain-db"
+          fi
+  checksums:
+    needs: desktop
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Add SHA256SUMS to the draft release
+        run: |
+          mkdir assets
+          cd assets
+          gh release download "$GITHUB_REF_NAME" --pattern '*.deb' --pattern '*.AppImage' --pattern '*.exe' --pattern '*.dmg'
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber
