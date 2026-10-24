@@ -120,58 +120,76 @@ jobs:
         shell: bash
         run: test -f src-tauri/WebView2Loader.dll || { echo 'src-tauri/WebView2Loader.dll is missing; the installer would lack the WebView2 loader'; exit 1; }
       - run: pnpm install --frozen-lockfile
-      - name: Import optional Windows signing certificate
+      - name: Prepare Azure Artifact Signing (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_PROFILE: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         run: |
-          if ($env:CERTIFICATE) {
-            $path = Join-Path $env:RUNNER_TEMP 'paint-signing.pfx'
-            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:CERTIFICATE))
-            $password = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
-            $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password $password | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
-            if (-not $cert) { throw 'The PFX does not contain a signing private key' }
-            @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = 'http://timestamp.digicert.com' } } } | ConvertTo-Json -Depth 5 | Set-Content -Path native-signing.json
-            Remove-Item $path
+          # Releases are signed with the organisation's Azure Artifact Signing account.
+          foreach ($name in 'AZURE_ENDPOINT', 'AZURE_ACCOUNT', 'AZURE_PROFILE', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AZURE_TENANT_ID') {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "The organisation signing secret behind $name is not available to this repository" }
           }
-      - name: Import optional macOS signing certificate
+          # The Microsoft packages that azure/trusted-signing-action installs, pinned by version and SHA-512.
+          $packages = @(
+            @{ Id = 'Microsoft.Windows.SDK.BuildTools'; Version = '10.0.26100.4188'; Sha512 = 'OkiRhdDr0ngD6+wm0Ezdu1mgV8ZuknXdHwjzeHVZjYSXi9bCkYkq9Ns/X/ab9BoHb+Tq/5/RmXbdNWtC0qHipQ==' },
+            @{ Id = 'Microsoft.ArtifactSigning.Client'; Version = '1.0.128'; Sha512 = 'mPBqaR9Pwvoi8Z3PhVZzPphgf775GjEsRTubB5jMkIja4KyzbjibVSoRtNIyAyR4W4VBwrUQkackwFvF31y/lQ==' }
+          )
+          $tools = Join-Path $env:RUNNER_TEMP 'signing-tools'
+          foreach ($package in $packages) {
+            $zip = Join-Path $env:RUNNER_TEMP "$($package.Id).zip"
+            Invoke-WebRequest "https://www.nuget.org/api/v2/package/$($package.Id)/$($package.Version)" -OutFile $zip
+            $hash = [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash([IO.File]::ReadAllBytes($zip)))
+            if ($hash -ne $package.Sha512) { throw "$($package.Id) $($package.Version) does not match its pinned SHA-512" }
+            Expand-Archive $zip -DestinationPath (Join-Path $tools $package.Id)
+          }
+          $signtool = Join-Path $tools 'Microsoft.Windows.SDK.BuildTools\bin\10.0.26100.0\x64\signtool.exe'
+          $dlib = Join-Path $tools 'Microsoft.ArtifactSigning.Client\bin\x64\Azure.CodeSigning.Dlib.dll'
+          $metadata = Join-Path $env:RUNNER_TEMP 'artifact-signing-metadata.json'
+          @{ Endpoint = $env:AZURE_ENDPOINT; CodeSigningAccountName = $env:AZURE_ACCOUNT; CertificateProfileName = $env:AZURE_PROFILE } | ConvertTo-Json | Set-Content -Path $metadata -Encoding utf8
+          # Tauri signs the app, uninstall.exe and the installer with this command.
+          $sign = @{ cmd = $signtool; args = @('sign', '/v', '/fd', 'SHA256', '/tr', 'http://timestamp.acs.microsoft.com', '/td', 'SHA256', '/dlib', $dlib, '/dmdf', $metadata, '%1') }
+          @{ bundle = @{ windows = @{ signCommand = $sign } } } | ConvertTo-Json -Depth 10 | Set-Content -Path native-signing.json -Encoding utf8
+      - name: Prepare Apple signing and notarization (macOS)
         if: runner.os == 'macOS'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "$APPLE_CERTIFICATE" ]; then
-            test -n "$APPLE_SIGNING_IDENTITY" || { echo 'APPLE_SIGNING_IDENTITY is required'; exit 1; }
-            node -e 'require("fs").writeFileSync(process.env.RUNNER_TEMP + "/paint.p12", Buffer.from(process.env.APPLE_CERTIFICATE,"base64"), {mode:384})'
-            PAINT_KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-            security create-keychain -p "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
-            security set-keychain-settings -lut 21600 "$RUNNER_TEMP/paint.keychain-db"
-            security unlock-keychain -p "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
-            security import "$RUNNER_TEMP/paint.p12" -k "$RUNNER_TEMP/paint.keychain-db" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PAINT_KEYCHAIN_PASSWORD" "$RUNNER_TEMP/paint.keychain-db"
-            security list-keychains -d user -s "$RUNNER_TEMP/paint.keychain-db" login.keychain-db
-            rm "$RUNNER_TEMP/paint.p12"
-          fi
+          # Releases are signed with the organisation's Developer ID and notarized with its App Store Connect API key.
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT APPLE_TEAM_ID; do
+            test -n "${!name}" || { echo "The organisation signing secret $name is not available to this repository"; exit 1; }
+          done
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/apple-api-key.p8"
       - name: Native build
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_KEY_PATH: ${{ runner.os == 'macOS' && format('{0}/apple-api-key.p8', runner.temp) || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          AZURE_CLIENT_ID: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_TENANT_ID: ${{ runner.os == 'Windows' && secrets.AZURE_TENANT_ID || '' }}
         run: |
-          # The certificate was already imported above. Empty certificate variables
-          # still trigger Tauri's certificate importer, so remove them entirely.
-          unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
-          if [ -z "$APPLE_ID" ]; then
-            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-          fi
+          # Empty signing variables still trigger Tauri's certificate importer, so remove them entirely.
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH APPLE_TEAM_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID; do
+            [ -n "${!name}" ] || unset "$name"
+          done
           args=(--bundles '${{ matrix.bundles }}')
           if [ -n '${{ matrix.target }}' ]; then
             args+=(--target '${{ matrix.target }}')
@@ -180,6 +198,39 @@ jobs:
             args+=(--config native-signing.json)
           fi
           pnpm tauri build "${args[@]}"
+      - name: Check the Windows signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Select-Object -First 1
+          $signature = Get-AuthenticodeSignature $setup.FullName
+          Write-Output "$($setup.Name): $($signature.Status) ($($signature.SignerCertificate.Subject))"
+          if ($signature.Status -ne 'Valid') { throw 'The installer is not signed' }
+          # Install silently to check what users get, including the WebView2 loader next to the app.
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $location = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenAEC Paint Studio' -ErrorAction SilentlyContinue).InstallLocation
+          $dir = if ($location) { $location.Trim('"') } else { Join-Path $env:LOCALAPPDATA 'OpenAEC Paint Studio' }
+          foreach ($file in 'openaec-paint-studio.exe', 'uninstall.exe', 'WebView2Loader.dll') {
+            $path = Join-Path $dir $file
+            if (-not (Test-Path $path)) { throw "$file is missing from $dir" }
+            $sig = Get-AuthenticodeSignature $path
+            Write-Output "${file}: $($sig.Status) ($($sig.SignerCertificate.Subject))"
+            if ($sig.Status -ne 'Valid') { throw "$file is not signed" }
+          }
+          Start-Process -FilePath (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
+      - name: Check the macOS signature and notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="$(find '${{ matrix.bundle-dir }}/dmg' -name '*.dmg' -print -quit)"
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          app="$(find "$mount" -maxdepth 1 -name '*.app' -print -quit)"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          hdiutil detach "$mount"
       - name: Collect installers
         shell: bash
         run: |
@@ -209,13 +260,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "$TAG" release-assets/* --clobber
-      - name: Remove temporary macOS keychain
-        if: always() && runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [ -f "$RUNNER_TEMP/paint.keychain-db" ]; then
-            security delete-keychain "$RUNNER_TEMP/paint.keychain-db"
-          fi
   checksums:
     needs: desktop
     runs-on: ubuntu-24.04

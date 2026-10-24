@@ -48,6 +48,14 @@ CI: add the PEM private key as `PAINT_RELEASE_SIGNING_KEY`, then run **Build and
 
 ## Native code signing
 
+Releases are always signed with the OpenAEC Foundation organisation secrets; the release workflow stops when one of them is not available to this repository.
+
+- Windows: Azure Artifact Signing with `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME` and `AZURE_CERTIFICATE_PROFILE_NAME`. The workflow downloads signtool and the signing dlib as pinned, hash-checked NuGet packages; Tauri signs the app, `uninstall.exe` and the installer. A silent test installation checks every signature, including the bundled `WebView2Loader.dll`.
+- macOS: the Developer ID certificate in `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY`; notarization with the App Store Connect API key in `APPLE_API_KEY`, `APPLE_API_KEY_CONTENT`, `APPLE_API_ISSUER` and `APPLE_TEAM_ID`. The workflow checks the signature, Gatekeeper and the stapled ticket of the app in the DMG.
+- Linux packages have no native signature.
+
+Organisation secrets are shared with selected repositories. An organisation admin adds this repository to each secret under **Organisation settings → Secrets and variables → Actions**.
+
 The build workflow supports these optional existing credentials:
 
 - Windows: `WINDOWS_CERTIFICATE` (base64 PFX), `WINDOWS_CERTIFICATE_PASSWORD`. Imports into the temporary runner certificate store and supplies the resulting thumbprint to Tauri's Authenticode signing configuration, using SHA-256 and a timestamp service.
