@@ -1,0 +1,332 @@
+# Opening and saving images. PNG goes through libpng's simplified API, which
+# handles palettes, transparency and interlacing; BMP and binary PPM are
+# read and written here. The browser editor's other decoders (ImageMagick
+# WebAssembly, HEIC, RAW, PSD, ...) are not part of the native port.
+import dynlex/paint/canvas.dl
+import lib/string.dl
+
+class:
+    patterns:
+        [a|] paint file result
+    members:
+        valid as a boolean
+        image as a paint canvas
+        message as a string
+
+local function a failed paint file with {C string:message}:
+    execute:
+        return @intrinsic("construct", a paint file result, false, (a new paint canvas 1 by 1 filled with the transparent paint color), the string form of message)
+
+local function a paint file holding {paint canvas:image}:
+    execute:
+        return @intrinsic("construct", a paint file result, true, image, the string form of "")
+
+function paint format png:
+    replacement: 1
+function paint format bmp:
+    replacement: 2
+function paint format ppm:
+    replacement: 3
+function paint format unknown:
+    replacement: 0
+
+local function the lower case of character {integer:character}:
+    execute:
+        if (character >= 65) and (character <= 90):
+            return character + 32
+        return character
+
+local function {string:path} ends with extension {C string:extension}:
+    execute:
+        set size to the length of extension
+        if path's length < size:
+            return false
+        loop index from 0 to size:
+            set found to the lower case of character ((the character at ((path's length - size) + index) in path) as an integer)
+            if found != ((the character at index in extension) as an integer):
+                return false
+        return true
+
+function the paint format of {string:path}:
+    execute:
+        if path ends with extension ".png":
+            return paint format png
+        if path ends with extension ".bmp":
+            return paint format bmp
+        if (path ends with extension ".ppm") or (path ends with extension ".pnm"):
+            return paint format ppm
+        return paint format unknown
+
+# --- Whole-file byte buffers ---
+
+class:
+    patterns:
+        [a|] paint byte buffer
+    members:
+        data as a pointer to a byte
+        length as an integer
+
+local function the paint bytes of file {string:path}:
+    execute:
+        set nothingRead to @intrinsic("construct", a paint byte buffer, 0 as a pointer to a byte, 0)
+        set handle to @intrinsic("call", "libc", "fopen", a pointer, the data of path, "rb")
+        if handle = 0 as a pointer:
+            return nothingRead
+        ignore @intrinsic("call", "libc", "fseek", an integer, handle, 0 as a C long integer, 2)
+        set size to (@intrinsic("call", "libc", "ftell", a C long integer, handle)) as an integer
+        ignore @intrinsic("call", "libc", "fseek", an integer, handle, 0 as a C long integer, 0)
+        if (size <= 0) or (size > 268435456):
+            ignore @intrinsic("call", "libc", "fclose", an integer, handle)
+            return nothingRead
+        set data to @intrinsic("call", "libc", "malloc", a pointer to a byte, size as a word sized integer)
+        set received to @intrinsic("call", "libc", "fread", a word sized integer, data, 1 as a word sized integer, size as a word sized integer, handle)
+        ignore @intrinsic("call", "libc", "fclose", an integer, handle)
+        if received != (size as a word sized integer):
+            @intrinsic("call", "libc", "free", nothing, data)
+            return nothingRead
+        return @intrinsic("construct", a paint byte buffer, data, size)
+
+local function write {integer:count} bytes from {pointer:data} to file {string:path}:
+    execute:
+        set handle to @intrinsic("call", "libc", "fopen", a pointer, the data of path, "wb")
+        if handle = 0 as a pointer:
+            return false
+        set written to @intrinsic("call", "libc", "fwrite", a word sized integer, data, 1 as a word sized integer, count as a word sized integer, handle)
+        set closed to @intrinsic("call", "libc", "fclose", an integer, handle)
+        return (written = (count as a word sized integer)) and (closed = 0)
+
+local function the byte at {integer:offset} of {paint byte buffer:buffer}:
+    execute:
+        if (offset < 0) or (offset >= buffer's length):
+            return 0
+        return ((the item at offset in buffer's data) as an integer) & 255
+
+local function the little-endian {integer:size} byte number at {integer:offset} of {paint byte buffer:buffer}:
+    execute:
+        set value to 0
+        loop index from 0 to size:
+            set value to value + ((the byte at (offset + index) of buffer) << (8 * index))
+        return value
+
+local function store little-endian {integer:value} in {integer:size} bytes at {integer:offset} of {pointer:data}:
+    execute:
+        loop index from 0 to size:
+            store (((value >> (8 * index)) & 255) as a byte) at (data + (offset + index))
+
+# --- PNG ---
+
+local function the paint png header:
+    execute:
+        # png_image v1, 64-bit ABI: opaque pointer, seven uint32s, message[64].
+        set block to @intrinsic("call", "libc", "calloc", a pointer to a byte, 104 as a word sized integer, 1 as a word sized integer)
+        @intrinsic("store at", (block + 8) as a pointer to a 32 bit unsigned integer, 1 as a 32 bit unsigned integer)
+        return block
+
+local function the paint png at {string:path}:
+    execute:
+        set header to the paint png header
+        if (@intrinsic("call", ":libpng16.so.16", "png_image_begin_read_from_file", an integer, header, the data of path)) = 0:
+            @intrinsic("call", ":libpng16.so.16", "png_image_free", nothing, header)
+            @intrinsic("call", "libc", "free", nothing, header)
+            return a failed paint file with "not a readable PNG"
+        set width to (@intrinsic("dereference", (header + 12) as a pointer to a 32 bit unsigned integer)) as an integer
+        set height to (@intrinsic("dereference", (header + 16) as a pointer to a 32 bit unsigned integer)) as an integer
+        if ((width <= 0) or (height <= 0)) or ((width > 8192) or (height > 8192)):
+            @intrinsic("call", ":libpng16.so.16", "png_image_free", nothing, header)
+            @intrinsic("call", "libc", "free", nothing, header)
+            return a failed paint file with "the PNG is larger than 8192 pixels"
+        # PNG_FORMAT_RGBA: straight alpha, eight bits a channel, as the canvas.
+        @intrinsic("store at", (header + 20) as a pointer to a 32 bit unsigned integer, 3 as a 32 bit unsigned integer)
+        set image to a new paint canvas width by height filled with the transparent paint color
+        set outcome to @intrinsic("call", ":libpng16.so.16", "png_image_finish_read", an integer, header, 0 as a pointer, image's pixels, 0, 0 as a pointer)
+        @intrinsic("call", ":libpng16.so.16", "png_image_free", nothing, header)
+        @intrinsic("call", "libc", "free", nothing, header)
+        if outcome = 0:
+            free paint canvas image
+            return a failed paint file with "the PNG could not be decoded"
+        return a paint file holding image
+
+local function save {paint canvas:image} as png to {string:path}:
+    execute:
+        set header to the paint png header
+        @intrinsic("store at", (header + 12) as a pointer to a 32 bit unsigned integer, image's width as a 32 bit unsigned integer)
+        @intrinsic("store at", (header + 16) as a pointer to a 32 bit unsigned integer, image's height as a 32 bit unsigned integer)
+        @intrinsic("store at", (header + 20) as a pointer to a 32 bit unsigned integer, 3 as a 32 bit unsigned integer)
+        set outcome to @intrinsic("call", ":libpng16.so.16", "png_image_write_to_file", an integer, header, the data of path, 0, image's pixels, 0 as a 32 bit integer, 0 as a pointer)
+        @intrinsic("call", ":libpng16.so.16", "png_image_free", nothing, header)
+        @intrinsic("call", "libc", "free", nothing, header)
+        return outcome != 0
+
+# --- BMP: uncompressed 24 and 32 bit, bottom-up or top-down ---
+
+local function the paint bmp from {paint byte buffer:buffer}:
+    execute:
+        if ((the byte at 0 of buffer) != 66) or ((the byte at 1 of buffer) != 77):
+            return a failed paint file with "not a BMP file"
+        set start to the little-endian 4 byte number at 10 of buffer
+        set width to the little-endian 4 byte number at 18 of buffer
+        set rawHeight to the little-endian 4 byte number at 22 of buffer
+        set bits to the little-endian 2 byte number at 28 of buffer
+        set compression to the little-endian 4 byte number at 30 of buffer
+        set topDown to false
+        set height to rawHeight
+        if rawHeight >= 2147483648:
+            set height to 4294967296 - rawHeight
+            set topDown to true
+        if ((bits != 24) and (bits != 32)) or ((compression != 0) and (compression != 3)):
+            return a failed paint file with "only uncompressed 24 and 32 bit BMP files are supported"
+        if ((width <= 0) or (height <= 0)) or ((width > 8192) or (height > 8192)):
+            return a failed paint file with "the BMP size is not supported"
+        set step to bits / 8
+        set stride to (((width * bits) + 31) / 32) * 4
+        if (start + (stride * height)) > buffer's length:
+            return a failed paint file with "the BMP file is truncated"
+        set image to a new paint canvas width by height filled with the transparent paint color
+        loop row from 0 to height:
+            set source to row
+            if topDown = false:
+                set source to (height - 1) - row
+            loop column from 0 to width:
+                set offset to (start + (source * stride)) + (column * step)
+                set alpha to 255
+                if bits = 32:
+                    set alpha to the byte at (offset + 3) of buffer
+                put (the paint color red (the byte at (offset + 2) of buffer) green (the byte at (offset + 1) of buffer) blue (the byte at offset of buffer) alpha alpha) at column row in image
+        return a paint file holding image
+
+# Writes a 24 bit BMP, transparent pixels composited on white as most viewers
+# show them.
+local function save {paint canvas:image} as bmp to {string:path}:
+    execute:
+        set stride to (((image's width * 24) + 31) / 32) * 4
+        set size to 54 + (stride * image's height)
+        set data to @intrinsic("call", "libc", "calloc", a pointer to a byte, size as a word sized integer, 1 as a word sized integer)
+        store (66 as a byte) at data
+        store (77 as a byte) at (data + 1)
+        store little-endian size in 4 bytes at 2 of data
+        store little-endian 54 in 4 bytes at 10 of data
+        store little-endian 40 in 4 bytes at 14 of data
+        store little-endian image's width in 4 bytes at 18 of data
+        store little-endian image's height in 4 bytes at 22 of data
+        store little-endian 1 in 2 bytes at 26 of data
+        store little-endian 24 in 2 bytes at 28 of data
+        store little-endian (stride * image's height) in 4 bytes at 34 of data
+        store little-endian 2835 in 4 bytes at 38 of data
+        store little-endian 2835 in 4 bytes at 42 of data
+        set white to the paint color red 255 green 255 blue 255
+        loop row from 0 to image's height:
+            set target to 54 + ((((image's height - 1) - row)) * stride)
+            loop column from 0 to image's width:
+                set color to (the paint color at column row in image) over white at opacity 255
+                store (color's blue as a byte) at (data + (target + (column * 3)))
+                store (color's green as a byte) at (data + ((target + (column * 3)) + 1))
+                store (color's red as a byte) at (data + ((target + (column * 3)) + 2))
+        set written to write size bytes from data to file path
+        @intrinsic("call", "libc", "free", nothing, data)
+        return written
+
+# --- Binary PPM (P6, maximum 255) ---
+
+local function {integer:character} is PPM whitespace:
+    execute:
+        return ((character = 32) or (character = 10)) or ((character = 13) or (character = 9))
+
+class:
+    patterns:
+        [a|] paint ppm cursor
+    members:
+        offset as an integer
+        value as an integer
+
+local function the next PPM number in {paint byte buffer:buffer} from {integer:start}:
+    execute:
+        set offset to start
+        set searching to true
+        loop while searching and (offset < buffer's length):
+            set character to the byte at offset of buffer
+            if character = 35:
+                loop while (offset < buffer's length) and ((the byte at offset of buffer) != 10):
+                    set offset to offset + 1
+            else if character is PPM whitespace:
+                set offset to offset + 1
+            else:
+                set searching to false
+        set value to 0
+        set digits to 0
+        loop while (offset < buffer's length) and (((the byte at offset of buffer) >= 48) and ((the byte at offset of buffer) <= 57)):
+            set value to (value * 10) + ((the byte at offset of buffer) - 48)
+            set offset to offset + 1
+            set digits to digits + 1
+        if digits = 0:
+            set value to -1
+        return @intrinsic("construct", a paint ppm cursor, offset, value)
+
+local function the paint ppm from {paint byte buffer:buffer}:
+    execute:
+        if ((the byte at 0 of buffer) != 80) or ((the byte at 1 of buffer) != 54):
+            return a failed paint file with "only binary PPM (P6) files are supported"
+        set width to the next PPM number in buffer from 2
+        set height to the next PPM number in buffer from width's offset
+        set maximum to the next PPM number in buffer from height's offset
+        if ((width's value <= 0) or (height's value <= 0)) or (maximum's value != 255):
+            return a failed paint file with "the PPM header is not supported"
+        if (width's value > 8192) or (height's value > 8192):
+            return a failed paint file with "the PPM size is not supported"
+        set start to maximum's offset + 1
+        if (start + ((width's value * height's value) * 3)) > buffer's length:
+            return a failed paint file with "the PPM file is truncated"
+        set image to a new paint canvas width's value by height's value filled with the transparent paint color
+        loop row from 0 to image's height:
+            loop column from 0 to image's width:
+                set offset to start + (((row * image's width) + column) * 3)
+                put (the paint color red (the byte at offset of buffer) green (the byte at (offset + 1) of buffer) blue (the byte at (offset + 2) of buffer)) at column row in image
+        return a paint file holding image
+
+local function save {paint canvas:image} as ppm to {string:path}:
+    execute:
+        set header to ((the string form of "P6\n") + (the string form of image's width)) + (the string form of " ")
+        set header to (header + (the string form of image's height)) + (the string form of "\n255\n")
+        set size to header's length + ((image's width * image's height) * 3)
+        set data to @intrinsic("call", "libc", "malloc", a pointer to a byte, size as a word sized integer)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, data, the data of header, header's length as a word sized integer)
+        set white to the paint color red 255 green 255 blue 255
+        loop row from 0 to image's height:
+            loop column from 0 to image's width:
+                set color to (the paint color at column row in image) over white at opacity 255
+                set offset to header's length + (((row * image's width) + column) * 3)
+                store (color's red as a byte) at (data + offset)
+                store (color's green as a byte) at (data + (offset + 1))
+                store (color's blue as a byte) at (data + (offset + 2))
+        set written to write size bytes from data to file path
+        @intrinsic("call", "libc", "free", nothing, data)
+        return written
+
+# --- The entry points ---
+
+function the paint image opened from {string:path}:
+    execute:
+        set format to the paint format of path
+        if format = paint format png:
+            return the paint png at path
+        set buffer to the paint bytes of file path
+        if buffer's length = 0:
+            return a failed paint file with "the file could not be read"
+        set result to a failed paint file with "unsupported format: use PNG, BMP or PPM"
+        if ((the byte at 0 of buffer) = 66) and ((the byte at 1 of buffer) = 77):
+            set result to the paint bmp from buffer
+        else if ((the byte at 0 of buffer) = 80) and ((the byte at 1 of buffer) = 54):
+            set result to the paint ppm from buffer
+        else if ((the byte at 0 of buffer) = 137) and ((the byte at 1 of buffer) = 80):
+            set result to the paint png at path
+        @intrinsic("call", "libc", "free", nothing, buffer's data)
+        return result
+
+# Saves in the format the extension names; PNG when it names none.
+function save {paint canvas:image} to {string:path}:
+    execute:
+        set format to the paint format of path
+        if format = paint format bmp:
+            return save image as bmp to path
+        if format = paint format ppm:
+            return save image as ppm to path
+        return save image as png to path

@@ -1,0 +1,73 @@
+# Undo and redo over whole canvas snapshots, the 40 most recent states, as
+# the browser editor keeps them. A snapshot is taken before every change.
+import dynlex/paint/canvas.dl
+
+function paint history limit:
+    replacement: 40
+
+class:
+    patterns:
+        [a|] paint history
+    members:
+        undo as a pointer to a list
+        redo as a pointer to a list
+
+function a new paint history:
+    execute:
+        return @intrinsic("construct", a paint history, an empty list of a paint canvas, an empty list of a paint canvas)
+
+local function free the paint canvases in {a pointer to a list:snapshots}:
+    execute:
+        loop index from 0 to the length of snapshots:
+            free paint canvas (the item at index in snapshots)
+        clear snapshots
+
+# Records image as the state to return to; a new change discards redo.
+function remember {paint canvas:image} in {a pointer to a paint history:history}:
+    execute:
+        append (the paint copy of image) to history's undo
+        if (the length of history's undo) > paint history limit:
+            free paint canvas (the item at 0 in history's undo)
+            remove item 0 from history's undo
+        free the paint canvases in history's redo
+
+function {paint history:history} can undo:
+    execute:
+        return (the length of history's undo) > 0
+
+function {paint history:history} can redo:
+    execute:
+        return (the length of history's redo) > 0
+
+# Each returns the canvas to show; the current one moves to the other stack.
+function undo {paint canvas:current} in {a pointer to a paint history:history}:
+    execute:
+        if (the length of history's undo) = 0:
+            return current
+        set previous to the last item of history's undo
+        remove item ((the length of history's undo) - 1) from history's undo
+        append current to history's redo
+        return previous
+
+function redo {paint canvas:current} in {a pointer to a paint history:history}:
+    execute:
+        if (the length of history's redo) = 0:
+            return current
+        set following to the last item of history's redo
+        remove item ((the length of history's redo) - 1) from history's redo
+        append current to history's undo
+        return following
+
+# Drops the most recent undo state, for a change that came to nothing.
+function forget the last state in {a pointer to a paint history:history}:
+    execute:
+        if (the length of history's undo) > 0:
+            free paint canvas (the last item of history's undo)
+            remove item ((the length of history's undo) - 1) from history's undo
+
+function free {a pointer to a paint history:history}:
+    execute:
+        free the paint canvases in history's undo
+        free the paint canvases in history's redo
+        free history's undo
+        free history's redo

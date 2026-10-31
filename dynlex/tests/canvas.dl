@@ -1,0 +1,85 @@
+import dynlex/paint/canvas.dl
+import lib/string.dl
+
+function print paint color {paint color:color} named {C string:name}:
+    execute:
+        print (the string form of name)
+        print (the string form of " ")
+        print (the string form of color's red)
+        print (the string form of " ")
+        print (the string form of color's green)
+        print (the string form of " ")
+        print (the string form of color's blue)
+        print (the string form of " ")
+        print (the string form of color's alpha) as a line
+
+function print size of {paint canvas:picture} named {C string:name}:
+    execute:
+        print (the string form of name)
+        print (the string form of " ")
+        print (the string form of picture's width)
+        print (the string form of "x")
+        print (the string form of picture's height) as a line
+
+set white to the paint color red 255 green 255 blue 255
+set red to the paint color from hex "dc2626"
+set picture to a new paint canvas 20 by 10 filled with white
+set base to the paint copy of picture
+
+# A stroke at half opacity paints each pixel once, however many dabs overlap.
+set stroke to a paint stroke of red at opacity 128 sized 4 erasing false
+draw stroke from 2.0 5.0 to 17.0 5.0 on picture from base
+print paint color (the paint color at 10 5 in picture) named "stroke"
+print paint color (the paint color at 10 0 in picture) named "outside"
+
+# The eraser takes the alpha away.
+copy paint pixels of picture into base
+set eraser to a paint stroke of red at opacity 255 sized 2 erasing true
+dab eraser at 1.5 1.5 on picture from base
+print paint color (the paint color at 1 1 in picture) named "erased"
+
+# Flood fill stops at the stroke.
+flood fill picture at 0 9 with (the paint color from hex "2563eb") at opacity 255 within 32
+print paint color (the paint color at 19 9 in picture) named "filled"
+print paint color (the paint color at 10 5 in picture) named "stroke kept"
+print paint color (the paint color at 19 0 in picture) named "above stroke"
+
+# Shapes.
+copy paint pixels of picture into base
+draw paint rectangle with (a paint stroke of white at opacity 255 sized 1 erasing false) from 3 1 to 6 3 filled true on picture from base
+print paint color (the paint color at 4 2 in picture) named "rectangle"
+draw paint ellipse with (a paint stroke of red at opacity 255 sized 1 erasing false) from 10 0 to 18 9 filled true on picture from base
+print paint color (the paint color at 14 4 in picture) named "ellipse"
+
+# Image commands keep pixels where they belong.
+set turned to the paint canvas picture turned clockwise true
+print size of turned named "turned"
+print paint color (the paint color at 7 4 in turned) named "turned pixel"
+set flipped to the paint canvas picture flipped horizontally true
+print paint color (the paint color at 15 2 in flipped) named "flipped pixel"
+set cropped to the paint canvas picture cropped to 3 1 7 4
+print size of cropped named "cropped"
+print paint color (the paint color at 1 1 in cropped) named "cropped pixel"
+set resized to the paint canvas cropped resized to 8 by 6
+print paint color (the paint color at 2 2 in resized) named "resized pixel"
+
+# Colour corrections.
+set swatch to a new paint canvas 1 by 1 filled with (the paint color red 200 green 100 blue 50)
+adjust paint canvas swatch by paint adjustment invert with brightness 0 contrast 0 saturation 100
+print paint color (the paint color at 0 0 in swatch) named "invert"
+adjust paint canvas swatch by paint adjustment grayscale with brightness 0 contrast 0 saturation 100
+print paint color (the paint color at 0 0 in swatch) named "grayscale"
+fill paint canvas swatch with (the paint color red 200 green 100 blue 50)
+adjust paint canvas swatch by paint adjustment sepia with brightness 0 contrast 0 saturation 100
+print paint color (the paint color at 0 0 in swatch) named "sepia"
+fill paint canvas swatch with (the paint color red 200 green 100 blue 50)
+adjust paint canvas swatch by paint adjustment adjust with brightness 10 contrast 20 saturation 50
+print paint color (the paint color at 0 0 in swatch) named "adjust"
+
+free paint canvas swatch
+free paint canvas resized
+free paint canvas cropped
+free paint canvas flipped
+free paint canvas turned
+free paint canvas base
+free paint canvas picture

@@ -1,0 +1,52 @@
+import dynlex/paint/files.dl
+import dynlex/paint/history.dl
+
+function report {paint file result:result} named {C string:name}:
+    execute:
+        print (the string form of name)
+        if result's valid = false:
+            print (the string form of " failed: ")
+            print result's message as a line
+            return nothing
+        set corner to the paint color at 1 0 in result's image
+        print (the string form of " ")
+        print (the string form of result's image's width)
+        print (the string form of "x")
+        print (the string form of result's image's height)
+        print (the string form of " ")
+        print (the string form of corner's red)
+        print (the string form of " ")
+        print (the string form of corner's green)
+        print (the string form of " ")
+        print (the string form of corner's blue)
+        print (the string form of " ")
+        print (the string form of corner's alpha) as a line
+
+set picture to a new paint canvas 5 by 3 filled with (the paint color from hex "ffffff")
+put (the paint color red 220 green 38 blue 38 alpha 128) at 1 0 in picture
+
+set pngPath to the string form of "dynlex/build/files-test.png"
+set bmpPath to the string form of "dynlex/build/files-test.bmp"
+set ppmPath to the string form of "dynlex/build/files-test.ppm"
+print whether (save picture to pngPath) as a line
+print whether (save picture to bmpPath) as a line
+print whether (save picture to ppmPath) as a line
+report (the paint image opened from pngPath) named "png"
+report (the paint image opened from bmpPath) named "bmp"
+report (the paint image opened from ppmPath) named "ppm"
+report (the paint image opened from (the string form of "dynlex/build/missing.png")) named "missing"
+
+# Undo and redo move whole snapshots between the stacks.
+set history to a new paint history
+remember picture in (the address of history)
+set changed to the paint copy of picture
+fill paint canvas changed with (the paint color from hex "000000")
+print whether (history can undo) as a line
+set shown to undo changed in (the address of history)
+print (the string form of (the paint color at 0 0 in shown)'s red) as a line
+set shown to redo shown in (the address of history)
+print (the string form of (the paint color at 0 0 in shown)'s red) as a line
+loop index from 0 to 50:
+    remember shown in (the address of history)
+print (the string form of (the length of history's undo)) as a line
+free (the address of history)

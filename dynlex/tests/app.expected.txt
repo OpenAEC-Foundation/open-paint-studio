@@ -1,0 +1,14 @@
+new: 64x48 undo 0 redo 0 steps 0
+brush: 64x48 undo 1 redo 0 steps 1
+220 38 38
+220 38 38
+text: 64x48 undo 3 redo 0 steps 3
+true
+220
+rotated: 48x64 undo 4 redo 0 steps 4
+halved: 24x32 undo 5 redo 0 steps 5
+undone: 64x48 undo 3 redo 3 steps 3
+redone: 48x64 undo 4 redo 2 steps 4
+cropped: 10x5 undo 5 redo 0 steps 5
+1
+Fill

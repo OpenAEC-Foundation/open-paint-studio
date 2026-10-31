@@ -1,0 +1,443 @@
+# The raster canvas of OpenAEC Paint Studio: straight-alpha RGBA, eight bits a
+# channel, rows top to bottom, as the browser editor's 2D canvas holds it. Every
+# drawing operation, image command and colour correction works on this record.
+import lib/std.dl
+import lib/array.dl
+import lib/list.dl
+import lib/string.dl
+
+class:
+    patterns:
+        [a|] paint color
+    members:
+        red as an integer
+        green as an integer
+        blue as an integer
+        alpha as an integer
+
+class:
+    patterns:
+        [a|] paint canvas
+    members:
+        width as an integer
+        height as an integer
+        pixels as a pointer to a byte
+
+function the paint color red {integer:red} green {integer:green} blue {integer:blue}:
+    execute:
+        return @intrinsic("construct", a paint color, red, green, blue, 255)
+
+function the paint color red {integer:red} green {integer:green} blue {integer:blue} alpha {integer:alpha}:
+    execute:
+        return @intrinsic("construct", a paint color, red, green, blue, alpha)
+
+function the transparent paint color:
+    execute:
+        return @intrinsic("construct", a paint color, 0, 0, 0, 0)
+
+local function the value of hex digit {integer:character}:
+    execute:
+        if (character >= 48) and (character <= 57):
+            return character - 48
+        if (character >= 97) and (character <= 102):
+            return character - 87
+        if (character >= 65) and (character <= 70):
+            return character - 55
+        return 0
+
+# The opaque colour written as six hexadecimal digits, "d97706", as the
+# browser editor's palette lists it.
+function the paint color from hex {C string:digits}:
+    execute:
+        set value to 0
+        loop index from 0 to 6:
+            set value to (value * 16) + (the value of hex digit ((the character at index in digits) as an integer))
+        return the paint color red ((value >> 16) & 255) green ((value >> 8) & 255) blue (value & 255)
+
+function paint colors {paint color:first} and {paint color:second} are equal:
+    execute:
+        return (((first's red = second's red) and (first's green = second's green)) and (first's blue = second's blue)) and (first's alpha = second's alpha)
+
+local function the paint canvas record {integer:width} by {integer:height} at {pointer:pixels}:
+    replacement:
+        @intrinsic("construct", a paint canvas, width, height, pixels)
+
+local function the byte count of a paint canvas {integer:width} by {integer:height}:
+    execute:
+        return ((width as a word sized integer) * (height as a word sized integer)) * (4 as a word sized integer)
+
+# A canvas of the given size, every pixel the given colour. Sizes are limited
+# to 1..8192 pixels a side, the editor's own limit is 4096.
+function a new paint canvas {integer:width} by {integer:height} filled with {paint color:color}:
+    execute:
+        set clampedWidth to width clamped between 1 and 8192
+        set clampedHeight to height clamped between 1 and 8192
+        set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
+        if pixels = 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "abort", nothing)
+        set image to the paint canvas record clampedWidth by clampedHeight at pixels
+        fill paint canvas image with color
+        return image
+
+function free paint canvas {paint canvas:image}:
+    execute:
+        if image's pixels != 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "free", nothing, image's pixels)
+
+function the paint copy of {paint canvas:image}:
+    execute:
+        set count to the byte count of a paint canvas image's width by image's height
+        set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, count)
+        if pixels = 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "abort", nothing)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, pixels, image's pixels, count)
+        return the paint canvas record image's width by image's height at pixels
+
+# Copies the pixels of source into target; both have the same size.
+function copy paint pixels of {paint canvas:source} into {paint canvas:target}:
+    execute:
+        if (source's width = target's width) and (source's height = target's height):
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, target's pixels, source's pixels, the byte count of a paint canvas source's width by source's height)
+
+function fill paint canvas {paint canvas:image} with {paint color:color}:
+    execute:
+        set count to image's width * image's height
+        set pixels to image's pixels
+        loop index from 0 to count:
+            set offset to index * 4
+            store (color's red as a byte) at (pixels + offset)
+            store (color's green as a byte) at (pixels + (offset + 1))
+            store (color's blue as a byte) at (pixels + (offset + 2))
+            store (color's alpha as a byte) at (pixels + (offset + 3))
+
+function {integer:x} {integer:y} lies on {paint canvas:image}:
+    execute:
+        return ((x >= 0) and (y >= 0)) and ((x < image's width) and (y < image's height))
+
+local function the paint channel at {integer:offset} in {pointer:pixels}:
+    execute:
+        return ((the item at offset in pixels) as an integer) & 255
+
+function the paint color at {integer:x} {integer:y} in {paint canvas:image}:
+    execute:
+        if (x y lies on image) = false:
+            return the transparent paint color
+        set offset to ((y * image's width) + x) * 4
+        set pixels to image's pixels
+        return the paint color red (the paint channel at offset in pixels) green (the paint channel at (offset + 1) in pixels) blue (the paint channel at (offset + 2) in pixels) alpha (the paint channel at (offset + 3) in pixels)
+
+function put {paint color:color} at {integer:x} {integer:y} in {paint canvas:image}:
+    execute:
+        if x y lies on image:
+            set offset to ((y * image's width) + x) * 4
+            set pixels to image's pixels
+            store (color's red as a byte) at (pixels + offset)
+            store (color's green as a byte) at (pixels + (offset + 1))
+            store (color's blue as a byte) at (pixels + (offset + 2))
+            store (color's alpha as a byte) at (pixels + (offset + 3))
+
+# Source-over compositing of color, scaled by opacity (0..255), on base.
+function {paint color:color} over {paint color:base} at opacity {integer:opacity}:
+    execute:
+        set source to (color's alpha * opacity) / 255
+        if source <= 0:
+            return base
+        set resultAlpha to source + ((base's alpha * (255 - source)) / 255)
+        if resultAlpha <= 0:
+            return the transparent paint color
+        set kept to (base's alpha * (255 - source)) / 255
+        set red to ((color's red * source) + (base's red * kept)) / resultAlpha
+        set green to ((color's green * source) + (base's green * kept)) / resultAlpha
+        set blue to ((color's blue * source) + (base's blue * kept)) / resultAlpha
+        return the paint color red red green green blue blue alpha resultAlpha
+
+# One stroke paints every pixel once at the stroke's opacity, as a canvas path
+# with a global alpha does: each pixel is composited on the stroke's starting
+# image (base), so overlapping dabs never darken each other.
+class:
+    patterns:
+        [a|] paint stroke
+    members:
+        color as a paint color
+        opacity as an integer
+        radius as a 64 bit floating-point number
+        erasing as a boolean
+
+function a paint stroke of {paint color:color} at opacity {integer:opacity} sized {integer:size} erasing {boolean:erasing}:
+    execute:
+        set radius to ((size clamped between 1 and 200) as a 64 bit floating-point number) / 2.0
+        return @intrinsic("construct", a paint stroke, color, opacity clamped between 0 and 255, radius, erasing)
+
+local function apply {paint stroke:stroke} at {integer:x} {integer:y} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set below to the paint color at x y in base
+        if stroke's erasing:
+            set remaining to (below's alpha * (255 - stroke's opacity)) / 255
+            put (the paint color red below's red green below's green blue below's blue alpha remaining) at x y in image
+        else:
+            put (stroke's color over below at opacity stroke's opacity) at x y in image
+
+# A round dab of the stroke centred on (x, y).
+function dab {paint stroke:stroke} at {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set radius to stroke's radius
+        set left to (the floor of (x - radius)) as an integer
+        set right to (the ceiling of (x + radius)) as an integer
+        set top to (the floor of (y - radius)) as an integer
+        set bottom to (the ceiling of (y + radius)) as an integer
+        set limit to (radius * radius) + 0.25
+        loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
+            loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
+                set dx to ((column as a 64 bit floating-point number) + 0.5) - x
+                set dy to ((row as a 64 bit floating-point number) + 0.5) - y
+                if ((dx * dx) + (dy * dy)) <= limit:
+                    apply stroke at column row on image from base
+
+# Dabs along the segment, at most half the radius apart, ending at (x2, y2).
+function draw {paint stroke:stroke} from {a 64 bit floating-point number:x1} {a 64 bit floating-point number:y1} to {a 64 bit floating-point number:x2} {a 64 bit floating-point number:y2} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set dx to x2 - x1
+        set dy to y2 - y1
+        set length to the square root of ((dx * dx) + (dy * dy))
+        set spacing to the maximum of (stroke's radius / 2.0) and 0.5
+        set steps to ((the ceiling of (length / spacing)) as an integer) + 1
+        loop index from 0 to steps:
+            set fraction to 1.0
+            if steps > 1:
+                set fraction to (index as a 64 bit floating-point number) / ((steps - 1) as a 64 bit floating-point number)
+            dab stroke at (x1 + (dx * fraction)) (y1 + (dy * fraction)) on image from base
+
+# Rectangles and ellipses span the drag from (x1, y1) to (x2, y2); a filled
+# shape paints its inside, an outlined one a band as wide as the brush.
+function draw paint rectangle with {paint stroke:stroke} from {integer:x1} {integer:y1} to {integer:x2} {integer:y2} filled {boolean:filled} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set left to the minimum of x1 and x2
+        set right to the maximum of x1 and x2
+        set top to the minimum of y1 and y2
+        set bottom to the maximum of y1 and y2
+        if filled:
+            loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
+                loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
+                    apply stroke at column row on image from base
+            return nothing
+        set l to left as a 64 bit floating-point number
+        set r to right as a 64 bit floating-point number
+        set t to top as a 64 bit floating-point number
+        set b to bottom as a 64 bit floating-point number
+        draw stroke from l t to r t on image from base
+        draw stroke from r t to r b on image from base
+        draw stroke from r b to l b on image from base
+        draw stroke from l b to l t on image from base
+
+function draw paint ellipse with {paint stroke:stroke} from {integer:x1} {integer:y1} to {integer:x2} {integer:y2} filled {boolean:filled} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set cx to ((x1 + x2) as a 64 bit floating-point number) / 2.0
+        set cy to ((y1 + y2) as a 64 bit floating-point number) / 2.0
+        set rx to (the maximum of (the absolute value of (x2 - x1)) and 1) as a 64 bit floating-point number
+        set ry to (the maximum of (the absolute value of (y2 - y1)) and 1) as a 64 bit floating-point number
+        set rx to rx / 2.0
+        set ry to ry / 2.0
+        if filled:
+            set top to (the floor of (cy - ry)) as an integer
+            set bottom to (the ceiling of (cy + ry)) as an integer
+            set left to (the floor of (cx - rx)) as an integer
+            set right to (the ceiling of (cx + rx)) as an integer
+            loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
+                loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
+                    set nx to (((column as a 64 bit floating-point number) + 0.5) - cx) / rx
+                    set ny to (((row as a 64 bit floating-point number) + 0.5) - cy) / ry
+                    if ((nx * nx) + (ny * ny)) <= 1.0:
+                        apply stroke at column row on image from base
+            return nothing
+        set segments to ((the maximum of rx and ry) as an integer) + 24
+        set px to cx + rx
+        set py to cy
+        loop index from 1 to (segments + 1):
+            set angle to ((index as a 64 bit floating-point number) * 6.283185307179586) / (segments as a 64 bit floating-point number)
+            set qx to cx + (rx * (the cosine of angle))
+            set qy to cy + (ry * (the sine of angle))
+            draw stroke from px py to qx qy on image from base
+            set px to qx
+            set py to qy
+
+local function the paint distance between {paint color:first} and {paint color:second}:
+    execute:
+        set red to the absolute value of (first's red - second's red)
+        set green to the absolute value of (first's green - second's green)
+        set blue to the absolute value of (first's blue - second's blue)
+        set alpha to the absolute value of (first's alpha - second's alpha)
+        return the maximum of (the maximum of red and green) and (the maximum of blue and alpha)
+
+# Flood fill of the 4-connected region around (x, y) whose colour lies within
+# tolerance of the clicked colour, one scanline span at a time.
+function flood fill {paint canvas:image} at {integer:x} {integer:y} with {paint color:color} at opacity {integer:opacity} within {integer:tolerance}:
+    execute:
+        if (x y lies on image) = false:
+            return nothing
+        set target to the paint color at x y in image
+        set painted to color over target at opacity opacity
+        if paint colors painted and target are equal:
+            return nothing
+        set width to image's width
+        set height to image's height
+        set visited to @intrinsic("call", "libc", "calloc", a pointer to a byte, (width * height) as a word sized integer, 1 as a word sized integer)
+        set pending to an empty list of an integer
+        append ((y * width) + x) to pending
+        loop while (the length of pending) > 0:
+            set seed to the last item of pending
+            remove item ((the length of pending) - 1) from pending
+            set row to seed / width
+            set left to the remainder of seed divided by width
+            loop while ((left > 0) and ((the item at ((row * width) + (left - 1)) in visited) = 0 as a byte)) and ((the paint distance between (the paint color at (left - 1) row in image) and target) <= tolerance):
+                set left to left - 1
+            set right to left
+            set aboveOpen to false
+            set belowOpen to false
+            loop while ((right < width) and ((the item at ((row * width) + right) in visited) = 0 as a byte)) and ((the paint distance between (the paint color at right row in image) and target) <= tolerance):
+                set here to the paint color at right row in image
+                put (color over here at opacity opacity) at right row in image
+                store (1 as a byte) at (visited + ((row * width) + right))
+                if row > 0:
+                    set aboveMatches to ((the item at (((row - 1) * width) + right) in visited) = 0 as a byte) and ((the paint distance between (the paint color at right (row - 1) in image) and target) <= tolerance)
+                    if aboveMatches and (aboveOpen = false):
+                        append (((row - 1) * width) + right) to pending
+                    set aboveOpen to aboveMatches
+                if row < (height - 1):
+                    set belowMatches to ((the item at (((row + 1) * width) + right) in visited) = 0 as a byte) and ((the paint distance between (the paint color at right (row + 1) in image) and target) <= tolerance)
+                    if belowMatches and (belowOpen = false):
+                        append (((row + 1) * width) + right) to pending
+                    set belowOpen to belowMatches
+                set right to right + 1
+        free pending
+        @intrinsic("call", "libc", "free", nothing, visited)
+
+# --- Image commands. Each returns a new canvas; the caller frees the old one. ---
+
+function the paint canvas {paint canvas:image} cropped to {integer:x1} {integer:y1} {integer:x2} {integer:y2}:
+    execute:
+        set left to (the minimum of x1 and x2) clamped between 0 and (image's width - 1)
+        set top to (the minimum of y1 and y2) clamped between 0 and (image's height - 1)
+        set right to (the maximum of x1 and x2) clamped between (left + 1) and image's width
+        set bottom to (the maximum of y1 and y2) clamped between (top + 1) and image's height
+        set result to a new paint canvas (right - left) by (bottom - top) filled with the transparent paint color
+        loop row from 0 to result's height:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, result's pixels + ((row * result's width) * 4), image's pixels + ((((row + top) * image's width) + left) * 4), ((result's width * 4) as a word sized integer))
+        return result
+
+local function the paint channel {integer:channel} between {paint color:first} and {paint color:second} at {a 64 bit floating-point number:fraction}:
+    execute:
+        set low to 0
+        set high to 0
+        if channel = 0:
+            set low to first's red
+            set high to second's red
+        else if channel = 1:
+            set low to first's green
+            set high to second's green
+        else if channel = 2:
+            set low to first's blue
+            set high to second's blue
+        else:
+            set low to first's alpha
+            set high to second's alpha
+        return ((low as a 64 bit floating-point number) + (((high - low) as a 64 bit floating-point number) * fraction))
+
+local function the paint color between {paint color:first} and {paint color:second} at {a 64 bit floating-point number:fraction}:
+    execute:
+        return the paint color red ((the rounded value of (the paint channel 0 between first and second at fraction)) as an integer) green ((the rounded value of (the paint channel 1 between first and second at fraction)) as an integer) blue ((the rounded value of (the paint channel 2 between first and second at fraction)) as an integer) alpha ((the rounded value of (the paint channel 3 between first and second at fraction)) as an integer)
+
+# Bilinear resampling to the new size, as the browser's smoothed drawImage does.
+function the paint canvas {paint canvas:image} resized to {integer:width} by {integer:height}:
+    execute:
+        set result to a new paint canvas width by height filled with the transparent paint color
+        set scaleX to (image's width as a 64 bit floating-point number) / (result's width as a 64 bit floating-point number)
+        set scaleY to (image's height as a 64 bit floating-point number) / (result's height as a 64 bit floating-point number)
+        loop row from 0 to result's height:
+            set sy to ((((row as a 64 bit floating-point number) + 0.5) * scaleY) - 0.5) clamped between 0.0 and ((image's height - 1) as a 64 bit floating-point number)
+            set y0 to (the floor of sy) as an integer
+            set y1 to the minimum of (y0 + 1) and (image's height - 1)
+            set fy to sy - (y0 as a 64 bit floating-point number)
+            loop column from 0 to result's width:
+                set sx to ((((column as a 64 bit floating-point number) + 0.5) * scaleX) - 0.5) clamped between 0.0 and ((image's width - 1) as a 64 bit floating-point number)
+                set x0 to (the floor of sx) as an integer
+                set x1 to the minimum of (x0 + 1) and (image's width - 1)
+                set fx to sx - (x0 as a 64 bit floating-point number)
+                set upper to the paint color between (the paint color at x0 y0 in image) and (the paint color at x1 y0 in image) at fx
+                set lower to the paint color between (the paint color at x0 y1 in image) and (the paint color at x1 y1 in image) at fx
+                put (the paint color between upper and lower at fy) at column row in result
+        return result
+
+# Quarter turns: clockwise when clockwise is true.
+function the paint canvas {paint canvas:image} turned clockwise {boolean:clockwise}:
+    execute:
+        set result to a new paint canvas image's height by image's width filled with the transparent paint color
+        loop row from 0 to image's height:
+            loop column from 0 to image's width:
+                set color to the paint color at column row in image
+                if clockwise:
+                    put color at ((image's height - 1) - row) column in result
+                else:
+                    put color at row ((image's width - 1) - column) in result
+        return result
+
+function the paint canvas {paint canvas:image} flipped horizontally {boolean:horizontal}:
+    execute:
+        set result to a new paint canvas image's width by image's height filled with the transparent paint color
+        loop row from 0 to image's height:
+            loop column from 0 to image's width:
+                set color to the paint color at column row in image
+                if horizontal:
+                    put color at ((image's width - 1) - column) row in result
+                else:
+                    put color at column ((image's height - 1) - row) in result
+        return result
+
+# --- Colour corrections, the same formulas as shared/adjustments.ts. ---
+
+function paint adjustment adjust:
+    replacement: 0
+function paint adjustment grayscale:
+    replacement: 1
+function paint adjustment invert:
+    replacement: 2
+function paint adjustment sepia:
+    replacement: 3
+
+local function the paint byte from {a 64 bit floating-point number:value}:
+    execute:
+        return ((the rounded value of value) as an integer) clamped between 0 and 255
+
+# brightness, contrast and saturation run from -100 to 100 (saturation 0..200).
+function adjust paint canvas {paint canvas:image} by {integer:kind} with brightness {integer:brightness} contrast {integer:contrast} saturation {integer:saturation}:
+    execute:
+        set scaledContrast to ((contrast clamped between -100 and 100) as a 64 bit floating-point number) * 2.55
+        set factor to (259.0 * (scaledContrast + 255.0)) / (255.0 * (259.0 - scaledContrast))
+        set lift to (brightness as a 64 bit floating-point number) * 2.55
+        set amount to (saturation as a 64 bit floating-point number) / 100.0
+        if kind = paint adjustment grayscale:
+            set amount to 0.0
+        set pixels to image's pixels
+        loop index from 0 to (image's width * image's height):
+            set offset to index * 4
+            set r to (the paint channel at offset in pixels) as a 64 bit floating-point number
+            set g to (the paint channel at (offset + 1) in pixels) as a 64 bit floating-point number
+            set b to (the paint channel at (offset + 2) in pixels) as a 64 bit floating-point number
+            if kind = paint adjustment invert:
+                set r to 255.0 - r
+                set g to 255.0 - g
+                set b to 255.0 - b
+            else if kind = paint adjustment sepia:
+                set a to r
+                set c to g
+                set d to b
+                set r to ((0.393 * a) + (0.769 * c)) + (0.189 * d)
+                set g to ((0.349 * a) + (0.686 * c)) + (0.168 * d)
+                set b to ((0.272 * a) + (0.534 * c)) + (0.131 * d)
+            else:
+                set luminance to ((0.2126 * r) + (0.7152 * g)) + (0.0722 * b)
+                set r to luminance + ((r - luminance) * amount)
+                set g to luminance + ((g - luminance) * amount)
+                set b to luminance + ((b - luminance) * amount)
+            store ((the paint byte from (((factor * (r - 128.0)) + 128.0) + lift)) as a byte) at (pixels + offset)
+            store ((the paint byte from (((factor * (g - 128.0)) + 128.0) + lift)) as a byte) at (pixels + (offset + 1))
+            store ((the paint byte from (((factor * (b - 128.0)) + 128.0) + lift)) as a byte) at (pixels + (offset + 2))

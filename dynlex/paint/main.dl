@@ -1,0 +1,382 @@
+# OpenAEC Paint Studio, native DynLex edition.
+#
+#   dynlex/build/open-paint-studio [IMAGE]
+#
+# Opens IMAGE (PNG, BMP or PPM) or a new 1200 × 800 canvas. Mouse: left draws
+# with the current tool, middle drags to pan, the wheel zooms around the
+# cursor. Keys: B brush, E eraser, F fill, I picker, L line, R rectangle,
+# O ellipse, T text, C crop, G grid; Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S
+# save, Ctrl+O open, Ctrl+N new canvas, +/- zoom, 0 fit.
+import dynlex/paint/ui.dl
+
+# --- The mouse wheel arrives through a callback; it adds to this inbox. ---
+
+class:
+    patterns:
+        [a|] paint wheel inbox
+    members:
+        vertical as a 64 bit floating-point number
+
+function paint wheel of {pointer:graphics} by {a 64 bit floating-point number:horizontal} and {a 64 bit floating-point number:vertical}:
+    execute:
+        set inbox to (the application state of graphics) as a pointer to a paint wheel inbox
+        if inbox != 0 as a pointer to a paint wheel inbox:
+            set inbox's vertical to inbox's vertical + vertical
+        ignore horizontal
+
+# --- Keys: GLFW key codes, read as presses (down now, up last frame). ---
+
+function paint shift key:
+    replacement: 340
+function paint control key:
+    replacement: 341
+function paint enter key:
+    replacement: 257
+function paint backspace key:
+    replacement: 259
+
+function key {integer:code} was pressed in {pointer:window} after {pointer:previous}:
+    execute:
+        set down to key code is down in window
+        set before to (the item at code in previous) != (0 as a byte)
+        if down:
+            store (1 as a byte) at (previous + code)
+        else:
+            store (0 as a byte) at (previous + code)
+        return down and (before = false)
+
+function a modifier {integer:code} is held in {pointer:window}:
+    execute:
+        return (key code is down in window) or (key (code + 4) is down in window)
+
+# The character a key types, or 0: letters, digits, space and the common
+# punctuation of a US layout.
+function the character of key {integer:code} shifted {boolean:shifted}:
+    execute:
+        if (code >= 65) and (code <= 90):
+            if shifted:
+                return code
+            return code + 32
+        if (code >= 48) and (code <= 57):
+            if shifted:
+                if code = 49:
+                    return 33
+                if code = 51:
+                    return 35
+                if code = 53:
+                    return 37
+                if code = 55:
+                    return 38
+                if code = 57:
+                    return 40
+                if code = 48:
+                    return 41
+                return code
+            return code
+        if code = 32:
+            return 32
+        if code = 45:
+            if shifted:
+                return 95
+            return 45
+        if code = 46:
+            if shifted:
+                return 62
+            return 46
+        if code = 44:
+            if shifted:
+                return 60
+            return 44
+        if code = 47:
+            if shifted:
+                return 63
+            return 47
+        if code = 59:
+            if shifted:
+                return 58
+            return 59
+        if code = 39:
+            if shifted:
+                return 34
+            return 39
+        if code = 61:
+            if shifted:
+                return 43
+            return 61
+        return 0
+
+# --- File dialogs through zenity; an empty string when cancelled. ---
+
+function the path chosen by {C string:command}:
+    execute:
+        set pipe to @intrinsic("call", "libc", "popen", a pointer, command, "r")
+        if pipe = 0 as a pointer:
+            return the string form of ""
+        set line to a new string buffer containing 4096 bytes
+        set got to @intrinsic("call", "libc", "fgets", a pointer, the data of line, 4096, pipe)
+        ignore @intrinsic("call", "libc", "pclose", an integer, pipe)
+        if got = 0 as a pointer:
+            return the string form of ""
+        set length to the length of ((the data of line) as a C string)
+        loop while (length > 0) and ((((the character at (length - 1) in line) as an integer) = 10) or (((the character at (length - 1) in line) as an integer) = 13)):
+            set length to length - 1
+        return the substring of line from 0 spanning length bytes
+
+function the path to open:
+    execute:
+        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.bmp *.BMP *.ppm *.pnm' 2>/dev/null"
+
+function the path to save:
+    execute:
+        set chosen to the path chosen by "zenity --file-selection --save --confirm-overwrite --title='Save image' --filename=painting.png --file-filter='PNG | *.png' --file-filter='BMP | *.bmp' --file-filter='PPM | *.ppm' 2>/dev/null"
+        if (chosen's length > 0) and ((the paint format of chosen) = paint format unknown):
+            return chosen + (the string form of ".png")
+        return chosen
+
+# --- Fonts: the system's DejaVu Sans, else Liberation Sans or Noto Sans. ---
+
+function the first existing font path:
+    execute:
+        set candidates to an empty list of a string
+        append (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") to candidates
+        append (the string form of "/usr/share/fonts/TTF/DejaVuSans.ttf") to candidates
+        append (the string form of "/usr/share/fonts/dejavu/DejaVuSans.ttf") to candidates
+        append (the string form of "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf") to candidates
+        append (the string form of "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf") to candidates
+        set found to the string form of ""
+        loop index from 0 to the length of candidates:
+            set candidate to the item at index in candidates
+            if found's length = 0:
+                if @intrinsic("call", "libc", "access", an integer, the data of candidate, 4) = 0:
+                    set found to candidate
+        free candidates
+        return found
+
+# --- The program ---
+
+set window to a new window with width 1440 and height 900
+set the title of window to "OpenAEC Paint Studio"
+set fontPath to the first existing font path
+if fontPath's length = 0:
+    print "No usable font found (install DejaVu Sans)." as a line
+    close window
+    return 1
+set loading to the result of loading a font from (the data of fontPath) at size 13 for window
+set typeface to loading's typeface
+if loading failed:
+    print "Could not load the interface font." as a line
+    close window
+    return 1
+
+set inbox to @intrinsic("construct", a paint wheel inbox, 0.0)
+set the application state of window to ((the address of inbox) as a pointer)
+register the graphics scroll callback named "paint wheel of $ by $ and $" for window
+
+set app to a new paint app 1200 by 800
+set state to the address of app
+set arguments to the command line arguments
+if arguments' length > 0:
+    ignore open (the argument at 0 in arguments) in state
+    set app's history to a new paint history
+    clear app's steps
+
+set keys to @intrinsic("call", "libc", "calloc", a pointer to a byte, 512 as a word sized integer, 1 as a word sized integer)
+set display to 0 as a pointer to a byte
+set texture to an empty graphics texture
+set shownWidth to 0
+set shownHeight to 0
+set fitted to false
+set previousLeft to false
+set previousMiddle to false
+set previousX to 0.0
+set previousY to 0.0
+set lastTitle to the string form of ""
+
+loop while window remains open:
+    set width to the framebuffer width of window
+    set height to the framebuffer height of window
+    set cursor to the cursor position of window
+    set mx to cursor's x as a 64 bit floating-point number
+    set my to cursor's y as a 64 bit floating-point number
+    set top to the workspace top for app
+    set right to the workspace right of width for app
+    set bottom to height - paint status height
+    set workspaceWidth to (right as a 64 bit floating-point number)
+    set workspaceHeight to ((bottom - top) as a 64 bit floating-point number)
+    if fitted = false:
+        fit state into workspaceWidth by workspaceHeight
+        set fitted to true
+    set insideWorkspace to ((mx >= 0.0) and (mx < workspaceWidth)) and ((my >= (top as a 64 bit floating-point number)) and (my < (bottom as a 64 bit floating-point number)))
+    set canvasX to the canvas x of screen mx in workspace 0.0 for app
+    set canvasY to the canvas y of screen my in workspace (top as a 64 bit floating-point number) for app
+    set column to (the floor of canvasX) as an integer
+    set row to (the floor of canvasY) as an integer
+
+    # Mouse
+    set left to the left mouse button is pressed in window
+    set middle to the middle mouse button is pressed in window
+    set pressed to left and (previousLeft = false)
+    set chromeClick to pressed and (insideWorkspace = false)
+    if pressed and insideWorkspace:
+        set app's message to the string form of ""
+        press state at canvasX canvasY with typeface
+    else if left and app's dragging:
+        if (mx != previousX) or (my != previousY):
+            drag state to canvasX canvasY
+    if (left = false) and previousLeft:
+        release state
+    if middle and previousMiddle:
+        set app's panX to app's panX + (mx - previousX)
+        set app's panY to app's panY + (my - previousY)
+    set previousLeft to left
+    set previousMiddle to middle
+    set previousX to mx
+    set previousY to my
+    if inbox's vertical != 0.0:
+        set factor to 1.1
+        if inbox's vertical < 0.0:
+            set factor to 1.0 / 1.1
+        if insideWorkspace:
+            zoom state by factor around mx (my - (top as a 64 bit floating-point number))
+        else:
+            zoom state by factor around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+        set inbox's vertical to 0.0
+
+    # Keyboard
+    set command to paint no command
+    set control to a modifier paint control key is held in window
+    set shifted to a modifier paint shift key is held in window
+    if app's typing:
+        loop code from 32 to 97:
+            if key code was pressed in window after keys:
+                set character to the character of key code shifted shifted
+                if (character != 0) and (control = false):
+                    enter character character into state with typeface
+        if key paint backspace key was pressed in window after keys:
+            erase the last letter of state with typeface
+        if key paint enter key was pressed in window after keys:
+            commit the text of state with typeface
+        if key 256 was pressed in window after keys:
+            cancel the text of state
+        if control and (key 90 was pressed in window after keys):
+            set command to paint undo command
+    else:
+        if key 66 was pressed in window after keys:
+            set command to paint brush tool
+        if key 69 was pressed in window after keys:
+            set command to paint eraser tool
+        if key 70 was pressed in window after keys:
+            set command to paint fill tool
+        if key 73 was pressed in window after keys:
+            set command to paint picker tool
+        if key 76 was pressed in window after keys:
+            set command to paint line tool
+        if key 82 was pressed in window after keys:
+            set command to paint rectangle tool
+        if key 84 was pressed in window after keys:
+            set command to paint text tool
+        if key 71 was pressed in window after keys:
+            set command to paint grid command
+        if key 48 was pressed in window after keys:
+            set command to paint fit command
+        if key 61 was pressed in window after keys:
+            set command to paint zoom in command
+        if key 45 was pressed in window after keys:
+            set command to paint zoom out command
+        if key 67 was pressed in window after keys:
+            set command to paint crop tool
+        if key 79 was pressed in window after keys:
+            set command to paint ellipse tool
+            if control:
+                set command to paint open command
+        if key 90 was pressed in window after keys:
+            if control:
+                set command to paint undo command
+                if shifted:
+                    set command to paint redo command
+        if key 89 was pressed in window after keys:
+            if control:
+                set command to paint redo command
+        if key 83 was pressed in window after keys:
+            if control:
+                set command to paint save command
+                if shifted:
+                    set command to paint save as command
+        if key 78 was pressed in window after keys:
+            if control:
+                set command to paint new command
+        if key 261 was pressed in window after keys:
+            set command to paint clear command
+
+    # The canvas texture follows the image: recreated when its size changes,
+    # updated when its pixels did.
+    if (app's image's width != shownWidth) or (app's image's height != shownHeight):
+        if display != 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "free", nothing, display)
+        release texture
+        set shownWidth to app's image's width
+        set shownHeight to app's image's height
+        set display to @intrinsic("call", "libc", "malloc", a pointer to a byte, ((shownWidth * shownHeight) * 4) as a word sized integer)
+        compose app's image into display display
+        set resource to @intrinsic("call", "dynlex_graphics", "dynlex_graphics_texture_create_rgba8", a pointer to a byte, window, shownWidth, shownHeight, display)
+        set texture to @intrinsic("construct", a graphics texture, resource, shownWidth, shownHeight)
+        set app's redrawn to false
+    else if app's redrawn:
+        compose app's image into display display
+        ignore @intrinsic("call", "dynlex_graphics", "dynlex_graphics_texture_update", an integer, texture's resource, shownWidth, shownHeight, display)
+        set app's redrawn to false
+
+    # Draw, and take the command of a clicked button.
+    set theme to the paint theme numbered app's theme
+    set frame to a new graphics frame in window with background red 0.98, green 0.98, blue 0.976 and alpha 1.0
+    use screen coordinates in frame
+    set ui to a paint ui in frame with typeface for app at (mx as an integer) (my as an integer) clicked chromeClick
+    draw app showing texture width height at column row inside (insideWorkspace and (column row lies on app's image)) in (the address of ui)
+    display frame
+    if ui's command != paint no command:
+        set command to ui's command
+
+    # Commands that need the window: files, zoom and fitting.
+    if command = paint open command:
+        set chosen to the path to open
+        if chosen's length > 0:
+            if open chosen in state:
+                fit state into workspaceWidth by workspaceHeight
+    else if ((command = paint save command) and (app's path's length > 0)) and ((the paint format of app's path) != paint format unknown):
+        ignore save state to app's path
+    else if (command = paint save command) or (command = paint save as command):
+        set chosen to the path to save
+        if chosen's length > 0:
+            ignore save state to chosen
+    else if command = paint zoom in command:
+        zoom state by 1.25 around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+    else if command = paint zoom out command:
+        zoom state by 0.8 around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+    else if command = paint fit command:
+        fit state into workspaceWidth by workspaceHeight
+    else if command = paint actual size command:
+        zoom state by (1.0 / app's zoom) around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+    else:
+        set before to app's image's width
+        set beforeHeight to app's image's height
+        set focused to app's focus
+        apply paint command command to state with typeface
+        if ((before != app's image's width) or (beforeHeight != app's image's height)) or (focused != app's focus):
+            set fitted to false
+
+    set title to the string form of "OpenAEC Paint Studio"
+    if app's path's length > 0:
+        set title to (app's path + (the string form of " — ")) + title
+    if app's changed:
+        set title to (the string form of "• ") + title
+    if (title = lastTitle) = false:
+        set the title of window to (the data of title)
+        set lastTitle to title
+    sleep for 8 milliseconds
+
+release texture
+if display != 0 as a pointer to a byte:
+    @intrinsic("call", "libc", "free", nothing, display)
+set releasing to the result of releasing (the address of typeface)
+ignore releasing
+close window

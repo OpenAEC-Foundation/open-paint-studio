@@ -1,0 +1,18 @@
+stroke 237 146 146 255
+outside 255 255 255 255
+erased 255 255 255 0
+filled 37 99 235 255
+stroke kept 237 146 146 255
+above stroke 37 99 235 255
+rectangle 255 255 255 255
+ellipse 220 38 38 255
+turned 10x20
+turned pixel 255 255 255 255
+flipped pixel 255 255 255 255
+cropped 4x3
+cropped pixel 255 255 255 255
+resized pixel 255 255 255 255
+invert 55 155 205 255
+grayscale 137 137 137 255
+sepia 165 147 114 255
+adjust 200 125 87 255

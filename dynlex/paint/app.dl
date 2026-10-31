@@ -1,0 +1,524 @@
+# The editor's state and every command the ribbon, the keyboard and the mouse
+# can give. Nothing here draws; ui.dl draws this state and reports commands.
+import dynlex/paint/files.dl
+import dynlex/paint/history.dl
+import dynlex/paint/text.dl
+
+# Tools, numbered as the ribbon shows them.
+function paint brush tool:
+    replacement: 1
+function paint eraser tool:
+    replacement: 2
+function paint fill tool:
+    replacement: 3
+function paint picker tool:
+    replacement: 4
+function paint line tool:
+    replacement: 5
+function paint rectangle tool:
+    replacement: 6
+function paint ellipse tool:
+    replacement: 7
+function paint text tool:
+    replacement: 8
+function paint crop tool:
+    replacement: 9
+
+# Commands. Tools are commands 1..9; palette swatches are 200 + their index.
+function paint no command:
+    replacement: 0
+function paint new command:
+    replacement: 100
+function paint open command:
+    replacement: 101
+function paint save command:
+    replacement: 102
+function paint save as command:
+    replacement: 103
+function paint undo command:
+    replacement: 104
+function paint redo command:
+    replacement: 105
+function paint filled command:
+    replacement: 106
+function paint smaller command:
+    replacement: 107
+function paint larger command:
+    replacement: 108
+function paint fainter command:
+    replacement: 109
+function paint stronger command:
+    replacement: 110
+function paint rotate left command:
+    replacement: 111
+function paint rotate right command:
+    replacement: 112
+function paint flip horizontal command:
+    replacement: 113
+function paint flip vertical command:
+    replacement: 114
+function paint half size command:
+    replacement: 115
+function paint double size command:
+    replacement: 116
+function paint grayscale command:
+    replacement: 117
+function paint invert command:
+    replacement: 118
+function paint sepia command:
+    replacement: 119
+function paint darker command:
+    replacement: 120
+function paint brighter command:
+    replacement: 121
+function paint less contrast command:
+    replacement: 122
+function paint more contrast command:
+    replacement: 123
+function paint less saturation command:
+    replacement: 124
+function paint more saturation command:
+    replacement: 125
+function paint zoom in command:
+    replacement: 126
+function paint zoom out command:
+    replacement: 127
+function paint fit command:
+    replacement: 128
+function paint actual size command:
+    replacement: 129
+function paint grid command:
+    replacement: 130
+function paint theme command:
+    replacement: 131
+function paint language command:
+    replacement: 132
+function paint clear command:
+    replacement: 133
+function paint focus command:
+    replacement: 134
+function paint first tab command:
+    replacement: 140
+function paint first swatch command:
+    replacement: 200
+
+# Ribbon tabs.
+function paint home tab:
+    replacement: 0
+function paint image tab:
+    replacement: 1
+function paint view tab:
+    replacement: 2
+
+class:
+    patterns:
+        [a|] paint app
+    members:
+        image as a paint canvas
+        base as a paint canvas
+        history as a paint history
+        tool as an integer
+        color as a paint color
+        size as an integer
+        textSize as an integer
+        opacity as an integer
+        filled as a boolean
+        zoom as a 64 bit floating-point number
+        panX as a 64 bit floating-point number
+        panY as a 64 bit floating-point number
+        grid as a boolean
+        theme as an integer
+        dutch as a boolean
+        tab as an integer
+        focus as a boolean
+        path as a string
+        message as a string
+        changed as a boolean
+        dragging as a boolean
+        startX as a 64 bit floating-point number
+        startY as a 64 bit floating-point number
+        lastX as a 64 bit floating-point number
+        lastY as a 64 bit floating-point number
+        typing as a boolean
+        typed as a string
+        textX as an integer
+        textY as an integer
+        steps as a pointer to a list
+        redrawn as a boolean
+        undoneSteps as a pointer to a list
+
+# The browser editor's 30-colour palette, in its order.
+function the paint palette:
+    execute:
+        set colors to an empty list of a paint color
+        append (the paint color from hex "36363e") to colors
+        append (the paint color from hex "ffffff") to colors
+        append (the paint color from hex "a1a1aa") to colors
+        append (the paint color from hex "d97706") to colors
+        append (the paint color from hex "f59e0b") to colors
+        append (the paint color from hex "ea580c") to colors
+        append (the paint color from hex "dc2626") to colors
+        append (the paint color from hex "e11d48") to colors
+        append (the paint color from hex "9333ea") to colors
+        append (the paint color from hex "4f46e5") to colors
+        append (the paint color from hex "2563eb") to colors
+        append (the paint color from hex "0891b2") to colors
+        append (the paint color from hex "0d9488") to colors
+        append (the paint color from hex "16a34a") to colors
+        append (the paint color from hex "65a30d") to colors
+        append (the paint color from hex "854d0e") to colors
+        append (the paint color from hex "78716c") to colors
+        append (the paint color from hex "e7e5e4") to colors
+        append (the paint color from hex "fcd34d") to colors
+        append (the paint color from hex "fed7aa") to colors
+        append (the paint color from hex "fecaca") to colors
+        append (the paint color from hex "fbcfe8") to colors
+        append (the paint color from hex "e9d5ff") to colors
+        append (the paint color from hex "c7d2fe") to colors
+        append (the paint color from hex "bfdbfe") to colors
+        append (the paint color from hex "a5f3fc") to colors
+        append (the paint color from hex "99f6e4") to colors
+        append (the paint color from hex "bbf7d0") to colors
+        append (the paint color from hex "d9f99d") to colors
+        append (the paint color from hex "d6d3d1") to colors
+        return colors
+
+function a new paint app {integer:width} by {integer:height}:
+    execute:
+        set image to a new paint canvas width by height filled with (the paint color from hex "ffffff")
+        set base to the paint copy of image
+        return @intrinsic("construct", a paint app, image, base, a new paint history, paint brush tool, (the paint color from hex "36363e"), 8, 32, 100, false, 1.0, 0.0, 0.0, false, 0, true, paint home tab, false, the string form of "", the string form of "", false, false, 0.0, 0.0, 0.0, 0.0, false, the string form of "", 0, 0, an empty list of a string, true, an empty list of a string)
+
+# The label in the interface's language.
+function label {C string:english} {C string:dutch} for {app}:
+    execute:
+        if app's dutch:
+            return the string form of dutch
+        return the string form of english
+
+function the name of tool {integer:which} for {app}:
+    execute:
+        if which = paint brush tool:
+            return label "Brush" "Penseel" for app
+        if which = paint eraser tool:
+            return label "Eraser" "Gum" for app
+        if which = paint fill tool:
+            return label "Fill" "Vullen" for app
+        if which = paint picker tool:
+            return label "Color picker" "Pipet" for app
+        if which = paint line tool:
+            return label "Line" "Lijn" for app
+        if which = paint rectangle tool:
+            return label "Rectangle" "Rechthoek" for app
+        if which = paint ellipse tool:
+            return label "Ellipse" "Ellips" for app
+        if which = paint text tool:
+            return label "Text" "Tekst" for app
+        return label "Crop" "Bijsnijden" for app
+
+local function note {string:step} in {a pointer to a paint app:app}:
+    execute:
+        clear app's undoneSteps
+        append step to app's steps
+        if (the length of app's steps) > paint history limit:
+            remove item 0 from app's steps
+
+# Every change goes through here: the current image becomes an undo state.
+function begin a change in {a pointer to a paint app:app}:
+    execute:
+        remember app's image in (the address of app's history)
+        copy paint pixels of app's image into app's base
+
+local function finish a change named {string:step} in {a pointer to a paint app:app}:
+    execute:
+        note step in app
+        set app's changed to true
+        set app's redrawn to true
+
+local function replace the image of {a pointer to a paint app:app} with {paint canvas:image} named {string:step}:
+    execute:
+        remember app's image in (the address of app's history)
+        free paint canvas app's image
+        free paint canvas app's base
+        set app's image to image
+        set app's base to the paint copy of image
+        finish a change named step in app
+
+function the paint stroke of {app}:
+    execute:
+        return a paint stroke of app's color at opacity ((app's opacity * 255) / 100) sized app's size erasing (app's tool = paint eraser tool)
+
+function the canvas x of screen {a 64 bit floating-point number:x} in workspace {a 64 bit floating-point number:left} for {paint app:app}:
+    execute:
+        return (x - (left + app's panX)) / app's zoom
+
+function the canvas y of screen {a 64 bit floating-point number:y} in workspace {a 64 bit floating-point number:top} for {paint app:app}:
+    execute:
+        return (y - (top + app's panY)) / app's zoom
+
+# Fits the canvas into the workspace, never enlarging past 100 %.
+function fit {a pointer to a paint app:app} into {a 64 bit floating-point number:width} by {a 64 bit floating-point number:height}:
+    execute:
+        set across to (width - 64.0) / (app's image's width as a 64 bit floating-point number)
+        set down to (height - 64.0) / (app's image's height as a 64 bit floating-point number)
+        set app's zoom to (the minimum of (the minimum of across and down) and 1.0) clamped between 0.05 and 1.0
+        set app's panX to (width - ((app's image's width as a 64 bit floating-point number) * app's zoom)) / 2.0
+        set app's panY to (height - ((app's image's height as a 64 bit floating-point number) * app's zoom)) / 2.0
+
+# Zooms by factor keeping the canvas point under (x, y) in place; x and y are
+# relative to the workspace.
+function zoom {a pointer to a paint app:app} by {a 64 bit floating-point number:factor} around {a 64 bit floating-point number:x} {a 64 bit floating-point number:y}:
+    execute:
+        set previous to app's zoom
+        set app's zoom to (previous * factor) clamped between 0.05 and 32.0
+        set app's panX to x - (((x - app's panX) / previous) * app's zoom)
+        set app's panY to y - (((y - app's panY) / previous) * app's zoom)
+
+# --- Mouse on the canvas: x and y are canvas coordinates. ---
+
+function press {a pointer to a paint app:app} at {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} with {font:typeface}:
+    execute:
+        set column to (the floor of x) as an integer
+        set row to (the floor of y) as an integer
+        set tool to app's tool
+        if app's typing:
+            commit the text of app with typeface
+        if tool = paint picker tool:
+            if column row lies on app's image:
+                set picked to the paint color at column row in app's image
+                set app's color to the paint color red picked's red green picked's green blue picked's blue
+            return nothing
+        if tool = paint fill tool:
+            begin a change in app
+            flood fill app's image at column row with app's color at opacity ((app's opacity * 255) / 100) within 32
+            finish a change named (label "Fill" "Vullen" for app) in app
+            return nothing
+        if tool = paint text tool:
+            begin a change in app
+            set app's typing to true
+            set app's typed to the string form of ""
+            set app's textX to column
+            set app's textY to row + app's textSize
+            return nothing
+        if tool != paint crop tool:
+            begin a change in app
+        set app's dragging to true
+        set app's startX to x
+        set app's startY to y
+        set app's lastX to x
+        set app's lastY to y
+        if (tool = paint brush tool) or (tool = paint eraser tool):
+            dab (the paint stroke of app) at x y on app's image from app's base
+            set app's redrawn to true
+
+function drag {a pointer to a paint app:app} to {a 64 bit floating-point number:x} {a 64 bit floating-point number:y}:
+    execute:
+        if app's dragging = false:
+            return nothing
+        set tool to app's tool
+        set stroke to the paint stroke of app
+        if (tool = paint brush tool) or (tool = paint eraser tool):
+            draw stroke from app's lastX app's lastY to x y on app's image from app's base
+        else if tool = paint line tool:
+            copy paint pixels of app's base into app's image
+            draw stroke from app's startX app's startY to x y on app's image from app's base
+        else if tool = paint rectangle tool:
+            copy paint pixels of app's base into app's image
+            draw paint rectangle with stroke from ((the floor of app's startX) as an integer) ((the floor of app's startY) as an integer) to ((the floor of x) as an integer) ((the floor of y) as an integer) filled app's filled on app's image from app's base
+        else if tool = paint ellipse tool:
+            copy paint pixels of app's base into app's image
+            draw paint ellipse with stroke from ((the floor of app's startX) as an integer) ((the floor of app's startY) as an integer) to ((the floor of x) as an integer) ((the floor of y) as an integer) filled app's filled on app's image from app's base
+        set app's lastX to x
+        set app's lastY to y
+        set app's redrawn to true
+
+function release {a pointer to a paint app:app}:
+    execute:
+        if app's dragging = false:
+            return nothing
+        set app's dragging to false
+        set tool to app's tool
+        if tool = paint crop tool:
+            set left to (the floor of (the minimum of app's startX and app's lastX)) as an integer
+            set top to (the floor of (the minimum of app's startY and app's lastY)) as an integer
+            set right to (the ceiling of (the maximum of app's startX and app's lastX)) as an integer
+            set bottom to (the ceiling of (the maximum of app's startY and app's lastY)) as an integer
+            if ((right - left) >= 2) and ((bottom - top) >= 2):
+                replace the image of app with (the paint canvas app's image cropped to left top right bottom) named (label "Crop" "Bijsnijden" for app)
+                set app's tool to paint brush tool
+            return nothing
+        finish a change named (the name of tool app's tool for app) in app
+
+# --- The text tool ---
+
+function redraw the text of {a pointer to a paint app:app} with {font:typeface}:
+    execute:
+        copy paint pixels of app's base into app's image
+        ignore render app's typed into app's image from app's base at app's textX app's textY sized app's textSize in app's color at opacity ((app's opacity * 255) / 100) with typeface
+        set app's redrawn to true
+
+function enter character {integer:character} into {a pointer to a paint app:app} with {font:typeface}:
+    execute:
+        set letter to a new string buffer containing 1 byte
+        store (character as a byte) at (the data of letter)
+        set app's typed to app's typed + letter
+        redraw the text of app with typeface
+
+function erase the last letter of {a pointer to a paint app:app} with {font:typeface}:
+    execute:
+        if app's typed's length > 0:
+            set app's typed to the substring of app's typed from 0 spanning (app's typed's length - 1) bytes
+            redraw the text of app with typeface
+
+function commit the text of {a pointer to a paint app:app} with {font:typeface}:
+    execute:
+        if app's typing = false:
+            return nothing
+        set app's typing to false
+        if app's typed's length = 0:
+            copy paint pixels of app's base into app's image
+            forget the last state in (the address of app's history)
+            set app's redrawn to true
+            return nothing
+        redraw the text of app with typeface
+        finish a change named (label "Text" "Tekst" for app) in app
+
+function cancel the text of {a pointer to a paint app:app}:
+    execute:
+        if app's typing:
+            set app's typing to false
+            copy paint pixels of app's base into app's image
+            forget the last state in (the address of app's history)
+            set app's redrawn to true
+
+# --- Files ---
+
+function open {string:path} in {a pointer to a paint app:app}:
+    execute:
+        set opened to the paint image opened from path
+        if opened's valid = false:
+            free paint canvas opened's image
+            set app's message to (label "Could not open: " "Openen mislukt: " for app) + opened's message
+            return false
+        replace the image of app with opened's image named (label "Open" "Openen" for app)
+        set app's path to path
+        set app's changed to false
+        set app's message to (label "Opened " "Geopend: " for app) + path
+        return true
+
+function save {a pointer to a paint app:app} to {string:path}:
+    execute:
+        if save app's image to path:
+            set app's path to path
+            set app's changed to false
+            set app's message to (label "Saved " "Opgeslagen: " for app) + path
+            return true
+        set app's message to (label "Could not save " "Opslaan mislukt: " for app) + path
+        return false
+
+# --- Commands that need no window ---
+
+function adjust {a pointer to a paint app:app} by {integer:kind} brightness {integer:brightness} contrast {integer:contrast} saturation {integer:saturation} named {string:step}:
+    execute:
+        begin a change in app
+        adjust paint canvas app's image by kind with brightness brightness contrast contrast saturation saturation
+        finish a change named step in app
+
+function apply paint command {integer:command} to {a pointer to a paint app:app} with {font:typeface}:
+    execute:
+        if command = paint no command:
+            return nothing
+        if command != paint undo command:
+            commit the text of app with typeface
+        if (command >= 1) and (command <= 9):
+            set app's tool to command
+        else if command >= paint first swatch command:
+            set palette to the paint palette
+            set index to command - paint first swatch command
+            if index < the length of palette:
+                set app's color to the item at index in palette
+            free palette
+        else if command >= paint first tab command:
+            set app's tab to command - paint first tab command
+        else if command = paint new command:
+            replace the image of app with (a new paint canvas app's image's width by app's image's height filled with (the paint color from hex "ffffff")) named (label "New canvas" "Nieuw canvas" for app)
+            set app's path to the string form of ""
+            set app's changed to false
+        else if command = paint clear command:
+            begin a change in app
+            fill paint canvas app's image with (the paint color from hex "ffffff")
+            finish a change named (label "Clear canvas" "Canvas wissen" for app) in app
+        else if command = paint undo command:
+            if app's typing:
+                cancel the text of app
+            else if app's history can undo:
+                if (the length of app's steps) > 0:
+                    append (the last item of app's steps) to app's undoneSteps
+                    remove item ((the length of app's steps) - 1) from app's steps
+                set app's image to undo app's image in (the address of app's history)
+                free paint canvas app's base
+                set app's base to the paint copy of app's image
+                set app's redrawn to true
+        else if command = paint redo command:
+            if app's history can redo:
+                if (the length of app's undoneSteps) > 0:
+                    append (the last item of app's undoneSteps) to app's steps
+                    remove item ((the length of app's undoneSteps) - 1) from app's undoneSteps
+                set app's image to redo app's image in (the address of app's history)
+                free paint canvas app's base
+                set app's base to the paint copy of app's image
+                set app's redrawn to true
+        else if command = paint filled command:
+            set app's filled to (app's filled = false)
+        else if command = paint smaller command:
+            if app's tool = paint text tool:
+                set app's textSize to (app's textSize - 4) clamped between 8 and 200
+            else:
+                set app's size to (app's size - 1) clamped between 1 and 200
+        else if command = paint larger command:
+            if app's tool = paint text tool:
+                set app's textSize to (app's textSize + 4) clamped between 8 and 200
+            else:
+                set app's size to (app's size + 1) clamped between 1 and 200
+        else if command = paint fainter command:
+            set app's opacity to (app's opacity - 10) clamped between 10 and 100
+        else if command = paint stronger command:
+            set app's opacity to (app's opacity + 10) clamped between 10 and 100
+        else if command = paint rotate left command:
+            replace the image of app with (the paint canvas app's image turned clockwise false) named (label "Rotate left" "Links draaien" for app)
+        else if command = paint rotate right command:
+            replace the image of app with (the paint canvas app's image turned clockwise true) named (label "Rotate 90°" "90° draaien" for app)
+        else if command = paint flip horizontal command:
+            replace the image of app with (the paint canvas app's image flipped horizontally true) named (label "Flip horizontal" "Horizontaal spiegelen" for app)
+        else if command = paint flip vertical command:
+            replace the image of app with (the paint canvas app's image flipped horizontally false) named (label "Flip vertical" "Verticaal spiegelen" for app)
+        else if command = paint half size command:
+            replace the image of app with (the paint canvas app's image resized to (the maximum of (app's image's width / 2) and 1) by (the maximum of (app's image's height / 2) and 1)) named (label "Resize" "Formaat wijzigen" for app)
+        else if command = paint double size command:
+            replace the image of app with (the paint canvas app's image resized to (the minimum of (app's image's width * 2) and 4096) by (the minimum of (app's image's height * 2) and 4096)) named (label "Resize" "Formaat wijzigen" for app)
+        else if command = paint grayscale command:
+            adjust app by paint adjustment grayscale brightness 0 contrast 0 saturation 100 named (label "Grayscale" "Grijswaarden" for app)
+        else if command = paint invert command:
+            adjust app by paint adjustment invert brightness 0 contrast 0 saturation 100 named (label "Invert colors" "Kleuren omkeren" for app)
+        else if command = paint sepia command:
+            adjust app by paint adjustment sepia brightness 0 contrast 0 saturation 100 named (label "Sepia" "Sepia" for app)
+        else if command = paint darker command:
+            adjust app by paint adjustment adjust brightness -10 contrast 0 saturation 100 named (label "Brightness" "Helderheid" for app)
+        else if command = paint brighter command:
+            adjust app by paint adjustment adjust brightness 10 contrast 0 saturation 100 named (label "Brightness" "Helderheid" for app)
+        else if command = paint less contrast command:
+            adjust app by paint adjustment adjust brightness 0 contrast -10 saturation 100 named (label "Contrast" "Contrast" for app)
+        else if command = paint more contrast command:
+            adjust app by paint adjustment adjust brightness 0 contrast 10 saturation 100 named (label "Contrast" "Contrast" for app)
+        else if command = paint less saturation command:
+            adjust app by paint adjustment adjust brightness 0 contrast 0 saturation 80 named (label "Saturation" "Verzadiging" for app)
+        else if command = paint more saturation command:
+            adjust app by paint adjustment adjust brightness 0 contrast 0 saturation 120 named (label "Saturation" "Verzadiging" for app)
+        else if command = paint grid command:
+            set app's grid to (app's grid = false)
+        else if command = paint theme command:
+            set app's theme to the remainder of (app's theme + 1) divided by 4
+        else if command = paint language command:
+            set app's dutch to (app's dutch = false)
+        else if command = paint focus command:
+            set app's focus to (app's focus = false)

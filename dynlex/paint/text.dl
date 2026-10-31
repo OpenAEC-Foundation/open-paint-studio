@@ -1,0 +1,111 @@
+# Text: the interface's labels through the graphics library's FreeType font,
+# and the text tool, which renders glyph coverage into the canvas pixels.
+import dynlex/paint/canvas.dl
+import lib/font.dl
+
+# FreeType load flags: FT_LOAD_DEFAULT keeps metrics only, FT_LOAD_RENDER
+# also rasterises the glyph's eight-bit coverage bitmap.
+local function freetype metrics only:
+    replacement: 0
+local function freetype render:
+    replacement: 4
+
+function use {font:typeface} at {integer:height} pixel size:
+    execute:
+        set sizing to the result of setting typeface's pixel size to height
+        if sizing failed:
+            print sizing's operation as a line
+
+class:
+    patterns:
+        [a|] paint code point
+    members:
+        value as an integer
+        size as an integer
+
+# The Unicode code point that starts at index in the UTF-8 text, and how many
+# bytes it takes; a malformed byte stands for itself.
+function the code point at {integer:index} in {string:message}:
+    execute:
+        set first to ((the character at index in message) as an integer) & 255
+        set count to 1
+        set value to first
+        if (first >= 240) and ((index + 3) < message's length):
+            set count to 4
+            set value to first & 7
+        else if (first >= 224) and ((index + 2) < message's length):
+            set count to 3
+            set value to first & 15
+        else if (first >= 192) and ((index + 1) < message's length):
+            set count to 2
+            set value to first & 31
+        if count > 1:
+            loop step from 1 to count:
+                set value to (value << 6) + (((the character at (index + step) in message) as an integer) & 63)
+        return @intrinsic("construct", a paint code point, value, count)
+
+# The advance width of the text in pixels at the font's current size.
+function the width of {string:message} in {font:typeface}:
+    execute:
+        set total to 0
+        set index to 0
+        loop while index < message's length:
+            set point to the code point at index in message
+            set error to @intrinsic("call", "freetype", "FT_Load_Char", an integer, typeface's face, point's value as a C long integer, freetype metrics only)
+            if error = 0:
+                set slot to (the glyph of (typeface's face as a pointer to an FT face)) as a pointer to an FT glyph slot
+                set total to total + (((the advance x of slot) / 64) as an integer)
+            set index to index + point's size
+        return total
+
+function the width of {C string:message} in {font:typeface}:
+    execute:
+        return the width of (the string form of message) in typeface
+
+# Draws the label with its baseline at y.
+function write {string:message} at {a number:x} {a number:y} in red {integer:red} green {integer:green} blue {integer:blue} with {font:typeface} in {graphics frame:frame}:
+    execute:
+        set color to a font color from red, green and blue
+        set pen to x as an integer
+        set index to 0
+        loop while index < message's length:
+            set point to the code point at index in message
+            render point's value at x pen and y y using typeface in color in frame
+            set rendering to it
+            set pen to rendering's horizontal position
+            set index to index + point's size
+
+function write {C string:message} at {a number:x} {a number:y} in red {integer:red} green {integer:green} blue {integer:blue} with {font:typeface} in {graphics frame:frame}:
+    execute:
+        write (the string form of message) at x y in red red green green blue blue with typeface in frame
+
+# Renders the text into the canvas with its baseline at (x, y), each pixel
+# composited from base at the glyph's coverage times the opacity, so a live
+# preview can be redrawn on every keystroke. Returns the advance in pixels.
+function render {string:message} into {paint canvas:image} from {paint canvas:base} at {integer:x} {integer:y} sized {integer:size} in {paint color:color} at opacity {integer:opacity} with {font:typeface}:
+    execute:
+        use typeface at size pixel size
+        set pen to x
+        set index to 0
+        loop while index < message's length:
+            set point to the code point at index in message
+            set index to index + point's size
+            set error to @intrinsic("call", "freetype", "FT_Load_Char", an integer, typeface's face, point's value as a C long integer, freetype render)
+            if error = 0:
+                set slot to (the glyph of (typeface's face as a pointer to an FT face)) as a pointer to an FT glyph slot
+                set rows to the bitmap rows of slot
+                set columns to the bitmap width of slot
+                set pitch to the bitmap pitch of slot
+                set coverage to the bitmap buffer of slot
+                set left to pen + (the bitmap left of slot)
+                set top to y - (the bitmap top of slot)
+                loop row from 0 to rows:
+                    loop column from 0 to columns:
+                        set amount to ((the item at ((row * pitch) + column) in coverage) as an integer) & 255
+                        if amount > 0:
+                            set px to left + column
+                            set py to top + row
+                            if px py lies on image:
+                                put (color over (the paint color at px py in base) at opacity ((amount * opacity) / 255)) at px py in image
+                set pen to pen + (((the advance x of slot) / 64) as an integer)
+        return pen - x

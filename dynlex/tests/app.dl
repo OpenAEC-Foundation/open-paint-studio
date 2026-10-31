@@ -1,0 +1,99 @@
+import dynlex/paint/app.dl
+
+# A font without a window: FreeType only, for the text tool's rendering.
+function the headless font at {C string:path}:
+    execute:
+        set library to 0 as a pointer to a byte
+        ignore @intrinsic("call", "freetype", "FT_Init_FreeType", an integer, the address of library)
+        set face to 0 as a pointer to a byte
+        ignore @intrinsic("call", "freetype", "FT_New_Face", an integer, library, path, 0 as a C long integer, the address of face)
+        return @intrinsic("construct", a font, library, face, an empty graphics texture)
+
+function show {paint app:app} named {C string:name}:
+    execute:
+        print (the string form of name)
+        print (the string form of ": ")
+        print (the string form of app's image's width)
+        print (the string form of "x")
+        print (the string form of app's image's height)
+        print (the string form of " undo ")
+        print (the string form of (the length of app's history's undo))
+        print (the string form of " redo ")
+        print (the string form of (the length of app's history's redo))
+        print (the string form of " steps ")
+        print (the string form of (the length of app's steps)) as a line
+
+function print pixel {integer:x} {integer:y} of {paint app:app}:
+    execute:
+        set color to the paint color at x y in app's image
+        print (the string form of color's red)
+        print (the string form of " ")
+        print (the string form of color's green)
+        print (the string form of " ")
+        print (the string form of color's blue) as a line
+
+set typeface to the headless font at "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+set app to a new paint app 64 by 48
+set state to the address of app
+show app named "new"
+
+# A brush stroke is one undoable step.
+apply paint command (paint first swatch command + 6) to state with typeface
+press state at 4.0 4.0 with typeface
+drag state to 30.0 4.0
+release state
+show app named "brush"
+print pixel 15 4 of app
+
+# A filled rectangle.
+apply paint command paint rectangle tool to state with typeface
+apply paint command paint filled command to state with typeface
+press state at 10.0 20.0 with typeface
+drag state to 20.0 30.0
+release state
+print pixel 15 25 of app
+
+# Text renders into the pixels and commits as one step.
+apply paint command paint text tool to state with typeface
+press state at 34.0 8.0 with typeface
+enter character 72 into state with typeface
+enter character 105 into state with typeface
+erase the last letter of state with typeface
+enter character 73 into state with typeface
+apply paint command paint brush tool to state with typeface
+show app named "text"
+set inked to 0
+loop row from 0 to 48:
+    loop column from 30 to 64:
+        if (the paint color at column row in app's image)'s green < 200:
+            set inked to inked + 1
+print whether (inked > 10) as a line
+
+# Picker, image commands, undo and redo.
+apply paint command paint picker tool to state with typeface
+press state at 15.0 25.0 with typeface
+print (the string form of app's color's red) as a line
+apply paint command paint rotate right command to state with typeface
+show app named "rotated"
+apply paint command paint half size command to state with typeface
+show app named "halved"
+apply paint command paint invert command to state with typeface
+apply paint command paint undo command to state with typeface
+apply paint command paint undo command to state with typeface
+apply paint command paint undo command to state with typeface
+show app named "undone"
+apply paint command paint redo command to state with typeface
+show app named "redone"
+
+# Crop by dragging.
+apply paint command paint crop tool to state with typeface
+press state at 2.0 2.0 with typeface
+drag state to 12.0 7.0
+release state
+show app named "cropped"
+
+# Fit keeps the canvas inside the workspace.
+fit state into 800.0 by 600.0
+print (the string form of app's zoom) as a line
+apply paint command paint language command to state with typeface
+print (the name of tool paint fill tool for app) as a line
