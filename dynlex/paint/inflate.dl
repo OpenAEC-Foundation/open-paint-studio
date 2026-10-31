@@ -1,0 +1,506 @@
+# Deflate (RFC 1951), zlib (RFC 1950) and gzip (RFC 1952), both ways: the
+# inflater PNG, TIFF and SVGZ need, and a deflater for the PNG writer. Codes
+# are decoded through a table indexed by the next bits, built per block from
+# the canonical code lengths; the deflater writes fixed Huffman codes over a
+# hash-chained LZ77 match search.
+import lib/std.dl
+import lib/string.dl
+
+class:
+    patterns:
+        [a|] paint byte stream
+    members:
+        bytes as a pointer to a byte
+        count as an integer
+        valid as a boolean
+
+function a paint byte stream of {pointer:bytes} spanning {integer:count}:
+    execute:
+        return @intrinsic("construct", a paint byte stream, bytes as a pointer to a byte, count, true)
+
+function no paint byte stream:
+    execute:
+        return @intrinsic("construct", a paint byte stream, 0 as a pointer to a byte, 0, false)
+
+# --- Inflating ---
+
+class:
+    patterns:
+        [a|] paint inflater
+    members:
+        inBytes as a pointer to a byte
+        inCount as an integer
+        inAt as an integer
+        bitBuffer as a C long integer
+        bitCount as an integer
+        outBytes as a pointer to a byte
+        outCapacity as an integer
+        outCount as an integer
+        broken as a boolean
+        litTable as a pointer to an integer
+        litBits as an integer
+        distTable as a pointer to an integer
+        distBits as an integer
+
+local function refill {a pointer to a paint inflater:state}:
+    execute:
+        # Never more than 56 bits held: the sign bit must stay clear.
+        loop while (state's bitCount) <= 48:
+            set next to 0
+            if (state's inAt) < state's inCount:
+                set next to ((the item at (state's inAt) in (state's inBytes)) as an integer) & 255
+            else if (state's inAt) > ((state's inCount) + 32):
+                # Well past the end: the stream is cut short (a few bytes
+                # beyond it are the buffer's own look-ahead).
+                set state's broken to true
+            set state's inAt to state's inAt + 1
+            set state's bitBuffer to (state's bitBuffer) | ((next as a C long integer) << (state's bitCount))
+            set state's bitCount to (state's bitCount) + 8
+
+local function take {integer:count} bits from {a pointer to a paint inflater:state}:
+    execute:
+        if count = 0:
+            return 0
+        if (state's bitCount) < count:
+            refill state
+        set value to ((state's bitBuffer) & (((1 as a C long integer) << count) - 1)) as an integer
+        set state's bitBuffer to (state's bitBuffer) >> count
+        set state's bitCount to (state's bitCount) - count
+        return value
+
+# Builds the decoding table for the code lengths (one per symbol): entry =
+# length << 16 | symbol, indexed by the next `bits` input bits (reversed, as
+# deflate packs them). Returns the table's index width, 0 for an empty code.
+local function the table for {a pointer to an integer:lengths} of {integer:symbols} into {a pointer to an integer:table}:
+    execute:
+        set widest to 0
+        loop symbol from 0 to symbols:
+            set widest to the maximum of widest and (the item at symbol in lengths)
+        if widest = 0:
+            return 0
+        set counts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
+        set firsts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
+        loop symbol from 0 to symbols:
+            set size to the item at symbol in lengths
+            if size > 0:
+                store ((the item at size in counts) + 1) at (counts + size)
+        set code to 0
+        loop size from 1 to 16:
+            store code at (firsts + size)
+            set code to (code + (the item at size in counts)) << 1
+        set entries to 1 << widest
+        loop index from 0 to entries:
+            store 0 at (table + index)
+        loop symbol from 0 to symbols:
+            set size to the item at symbol in lengths
+            if size > 0:
+                set code to the item at size in firsts
+                store (code + 1) at (firsts + size)
+                # Reverse the code's bits: the stream gives them LSB first.
+                set reversed to 0
+                loop bit from 0 to size:
+                    set reversed to (reversed << 1) | ((code >> bit) & 1)
+                set step to 1 << size
+                set slot to reversed
+                loop while slot < entries:
+                    store ((size << 16) | symbol) at (table + slot)
+                    set slot to slot + step
+        @intrinsic("call", "libc", "free", nothing, counts)
+        @intrinsic("call", "libc", "free", nothing, firsts)
+        return widest
+
+local function decode with {a pointer to an integer:table} of {integer:bits} from {a pointer to a paint inflater:state}:
+    execute:
+        if (state's bitCount) < bits:
+            refill state
+        set entry to the item at (((state's bitBuffer) & (((1 as a C long integer) << bits) - 1)) as an integer) in table
+        set size to entry >> 16
+        if size = 0:
+            set state's broken to true
+            return 0
+        set state's bitBuffer to (state's bitBuffer) >> size
+        set state's bitCount to state's bitCount - size
+        return entry & 65535
+
+local function make room for {integer:more} in {a pointer to a paint inflater:state}:
+    execute:
+        if (state's outCount + more) <= state's outCapacity:
+            return nothing
+        set capacity to state's outCapacity
+        loop while (state's outCount + more) > capacity:
+            set capacity to (capacity * 2) + 1024
+        set state's outBytes to @intrinsic("call", "libc", "realloc", a pointer to a byte, state's outBytes, capacity as a word sized integer)
+        set state's outCapacity to capacity
+
+local function paint length bases:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 29 as a word sized integer, 4 as a word sized integer)
+        set values to the string form of "3 4 5 6 7 8 9 10 11 13 15 17 19 23 27 31 35 43 51 59 67 83 99 115 131 163 195 227 258"
+        fill table from values
+        return table
+
+local function paint length extras:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 29 as a word sized integer, 4 as a word sized integer)
+        fill table from (the string form of "0 0 0 0 0 0 0 0 1 1 1 1 2 2 2 2 3 3 3 3 4 4 4 4 5 5 5 5 0")
+        return table
+
+local function paint distance bases:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 30 as a word sized integer, 4 as a word sized integer)
+        fill table from (the string form of "1 2 3 4 5 7 9 13 17 25 33 49 65 97 129 193 257 385 513 769 1025 1537 2049 3073 4097 6145 8193 12289 16385 24577")
+        return table
+
+local function paint distance extras:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 30 as a word sized integer, 4 as a word sized integer)
+        fill table from (the string form of "0 0 0 0 1 1 2 2 3 3 4 4 5 5 6 6 7 7 8 8 9 9 10 10 11 11 12 12 13 13")
+        return table
+
+# Fills the integer table from the space-separated numbers.
+local function fill {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop at from 0 to (values' length + 1):
+            set character to 32
+            if at < values' length:
+                set character to ((the character at at in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+
+# Decodes one Huffman-coded block's symbols into the output.
+local function inflate the codes of {a pointer to a paint inflater:state} with {a pointer to an integer:lengthBases} {a pointer to an integer:lengthExtras} {a pointer to an integer:distanceBases} {a pointer to an integer:distanceExtras}:
+    execute:
+        loop while (state's broken) = false:
+            set symbol to decode with (state's litTable) of (state's litBits) from state
+            if state's broken:
+                return nothing
+            if symbol < 256:
+                make room for 1 in state
+                store (symbol as a byte) at ((state's outBytes) + (state's outCount))
+                set state's outCount to state's outCount + 1
+            else if symbol = 256:
+                return nothing
+            else:
+                set index to symbol - 257
+                if index >= 29:
+                    set state's broken to true
+                    return nothing
+                set size to (the item at index in lengthBases) + (take (the item at index in lengthExtras) bits from state)
+                if (state's distBits) = 0:
+                    set state's broken to true
+                    return nothing
+                set code to decode with (state's distTable) of (state's distBits) from state
+                if code >= 30:
+                    set state's broken to true
+                    return nothing
+                set distance to (the item at code in distanceBases) + (take (the item at code in distanceExtras) bits from state)
+                if distance > state's outCount:
+                    set state's broken to true
+                    return nothing
+                make room for size in state
+                set out to state's outBytes
+                set at to state's outCount
+                loop step from 0 to size:
+                    store (the item at ((at + step) - distance) in out) at (out + (at + step))
+                set state's outCount to at + size
+
+local function paint code length order:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 19 as a word sized integer, 4 as a word sized integer)
+        fill table from (the string form of "16 17 18 0 8 7 9 6 10 5 11 4 12 3 13 2 14 1 15")
+        return table
+
+# Inflates raw deflate data; expected is a size hint for the output buffer.
+function the inflation of {pointer:bytes} spanning {integer:count} expecting {integer:expected}:
+    execute:
+        set state to @intrinsic("construct", a paint inflater, bytes as a pointer to a byte, count, 0, 0 as a C long integer, 0, @intrinsic("call", "libc", "malloc", a pointer to a byte, (the maximum of expected and 1024) as a word sized integer), the maximum of expected and 1024, 0, false, @intrinsic("call", "libc", "calloc", a pointer to an integer, 32768 as a word sized integer, 4 as a word sized integer), 0, @intrinsic("call", "libc", "calloc", a pointer to an integer, 32768 as a word sized integer, 4 as a word sized integer), 0)
+        set work to the address of state
+        set lengthBases to paint length bases
+        set lengthExtras to paint length extras
+        set distanceBases to paint distance bases
+        set distanceExtras to paint distance extras
+        set order to paint code length order
+        set lengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 320 as a word sized integer, 4 as a word sized integer)
+        set codeLengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 19 as a word sized integer, 4 as a word sized integer)
+        set codeTable to @intrinsic("call", "libc", "calloc", a pointer to an integer, 128 as a word sized integer, 4 as a word sized integer)
+        set last to false
+        loop while (last = false) and (state's broken = false):
+            set last to (take 1 bits from work) = 1
+            set kind to take 2 bits from work
+            if kind = 0:
+                # Stored: whole bytes after the header's padding.
+                ignore take (state's bitCount & 7) bits from work
+                set size to take 16 bits from work
+                ignore take 16 bits from work
+                make room for size in work
+                loop index from 0 to size:
+                    store ((take 8 bits from work) as a byte) at ((state's outBytes) + (state's outCount))
+                    set state's outCount to state's outCount + 1
+            else if kind = 1:
+                # Fixed codes.
+                loop symbol from 0 to 144:
+                    store 8 at (lengths + symbol)
+                loop symbol from 144 to 256:
+                    store 9 at (lengths + symbol)
+                loop symbol from 256 to 280:
+                    store 7 at (lengths + symbol)
+                loop symbol from 280 to 288:
+                    store 8 at (lengths + symbol)
+                set state's litBits to the table for lengths of 288 into (state's litTable)
+                loop symbol from 0 to 30:
+                    store 5 at (lengths + symbol)
+                set state's distBits to the table for lengths of 30 into (state's distTable)
+                inflate the codes of work with lengthBases lengthExtras distanceBases distanceExtras
+            else if kind = 2:
+                set literals to (take 5 bits from work) + 257
+                set distances to (take 5 bits from work) + 1
+                set codes to (take 4 bits from work) + 4
+                loop index from 0 to 19:
+                    store 0 at (codeLengths + index)
+                loop index from 0 to codes:
+                    store (take 3 bits from work) at (codeLengths + (the item at index in order))
+                set codeBits to the table for codeLengths of 19 into codeTable
+                set filled to 0
+                set previous to 0
+                loop while (filled < (literals + distances)) and (state's broken = false):
+                    set symbol to decode with codeTable of codeBits from work
+                    if symbol < 16:
+                        store symbol at (lengths + filled)
+                        set previous to symbol
+                        set filled to filled + 1
+                    else:
+                        set repeat to 0
+                        set value to 0
+                        if symbol = 16:
+                            set repeat to 3 + (take 2 bits from work)
+                            set value to previous
+                        else if symbol = 17:
+                            set repeat to 3 + (take 3 bits from work)
+                        else:
+                            set repeat to 11 + (take 7 bits from work)
+                        if (filled + repeat) > (literals + distances):
+                            set state's broken to true
+                        else:
+                            loop step from 0 to repeat:
+                                store value at (lengths + (filled + step))
+                            set filled to filled + repeat
+                if (state's broken) = false:
+                    set state's litBits to the table for lengths of literals into (state's litTable)
+                    set state's distBits to the table for (lengths + literals) of distances into (state's distTable)
+                    if (state's litBits) = 0:
+                        set state's broken to true
+                    else:
+                        inflate the codes of work with lengthBases lengthExtras distanceBases distanceExtras
+            else:
+                set state's broken to true
+        @intrinsic("call", "libc", "free", nothing, lengthBases)
+        @intrinsic("call", "libc", "free", nothing, lengthExtras)
+        @intrinsic("call", "libc", "free", nothing, distanceBases)
+        @intrinsic("call", "libc", "free", nothing, distanceExtras)
+        @intrinsic("call", "libc", "free", nothing, order)
+        @intrinsic("call", "libc", "free", nothing, lengths)
+        @intrinsic("call", "libc", "free", nothing, codeLengths)
+        @intrinsic("call", "libc", "free", nothing, codeTable)
+        @intrinsic("call", "libc", "free", nothing, state's litTable)
+        @intrinsic("call", "libc", "free", nothing, state's distTable)
+        if state's broken:
+            @intrinsic("call", "libc", "free", nothing, state's outBytes)
+            return no paint byte stream
+        return a paint byte stream of (state's outBytes) spanning (state's outCount)
+
+# Inflates a zlib stream (two header bytes, Adler-32 trailer, not checked).
+function the zlib inflation of {pointer:bytes} spanning {integer:count} expecting {integer:expected}:
+    execute:
+        if count < 6:
+            return no paint byte stream
+        set method to ((the item at 0 in (bytes as a pointer to a byte)) as an integer) & 15
+        if method != 8:
+            return no paint byte stream
+        return the inflation of ((bytes as a pointer to a byte) + 2) spanning (count - 6) expecting expected
+
+# Inflates a gzip file (RFC 1952 header with its optional fields).
+function the gzip inflation of {pointer:bytes} spanning {integer:count}:
+    execute:
+        set data to bytes as a pointer to a byte
+        if (count < 18) or (((((the item at 0 in data) as an integer) & 255) != 31) or ((((the item at 1 in data) as an integer) & 255) != 139)):
+            return no paint byte stream
+        set flags to ((the item at 3 in data) as an integer) & 255
+        set at to 10
+        if (flags & 4) != 0:
+            set at to (at + 2) + ((((the item at at in data) as an integer) & 255) | ((((the item at (at + 1) in data) as an integer) & 255) << 8))
+        if (flags & 8) != 0:
+            loop while (at < count) and ((((the item at at in data) as an integer) & 255) != 0):
+                set at to at + 1
+            set at to at + 1
+        if (flags & 16) != 0:
+            loop while (at < count) and ((((the item at at in data) as an integer) & 255) != 0):
+                set at to at + 1
+            set at to at + 1
+        if (flags & 2) != 0:
+            set at to at + 2
+        if at >= (count - 8):
+            return no paint byte stream
+        # The trailer holds the original size.
+        set size to (((the item at (count - 4) in data) as an integer) & 255) | (((((the item at (count - 3) in data) as an integer) & 255) << 8) | (((((the item at (count - 2) in data) as an integer) & 255) << 16) | ((((the item at (count - 1) in data) as an integer) & 255) << 24)))
+        return the inflation of (data + at) spanning ((count - 8) - at) expecting size
+
+# --- Deflating ---
+
+class:
+    patterns:
+        [a|] paint deflater
+    members:
+        outBytes as a pointer to a byte
+        outCapacity as an integer
+        outCount as an integer
+        bitBuffer as an integer
+        bitCount as an integer
+
+local function put {integer:value} in {integer:count} bits to {a pointer to a paint deflater:state}:
+    execute:
+        set state's bitBuffer to state's bitBuffer | (value << (state's bitCount))
+        set state's bitCount to state's bitCount + count
+        loop while (state's bitCount) >= 8:
+            if (state's outCount) >= state's outCapacity:
+                set state's outCapacity to (state's outCapacity * 2) + 4096
+                set state's outBytes to @intrinsic("call", "libc", "realloc", a pointer to a byte, state's outBytes, state's outCapacity as a word sized integer)
+            store ((state's bitBuffer & 255) as a byte) at ((state's outBytes) + (state's outCount))
+            set state's outCount to state's outCount + 1
+            set state's bitBuffer to state's bitBuffer >> 8
+            set state's bitCount to state's bitCount - 8
+
+# Huffman codes go most significant bit first.
+local function emit huffman {integer:symbolCode} of {integer:size} to {a pointer to a paint deflater:state}:
+    execute:
+        set reversed to 0
+        loop bit from 0 to size:
+            set reversed to (reversed << 1) | ((symbolCode >> bit) & 1)
+        put reversed in size bits to state
+
+local function put literal {integer:symbol} to {a pointer to a paint deflater:state}:
+    execute:
+        if symbol < 144:
+            emit huffman (48 + symbol) of 8 to state
+        else if symbol < 256:
+            emit huffman (400 + (symbol - 144)) of 9 to state
+        else if symbol < 280:
+            emit huffman (symbol - 256) of 7 to state
+        else:
+            emit huffman (192 + (symbol - 280)) of 8 to state
+
+local function put match of {integer:size} back {integer:back} to {a pointer to a paint deflater:state} with {a pointer to an integer:lengthBases} {a pointer to an integer:lengthExtras} {a pointer to an integer:distanceBases} {a pointer to an integer:distanceExtras}:
+    execute:
+        set index to 28
+        loop while (the item at index in lengthBases) > size:
+            set index to index - 1
+        put literal (257 + index) to state
+        put (size - (the item at index in lengthBases)) in (the item at index in lengthExtras) bits to state
+        set distanceCode to 29
+        loop while (the item at distanceCode in distanceBases) > back:
+            set distanceCode to distanceCode - 1
+        emit huffman distanceCode of 5 to state
+        put (back - (the item at distanceCode in distanceBases)) in (the item at distanceCode in distanceExtras) bits to state
+
+# Deflates with fixed Huffman codes and LZ77 matches found through a hash of
+# three bytes, in one block.
+function the deflation of {pointer:bytes} spanning {integer:count}:
+    execute:
+        set data to bytes as a pointer to a byte
+        set state to @intrinsic("construct", a paint deflater, @intrinsic("call", "libc", "malloc", a pointer to a byte, ((count / 2) + 4096) as a word sized integer), (count / 2) + 4096, 0, 0, 0)
+        set work to the address of state
+        set lengthBases to paint length bases
+        set lengthExtras to paint length extras
+        set distanceBases to paint distance bases
+        set distanceExtras to paint distance extras
+        set heads to @intrinsic("call", "libc", "calloc", a pointer to an integer, 65536 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 65536:
+            store -1 at (heads + index)
+        set chain to @intrinsic("call", "libc", "calloc", a pointer to an integer, (count + 1) as a word sized integer, 4 as a word sized integer)
+        # Final block, fixed codes.
+        put 1 in 1 bits to work
+        put 1 in 2 bits to work
+        set at to 0
+        loop while at < count:
+            set best to 0
+            set bestDistance to 0
+            if (at + 3) <= count:
+                set key to (((((the item at at in data) as an integer) & 255) << 16) | ((((the item at (at + 1) in data) as an integer) & 255) << 8)) | (((the item at (at + 2) in data) as an integer) & 255)
+                set key to ((key ^ (key >> 11)) ^ (key >> 5)) & 65535
+                set candidate to the item at key in heads
+                set tries to 0
+                loop while ((candidate >= 0) and ((at - candidate) <= 32768)) and (tries < 16):
+                    set size to 0
+                    set limit to the minimum of 258 and (count - at)
+                    loop while (size < limit) and ((the item at (candidate + size) in data) = (the item at (at + size) in data)):
+                        set size to size + 1
+                    if size > best:
+                        set best to size
+                        set bestDistance to at - candidate
+                    set candidate to the item at candidate in chain
+                    set tries to tries + 1
+                store (the item at key in heads) at (chain + at)
+                store at at (heads + key)
+            if best >= 3:
+                put match of best back bestDistance to work with lengthBases lengthExtras distanceBases distanceExtras
+                # Hash the skipped positions too.
+                loop step from 1 to best:
+                    if ((at + step) + 3) <= count:
+                        set key to (((((the item at (at + step) in data) as an integer) & 255) << 16) | ((((the item at ((at + step) + 1) in data) as an integer) & 255) << 8)) | (((the item at ((at + step) + 2) in data) as an integer) & 255)
+                        set key to ((key ^ (key >> 11)) ^ (key >> 5)) & 65535
+                        store (the item at key in heads) at (chain + (at + step))
+                        store (at + step) at (heads + key)
+                set at to at + best
+            else:
+                put literal (((the item at at in data) as an integer) & 255) to work
+                set at to at + 1
+        put literal 256 to work
+        if (state's bitCount) > 0:
+            put 0 in (8 - (state's bitCount)) bits to work
+        @intrinsic("call", "libc", "free", nothing, heads)
+        @intrinsic("call", "libc", "free", nothing, chain)
+        @intrinsic("call", "libc", "free", nothing, lengthBases)
+        @intrinsic("call", "libc", "free", nothing, lengthExtras)
+        @intrinsic("call", "libc", "free", nothing, distanceBases)
+        @intrinsic("call", "libc", "free", nothing, distanceExtras)
+        return a paint byte stream of (state's outBytes) spanning (state's outCount)
+
+function the adler32 of {pointer:bytes} spanning {integer:count}:
+    execute:
+        set data to bytes as a pointer to a byte
+        set a to 1
+        set b to 0
+        set at to 0
+        loop while at < count:
+            set stop to the minimum of count and (at + 1000)
+            loop while at < stop:
+                set a to a + (((the item at at in data) as an integer) & 255)
+                set b to b + a
+                set at to at + 1
+            set a to the remainder of a divided by 65521
+            set b to the remainder of b divided by 65521
+        return (b << 16) | a
+
+# Deflated data in a zlib wrapper.
+function the zlib deflation of {pointer:source} spanning {integer:count}:
+    execute:
+        set body to the deflation of source spanning count
+        set out to @intrinsic("call", "libc", "malloc", a pointer to a byte, (body's count + 6) as a word sized integer)
+        store (120 as a byte) at out
+        store (1 as a byte) at (out + 1)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, out + 2, body's bytes, body's count as a word sized integer)
+        set check to the adler32 of source spanning count
+        store (((check >> 24) & 255) as a byte) at (out + (body's count + 2))
+        store (((check >> 16) & 255) as a byte) at (out + (body's count + 3))
+        store (((check >> 8) & 255) as a byte) at (out + (body's count + 4))
+        store ((check & 255) as a byte) at (out + (body's count + 5))
+        @intrinsic("call", "libc", "free", nothing, body's bytes)
+        return a paint byte stream of out spanning (body's count + 6)

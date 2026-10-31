@@ -1,14 +1,5 @@
 import dynlex/paint/app.dl
 
-# A font without a window: FreeType only, for the text tool's rendering.
-function the headless font at {C string:path}:
-    execute:
-        set library to 0 as a pointer to a byte
-        ignore @intrinsic("call", "freetype", "FT_Init_FreeType", an integer, the address of library)
-        set face to 0 as a pointer to a byte
-        ignore @intrinsic("call", "freetype", "FT_New_Face", an integer, library, path, 0 as a C long integer, the address of face)
-        return @intrinsic("construct", a font, library, face, an empty graphics texture)
-
 function show {paint app:app} named {C string:name}:
     execute:
         print (the string form of name)
@@ -32,7 +23,8 @@ function print pixel {integer:x} {integer:y} of {paint app:app}:
         print (the string form of " ")
         print (the string form of color's blue) as a line
 
-set typeface to the headless font at "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+set face to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+set typeface to the address of face
 set app to a new paint app 64 by 48
 set state to the address of app
 show app named "new"

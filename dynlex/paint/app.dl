@@ -1,5 +1,5 @@
 # The editor's state and every command the ribbon, the keyboard and the mouse
-# can give. Nothing here draws; ui.dl draws this state and reports commands.
+# can give. Nothing here draws; shell.dl draws this state and reports commands.
 import dynlex/paint/files.dl
 import dynlex/paint/history.dl
 import dynlex/paint/text.dl
@@ -23,8 +23,11 @@ function paint text tool:
     replacement: 8
 function paint crop tool:
     replacement: 9
+# Selects without painting; Escape returns to it.
+function paint select tool:
+    replacement: 10
 
-# Commands. Tools are commands 1..9; palette swatches are 200 + their index.
+# Commands. Tools are commands 1..10; palette swatches are 200 + their index.
 function paint no command:
     replacement: 0
 function paint new command:
@@ -146,6 +149,14 @@ class:
         steps as a pointer to a list
         redrawn as a boolean
         undoneSteps as a pointer to a list
+        touchedLeft as an integer
+        touchedTop as an integer
+        touchedRight as an integer
+        touchedBottom as an integer
+        changedLeft as an integer
+        changedTop as an integer
+        changedRight as an integer
+        changedBottom as an integer
 
 # The browser editor's 30-colour palette, in its order.
 function the paint palette:
@@ -186,8 +197,50 @@ function the paint palette:
 function a new paint app {integer:width} by {integer:height}:
     execute:
         set image to a new paint canvas width by height filled with (the paint color from hex "ffffff")
-        set base to the paint copy of image
-        return @intrinsic("construct", a paint app, image, base, a new paint history, paint brush tool, (the paint color from hex "36363e"), 8, 32, 100, false, 1.0, 0.0, 0.0, false, 0, true, paint home tab, false, the string form of "", the string form of "", false, false, 0.0, 0.0, 0.0, 0.0, false, the string form of "", 0, 0, an empty list of a string, true, an empty list of a string)
+        # The base (the image before the change under way) is made when the
+        # first change begins.
+        set base to a new paint canvas 1 by 1 filled with the transparent paint color
+        return @intrinsic("construct", a paint app, image, base, a new paint history, paint brush tool, (the paint color from hex "36363e"), 8, 32, 100, false, 1.0, 0.0, 0.0, false, 0, true, paint home tab, false, the string form of "", the string form of "", false, false, 0.0, 0.0, 0.0, 0.0, false, the string form of "", 0, 0, an empty list of a string, true, an empty list of a string, paint untouched, paint untouched, 0, 0, paint untouched, paint untouched, 0, 0)
+
+# --- What changed: two rectangles in canvas pixels, exclusive on the right
+# and bottom. The touched one is what the screen must redraw, cleared by
+# whoever redraws; the changed one is what the change under way covers, for
+# the undo state. Left and top start high, right and bottom at 0: empty. ---
+
+function paint untouched:
+    replacement: 1073741824
+
+function touch {integer:left} {integer:top} {integer:right} {integer:bottom} in {a pointer to a paint app:app}:
+    execute:
+        set app's touchedLeft to the minimum of app's touchedLeft and left
+        set app's touchedTop to the minimum of app's touchedTop and top
+        set app's touchedRight to the maximum of app's touchedRight and right
+        set app's touchedBottom to the maximum of app's touchedBottom and bottom
+        set app's changedLeft to the minimum of app's changedLeft and left
+        set app's changedTop to the minimum of app's changedTop and top
+        set app's changedRight to the maximum of app's changedRight and right
+        set app's changedBottom to the maximum of app's changedBottom and bottom
+
+function touch everything in {a pointer to a paint app:app}:
+    execute:
+        touch 0 0 app's image's width app's image's height in app
+
+# The pixels a stroke of the size around the segment can reach.
+local function touch from {a 64 bit floating-point number:x1} {a 64 bit floating-point number:y1} to {a 64 bit floating-point number:x2} {a 64 bit floating-point number:y2} in {a pointer to a paint app:app}:
+    execute:
+        set reach to (app's size / 2) + 2
+        touch (((the floor of (the minimum of x1 and x2)) as an integer) - reach) (((the floor of (the minimum of y1 and y2)) as an integer) - reach) (((the ceiling of (the maximum of x1 and x2)) as an integer) + reach) (((the ceiling of (the maximum of y1 and y2)) as an integer) + reach) in app
+
+function the touched area of {paint app:app} is empty:
+    execute:
+        return (app's touchedLeft >= app's touchedRight) or (app's touchedTop >= app's touchedBottom)
+
+function clear the touched area of {a pointer to a paint app:app}:
+    execute:
+        set app's touchedLeft to paint untouched
+        set app's touchedTop to paint untouched
+        set app's touchedRight to 0
+        set app's touchedBottom to 0
 
 # The label in the interface's language.
 function label {C string:english} {C string:dutch} for {app}:
@@ -214,6 +267,8 @@ function the name of tool {integer:which} for {app}:
             return label "Ellipse" "Ellips" for app
         if which = paint text tool:
             return label "Text" "Tekst" for app
+        if which = paint select tool:
+            return label "Select" "Selecteren" for app
         return label "Crop" "Bijsnijden" for app
 
 local function note {string:step} in {a pointer to a paint app:app}:
@@ -223,26 +278,68 @@ local function note {string:step} in {a pointer to a paint app:app}:
         if (the length of app's steps) > paint history limit:
             remove item 0 from app's steps
 
-# Every change goes through here: the current image becomes an undo state.
+# Every change that keeps the canvas's size goes through here: the base
+# becomes the image as it is now, which the change paints from and the undo
+# state is cut from when the change is done.
 function begin a change in {a pointer to a paint app:app}:
     execute:
-        remember app's image in (the address of app's history)
-        copy paint pixels of app's image into app's base
+        if (app's base's width != app's image's width) or (app's base's height != app's image's height):
+            free paint canvas app's base
+            set app's base to the paint copy of app's image
+        else:
+            copy paint pixels of app's image into app's base
+        set app's changedLeft to paint untouched
+        set app's changedTop to paint untouched
+        set app's changedRight to 0
+        set app's changedBottom to 0
 
 local function finish a change named {string:step} in {a pointer to a paint app:app}:
     execute:
+        remember the rectangle (app's changedLeft) (app's changedTop) (app's changedRight) (app's changedBottom) of (app's base) in (the address of app's history)
         note step in app
         set app's changed to true
         set app's redrawn to true
 
+# A change of size or of the whole image: the old image becomes the undo
+# state as it is.
 local function replace the image of {a pointer to a paint app:app} with {paint canvas:image} named {string:step}:
     execute:
-        remember app's image in (the address of app's history)
-        free paint canvas app's image
+        keep app's image as the state before in (the address of app's history)
         free paint canvas app's base
         set app's image to image
-        set app's base to the paint copy of image
-        finish a change named step in app
+        set app's base to a new paint canvas 1 by 1 filled with the transparent paint color
+        touch everything in app
+        note step in app
+        set app's changed to true
+        set app's redrawn to true
+
+# The New canvas dialog: a canvas of the size, white or transparent, as a
+# fresh document.
+function start a new canvas in {a pointer to a paint app:app} sized {integer:width} by {integer:height} transparent {boolean:transparent}:
+    execute:
+        set background to the paint color from hex "ffffff"
+        if transparent:
+            set background to the transparent paint color
+        replace the image of app with (a new paint canvas (width clamped between 1 and 4096) by (height clamped between 1 and 4096) filled with background) named (label "New canvas" "Nieuw canvas" for app)
+        set app's path to the string form of ""
+        set app's changed to false
+
+# Switching "Vectorobjecten behouden" off flattens the document, as the
+# browser editor does: an undo state, and the history becomes one image step.
+function flatten the history of {a pointer to a paint app:app}:
+    execute:
+        if (the length of app's steps) = 0:
+            return nothing
+        remember app's image in (the address of app's history)
+        clear app's steps
+        append (label "Image" "Afbeelding" for app) to app's steps
+        set app's changed to true
+        set app's redrawn to true
+
+# The Resize dialog: bilinear resampling to the exact size.
+function resize {a pointer to a paint app:app} to {integer:width} by {integer:height}:
+    execute:
+        replace the image of app with (the paint canvas app's image resized to (width clamped between 1 and 4096) by (height clamped between 1 and 4096)) named (label "Resize" "Formaat wijzigen" for app)
 
 function the paint stroke of {app}:
     execute:
@@ -276,7 +373,7 @@ function zoom {a pointer to a paint app:app} by {a 64 bit floating-point number:
 
 # --- Mouse on the canvas: x and y are canvas coordinates. ---
 
-function press {a pointer to a paint app:app} at {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} with {font:typeface}:
+function press {a pointer to a paint app:app} at {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} with {a pointer to a paint face:typeface}:
     execute:
         set column to (the floor of x) as an integer
         set row to (the floor of y) as an integer
@@ -288,9 +385,12 @@ function press {a pointer to a paint app:app} at {a 64 bit floating-point number
                 set picked to the paint color at column row in app's image
                 set app's color to the paint color red picked's red green picked's green blue picked's blue
             return nothing
+        if tool = paint select tool:
+            return nothing
         if tool = paint fill tool:
             begin a change in app
             flood fill app's image at column row with app's color at opacity ((app's opacity * 255) / 100) within 32
+            touch everything in app
             finish a change named (label "Fill" "Vullen" for app) in app
             return nothing
         if tool = paint text tool:
@@ -309,6 +409,7 @@ function press {a pointer to a paint app:app} at {a 64 bit floating-point number
         set app's lastY to y
         if (tool = paint brush tool) or (tool = paint eraser tool):
             dab (the paint stroke of app) at x y on app's image from app's base
+            touch from x y to x y in app
             set app's redrawn to true
 
 function drag {a pointer to a paint app:app} to {a 64 bit floating-point number:x} {a 64 bit floating-point number:y}:
@@ -319,7 +420,13 @@ function drag {a pointer to a paint app:app} to {a 64 bit floating-point number:
         set stroke to the paint stroke of app
         if (tool = paint brush tool) or (tool = paint eraser tool):
             draw stroke from app's lastX app's lastY to x y on app's image from app's base
-        else if tool = paint line tool:
+            touch from app's lastX app's lastY to x y in app
+        else:
+            # The shape is drawn afresh from the base: what the last one
+            # covered needs redrawing as much as the new one.
+            touch from app's startX app's startY to app's lastX app's lastY in app
+            touch from app's startX app's startY to x y in app
+        if tool = paint line tool:
             copy paint pixels of app's base into app's image
             draw stroke from app's startX app's startY to x y on app's image from app's base
         else if tool = paint rectangle tool:
@@ -349,35 +456,58 @@ function release {a pointer to a paint app:app}:
             return nothing
         finish a change named (the name of tool app's tool for app) in app
 
+# Choosing the text tool raises a small size to 32, as the browser editor
+# does, so text starts readable.
+function choose tool {integer:tool} for {a pointer to a paint app:app}:
+    execute:
+        set app's tool to tool
+        if (tool = paint text tool) and (app's size < 24):
+            set app's size to 32
+
+# Escape: whatever is under way stops and leaves nothing behind (a stroke or
+# shape being drawn, text being typed), and the select tool takes over.
+function cancel the current function of {a pointer to a paint app:app}:
+    execute:
+        if app's typing:
+            cancel the text of app
+        if app's dragging:
+            set app's dragging to false
+            if app's tool != paint crop tool:
+                copy paint pixels of app's base into app's image
+                touch everything in app
+            set app's redrawn to true
+        set app's tool to paint select tool
+
 # --- The text tool ---
 
-function redraw the text of {a pointer to a paint app:app} with {font:typeface}:
+function redraw the text of {a pointer to a paint app:app} with {a pointer to a paint face:typeface}:
     execute:
         copy paint pixels of app's base into app's image
         ignore render app's typed into app's image from app's base at app's textX app's textY sized app's textSize in app's color at opacity ((app's opacity * 255) / 100) with typeface
+        touch everything in app
         set app's redrawn to true
 
-function enter character {integer:character} into {a pointer to a paint app:app} with {font:typeface}:
+function enter character {integer:character} into {a pointer to a paint app:app} with {a pointer to a paint face:typeface}:
     execute:
         set letter to a new string buffer containing 1 byte
         store (character as a byte) at (the data of letter)
         set app's typed to app's typed + letter
         redraw the text of app with typeface
 
-function erase the last letter of {a pointer to a paint app:app} with {font:typeface}:
+function erase the last letter of {a pointer to a paint app:app} with {a pointer to a paint face:typeface}:
     execute:
         if app's typed's length > 0:
             set app's typed to the substring of app's typed from 0 spanning (app's typed's length - 1) bytes
             redraw the text of app with typeface
 
-function commit the text of {a pointer to a paint app:app} with {font:typeface}:
+function commit the text of {a pointer to a paint app:app} with {a pointer to a paint face:typeface}:
     execute:
         if app's typing = false:
             return nothing
         set app's typing to false
         if app's typed's length = 0:
             copy paint pixels of app's base into app's image
-            forget the last state in (the address of app's history)
+            touch everything in app
             set app's redrawn to true
             return nothing
         redraw the text of app with typeface
@@ -388,7 +518,7 @@ function cancel the text of {a pointer to a paint app:app}:
         if app's typing:
             set app's typing to false
             copy paint pixels of app's base into app's image
-            forget the last state in (the address of app's history)
+            touch everything in app
             set app's redrawn to true
 
 # --- Files ---
@@ -422,16 +552,17 @@ function adjust {a pointer to a paint app:app} by {integer:kind} brightness {int
     execute:
         begin a change in app
         adjust paint canvas app's image by kind with brightness brightness contrast contrast saturation saturation
+        touch everything in app
         finish a change named step in app
 
-function apply paint command {integer:command} to {a pointer to a paint app:app} with {font:typeface}:
+function apply paint command {integer:command} to {a pointer to a paint app:app} with {a pointer to a paint face:typeface}:
     execute:
         if command = paint no command:
             return nothing
         if command != paint undo command:
             commit the text of app with typeface
-        if (command >= 1) and (command <= 9):
-            set app's tool to command
+        if (command >= 1) and (command <= 10):
+            choose tool command for app
         else if command >= paint first swatch command:
             set palette to the paint palette
             set index to command - paint first swatch command
@@ -447,6 +578,7 @@ function apply paint command {integer:command} to {a pointer to a paint app:app}
         else if command = paint clear command:
             begin a change in app
             fill paint canvas app's image with (the paint color from hex "ffffff")
+            touch everything in app
             finish a change named (label "Clear canvas" "Canvas wissen" for app) in app
         else if command = paint undo command:
             if app's typing:
@@ -456,8 +588,7 @@ function apply paint command {integer:command} to {a pointer to a paint app:app}
                     append (the last item of app's steps) to app's undoneSteps
                     remove item ((the length of app's steps) - 1) from app's steps
                 set app's image to undo app's image in (the address of app's history)
-                free paint canvas app's base
-                set app's base to the paint copy of app's image
+                touch everything in app
                 set app's redrawn to true
         else if command = paint redo command:
             if app's history can redo:
@@ -465,8 +596,7 @@ function apply paint command {integer:command} to {a pointer to a paint app:app}
                     append (the last item of app's undoneSteps) to app's steps
                     remove item ((the length of app's undoneSteps) - 1) from app's undoneSteps
                 set app's image to redo app's image in (the address of app's history)
-                free paint canvas app's base
-                set app's base to the paint copy of app's image
+                touch everything in app
                 set app's redrawn to true
         else if command = paint filled command:
             set app's filled to (app's filled = false)

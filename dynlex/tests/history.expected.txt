@@ -1,0 +1,15 @@
+patch x 5
+patch y 4
+patch width 5
+patch height 4
+patch whole 0
+after undo green at 6 5 255
+can redo 1
+after redo green at 6 5 38
+outside stays white 255
+turned width 20
+undone width 30
+undone green at 6 5 38
+first undo green at 6 5 255
+redone width 20
+unchanged states 3

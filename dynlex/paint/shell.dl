@@ -1,0 +1,1228 @@
+# The native shell: draws the measured browser editor (skin_data.dl) into a
+# frame on the processor, the way the browser composites it: sRGB blending,
+# the same fonts, shaping and SVG icons. The canvas, its decorations, the
+# history rows, the menus and the controls change with the document and are
+# drawn here; clicks resolve to the skin's actions.
+import dynlex/paint/skin_data.dl
+import dynlex/paint/app.dl
+import dynlex/paint/typeset.dl
+import dynlex/paint/vector.dl
+
+# --- Shell state beside the editor's own ---
+
+class:
+    patterns:
+        [a|] paint shell
+    members:
+        skin as a paint skin
+        regular as a paint face
+        medium as a paint face
+        semibold as a paint face
+        display as a paint face
+        mono as a paint face
+        fallback as a paint face
+        images as a pointer to a list
+        keys as a pointer to a list
+        tab as an integer
+        opened as an integer
+        hovered as a string
+        status as a string
+        dragging as a string
+        base as a paint canvas
+        composed as a paint canvas
+        signature as a string
+        pen as an integer
+        panelHidden as a boolean
+        vectors as a boolean
+        fieldNames as a pointer to a list
+        fieldValues as a pointer to a list
+        focused as a string
+        documentName as a string
+        overlayX as an integer
+        overlayY as an integer
+        overlayW as an integer
+        overlayH as an integer
+        overlayText as a string
+
+function a new paint shell with fonts in {string:folder}:
+    execute:
+        set skin to a new paint skin
+        fill (the address of skin) with the measured shell
+        set regular to a paint face from (folder + (the string form of "/inter-latin-400-normal.woff2"))
+        set medium to a paint face from (folder + (the string form of "/inter-latin-500-normal.woff2"))
+        set semibold to a paint face from (folder + (the string form of "/inter-latin-600-normal.woff2"))
+        set display to a paint face from (folder + (the string form of "/space-grotesk-latin-700-normal.woff2"))
+        set mono to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf")
+        # What fontconfig gives the browser for characters Inter's subset lacks.
+        set fallback to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+        set images to an empty list of a paint canvas
+        set keys to an empty list of a string
+        # One cached image per entry, and one more for the canvas shadow.
+        loop index from 0 to ((the length of (skin's entries)) + 1):
+            append (a new paint canvas 1 by 1 filled with the transparent paint color) to images
+            append (the string form of "") to keys
+        return @intrinsic("construct", a paint shell, skin, regular, medium, semibold, display, mono, fallback, images, keys, 0, -1, the string form of "", the string form of "Concept opgeslagen op dit apparaat", the string form of "", a new paint canvas 1 by 1 filled with the transparent paint color, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of "", 0, false, true, an empty list of a string, an empty list of a string, the string form of "", the string form of "Untitled", 0, 0, 0, 0, the string form of "")
+
+function the face numbered {integer:number} in {a pointer to a paint shell:shell}:
+    execute:
+        if number = 1:
+            return the address of (shell's medium)
+        if number = 2:
+            return the address of (shell's semibold)
+        if number = 3:
+            return the address of (shell's display)
+        if number = 4:
+            return the address of (shell's mono)
+        if number = 5:
+            return the address of (shell's fallback)
+        return the address of (shell's regular)
+
+# The runtime presents to an sRGB swapchain but takes linear values: the
+# frame is converted with this before upload.
+function the linear channel of {integer:value}:
+    execute:
+        set unit to (value as a 64 bit floating-point number) / 255.0
+        if unit <= 0.04045:
+            set unit to unit / 12.92
+        else:
+            set unit to ((unit + 0.055) / 1.055) raised to the power of 2.4
+        return ((the rounded value of (unit * 255.0)) as an integer) clamped between 0 and 255
+
+# --- Drawing primitives on the frame (a paint canvas, opaque) ---
+
+function fill {paint canvas:frame} at {integer:x} {integer:y} sized {integer:w} by {integer:h} with {paint color:color}:
+    execute:
+        set left to the maximum of x and 0
+        set top to the maximum of y and 0
+        set right to the minimum of (x + w) and frame's width
+        set bottom to the minimum of (y + h) and frame's height
+        if ((left >= right) or (top >= bottom)) or (color's alpha = 0):
+            return nothing
+        set pixels to frame's pixels
+        if color's alpha = 255:
+            set words to pixels as a pointer to an integer
+            set word to ((color's red | (color's green << 8)) | (color's blue << 16)) | (255 << 24)
+            loop row from top to bottom:
+                set start to row * frame's width
+                loop column from left to right:
+                    store word at (words + (start + column))
+            return nothing
+        loop row from top to bottom:
+            loop column from left to right:
+                blend color at (((row * frame's width) + column) * 4) in pixels by 255
+
+# Composites the straight-alpha patch with its top-left corner at (x, y).
+function blit {paint canvas:patch} onto {paint canvas:frame} at {integer:x} {integer:y}:
+    execute:
+        blit patch onto frame at x y within 0 0 frame's width frame's height
+
+# Composites the part (sx, sy, sw x sh) of the patch at (x, y), repeated to
+# fill width x height when that is larger (a one-pixel row or column then
+# stretches), clipped to the clip rectangle.
+function blit {paint canvas:patch} from {integer:sx} {integer:sy} sized {integer:sw} by {integer:sh} onto {paint canvas:frame} at {integer:x} {integer:y} stretched to {integer:width} by {integer:height} within {integer:clipX} {integer:clipY} {integer:clipW} {integer:clipH}:
+    execute:
+        set pixels to frame's pixels
+        set source to patch's pixels
+        set top to the maximum of (the maximum of clipY and 0) and y
+        set bottom to the minimum of (the minimum of (clipY + clipH) and frame's height) and (y + height)
+        set left to the maximum of (the maximum of clipX and 0) and x
+        set right to the minimum of (the minimum of (clipX + clipW) and frame's width) and (x + width)
+        loop py from top to bottom:
+            set row to sy + (the remainder of (py - y) divided by sh)
+            loop px from left to right:
+                set column to sx + (the remainder of (px - x) divided by sw)
+                set offset to ((row * patch's width) + column) * 4
+                set alpha to ((the item at (offset + 3) in source) as an integer) & 255
+                if alpha > 0:
+                    set color to the paint color red (((the item at offset in source) as an integer) & 255) green (((the item at (offset + 1) in source) as an integer) & 255) blue (((the item at (offset + 2) in source) as an integer) & 255) alpha alpha
+                    blend color at (((py * frame's width) + px) * 4) in pixels by 255
+
+function blit {paint canvas:patch} onto {paint canvas:frame} at {integer:x} {integer:y} within {integer:clipX} {integer:clipY} {integer:clipW} {integer:clipH}:
+    execute:
+        set pixels to frame's pixels
+        set source to patch's pixels
+        set top to the maximum of clipY and 0
+        set bottom to the minimum of (clipY + clipH) and frame's height
+        set left to the maximum of clipX and 0
+        set right to the minimum of (clipX + clipW) and frame's width
+        loop row from 0 to patch's height:
+            set py to y + row
+            if (py >= top) and (py < bottom):
+                loop column from 0 to patch's width:
+                    set px to x + column
+                    if (px >= left) and (px < right):
+                        set offset to ((row * patch's width) + column) * 4
+                        set alpha to ((the item at (offset + 3) in source) as an integer) & 255
+                        if alpha > 0:
+                            set color to the paint color red (((the item at offset in source) as an integer) & 255) green (((the item at (offset + 1) in source) as an integer) & 255) blue (((the item at (offset + 2) in source) as an integer) & 255) alpha alpha
+                            blend color at (((py * frame's width) + px) * 4) in pixels by 255
+
+# The entry's SVG at the size, rasterised once and kept until the size or
+# the markup changes.
+local function the picture of entry {integer:index} with {string:markup} sized {integer:w} by {integer:h} in {a pointer to a paint shell:shell}:
+    execute:
+        set wanted to ((markup + (the string form of "@")) + (the string form of w)) + ((the string form of "x") + (the string form of h))
+        if (the item at index in (shell's keys)) = wanted:
+            return the item at index in (shell's images)
+        free paint canvas (the item at index in (shell's images))
+        set image to the paint canvas of svg markup sized w by h
+        replace item at index index in (shell's images) with image
+        replace item at index index in (shell's keys) with wanted
+        return image
+
+function the hex of {paint color:color}:
+    execute:
+        set digits to the string form of "0123456789abcdef"
+        set out to the string form of "#"
+        set value to ((color's red << 16) | (color's green << 8)) | color's blue
+        loop index from 0 to 6:
+            set nibble to (value >> (20 - (index * 4))) & 15
+            set out to out + (the substring of digits from nibble spanning 1 byte)
+        return out
+
+local function {string:text} contains {C string:fragment}:
+    execute:
+        set wanted to the string form of fragment
+        loop index from 0 to ((text's length - wanted's length) + 1):
+            if text has wanted at offset index:
+                return true
+        return false
+
+local function {string:markup} with {C string:field} as {string:value}:
+    execute:
+        set pattern to the string form of field
+        set out to the string form of ""
+        set index to 0
+        loop while index < markup's length:
+            if markup has pattern at offset index:
+                set out to out + value
+                set index to index + pattern's length
+            else:
+                set out to out + (the substring of markup from index spanning 1 byte)
+                set index to index + 1
+        return out
+
+# --- Fields ---
+
+function the paint tool key of {integer:tool}:
+    execute:
+        if tool = paint brush tool:
+            return the string form of "brush"
+        if tool = paint eraser tool:
+            return the string form of "eraser"
+        if tool = paint fill tool:
+            return the string form of "fill"
+        if tool = paint picker tool:
+            return the string form of "picker"
+        if tool = paint line tool:
+            return the string form of "line"
+        if tool = paint rectangle tool:
+            return the string form of "rectangle"
+        if tool = paint ellipse tool:
+            return the string form of "ellipse"
+        if tool = paint text tool:
+            return the string form of "text"
+        if tool = paint crop tool:
+            return the string form of "crop"
+        if tool = paint select tool:
+            return the string form of "select"
+        return the string form of "select"
+
+local function the document name of {paint app:app}:
+    execute:
+        if app's path's length = 0:
+            return the string form of "Untitled"
+        set start to 0
+        set stop to app's path's length
+        loop index from 0 to app's path's length:
+            set character to (the character at index in app's path) as an integer
+            if character = 47:
+                set start to index + 1
+        loop index from start to app's path's length:
+            if ((the character at index in app's path) as an integer) = 46:
+                set stop to index
+        return the substring of app's path from start spanning (stop - start) bytes
+
+local function the document extension of {paint app:app}:
+    execute:
+        if app's path's length = 0:
+            return the string form of ".ifcx"
+        set name to the document name of app
+        set dot to app's path's length
+        loop index from 0 to app's path's length:
+            if ((the character at index in app's path) as an integer) = 46:
+                set dot to index
+        return the substring of app's path from dot spanning (app's path's length - dot) bytes
+
+class:
+    patterns:
+        [a|] paint shell view
+    members:
+        app as a paint app
+        width as an integer
+        height as an integer
+        mouseX as an integer
+        mouseY as an integer
+        step as an integer
+
+local function the value of field {string:name} for {paint shell view:view} in {a pointer to a paint shell:shell}:
+    execute:
+        set app to view's app
+        if name = (the string form of "name"):
+            if app's path's length = 0:
+                return shell's documentName
+            return the document name of app
+        if name = (the string form of "ext"):
+            return the document extension of app
+        if name = (the string form of "w"):
+            return the string form of app's image's width
+        if name = (the string form of "h"):
+            return the string form of app's image's height
+        if name = (the string form of "tool"):
+            return the name of tool app's tool for app
+        if name = (the string form of "status"):
+            return shell's status
+        if name = (the string form of "mx"):
+            return the string form of view's mouseX
+        if name = (the string form of "my"):
+            return the string form of view's mouseY
+        if name = (the string form of "zoom"):
+            return the string form of ((the rounded value of (app's zoom * 100.0)) as an integer)
+        if name = (the string form of "count"):
+            return the string form of (the length of app's steps)
+        if name = (the string form of "opacity"):
+            return the string form of app's opacity
+        if name = (the string form of "step"):
+            return (view's step padded to 2 digits)
+        if name = (the string form of "stepname"):
+            set steps to app's steps
+            return the item at (view's step - 1) in steps
+        if name contains ".":
+            return the field named name in shell
+        return name
+
+# The entry's text with its {fields} filled in.
+function the label of {paint skin entry:entry} for {paint shell view:view} in {a pointer to a paint shell:shell}:
+    execute:
+        set text to entry's text
+        if (text contains "{") = false:
+            return text
+        set out to the string form of ""
+        set index to 0
+        loop while index < text's length:
+            set character to (the character at index in text) as an integer
+            if character = 123:
+                set close to index + 1
+                loop while (close < text's length) and (((the character at close in text) as an integer) != 125):
+                    set close to close + 1
+                set out to out + (the value of field (the substring of text from (index + 1) spanning ((close - index) - 1) bytes) for view in shell)
+                set index to close + 1
+            else:
+                set out to out + (the substring of text from index spanning 1 byte)
+                set index to index + 1
+        return out
+
+local function draw the lettering of entry {paint skin entry:entry} in {paint skin box:box} as {string:text} on {paint canvas:frame} in {a pointer to a paint shell:shell}:
+    execute:
+        set typeface to the face numbered entry's face in shell
+        set ascent to the ascent of typeface at entry's size pixels
+        set left to (the rounded value of (box's left * 64.0)) as an integer
+        if (entry's align = 3) or (entry's align = 5):
+            # Wrapped (5 centred): greedy lines as wide as the element, one line pitch apart.
+            set baseline to ((the rounded value of box's top) as an integer) + ascent
+            set limit to (box's w * 64)
+            set line to the string form of ""
+            set word to the string form of ""
+            set index to 0
+            loop while index <= text's length:
+                set ending to index = text's length
+                set character to 32
+                if ending = false:
+                    set character to (the character at index in text) as an integer
+                if character = 32:
+                    set candidate to word
+                    if line's length > 0:
+                        set candidate to (line + (the string form of " ")) + word
+                    if ((the width of candidate with typeface at entry's size pixels spaced entry's spacing) > limit) and (line's length > 0):
+                        set centered to 0
+                        if entry's align = 5:
+                            set centered to (limit - (the width of line with typeface at entry's size pixels spaced entry's spacing)) / 2
+                        ignore draw line at (left + centered) baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame
+                        set baseline to baseline + ((the rounded value of entry's h) as an integer)
+                        set line to word
+                    else:
+                        set line to candidate
+                    set word to the string form of ""
+                else:
+                    set word to word + (the substring of text from index spanning 1 byte)
+                set index to index + 1
+            if line's length > 0:
+                set centered to 0
+                if entry's align = 5:
+                    set centered to (limit - (the width of line with typeface at entry's size pixels spaced entry's spacing)) / 2
+                ignore draw line at (left + centered) baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame
+            return nothing
+        set baseline to ((the rounded value of box's top) as an integer) + ascent
+        if entry's align = 4:
+            # Follows the text drawn just before, the measured gap after it.
+            set left to shell's pen + ((the rounded value of (entry's w * 64.0)) as an integer)
+            set shell's pen to left + (draw text at left baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame)
+            return nothing
+        if (entry's align != 0) and (entry's align != 4):
+            set advance to the width of text with typeface at entry's size pixels spaced entry's spacing
+            set room to box's w * 64
+            if entry's align = 1:
+                set left to (box's x * 64) + ((room - advance) / 2)
+                set lineHeight to ascent + (the descent of typeface at entry's size pixels)
+                set baseline to (box's y + ((box's h - lineHeight) / 2)) + ascent
+            else:
+                set left to ((box's x * 64) + room) - advance
+        set shell's pen to left + (draw text at left baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame)
+
+# --- Dialog fields: values by name ("new.width"), one of them focused. ---
+
+function the field {C string:name} in {a pointer to a paint shell:shell}:
+    execute:
+        return the field named (the string form of name) in shell
+
+function the field named {string:name} in {a pointer to a paint shell:shell}:
+    execute:
+        set names to shell's fieldNames
+        loop index from 0 to the length of names:
+            if (the item at index in names) = name:
+                return the item at index in (shell's fieldValues)
+        return the string form of ""
+
+function set the field named {string:name} to {string:value} in {a pointer to a paint shell:shell}:
+    execute:
+        set names to shell's fieldNames
+        loop index from 0 to the length of names:
+            if (the item at index in names) = name:
+                replace item at index index in (shell's fieldValues) with value
+                return nothing
+        append name to names
+        append value to (shell's fieldValues)
+
+function set the field {C string:name} to {string:value} in {a pointer to a paint shell:shell}:
+    execute:
+        set the field named (the string form of name) to value in shell
+
+# The number in a field, or the fallback when it holds none.
+function the number in field {C string:name} or {integer:fallback} in {a pointer to a paint shell:shell}:
+    execute:
+        set text to the field name in shell
+        set value to 0
+        set digits to 0
+        set negative to false
+        loop index from 0 to text's length:
+            set character to (the character at index in text) as an integer
+            if (character = 45) and (index = 0):
+                set negative to true
+            else if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set digits to digits + 1
+        if digits = 0:
+            return fallback
+        if negative:
+            return 0 - value
+        return value
+
+# The part of a control's kind ("range:adjust.brightness:-100:100") at the
+# position, colons separating them.
+function the segment {integer:wanted} of {string:kind}:
+    execute:
+        set counted to 0
+        set start to 0
+        loop index from 0 to (kind's length + 1):
+            if (index = kind's length) or (((the character at index in kind) as an integer) = 58):
+                if counted = wanted:
+                    return the substring of kind from start spanning (index - start) bytes
+                set counted to counted + 1
+                set start to index + 1
+        return the string form of ""
+
+function the integer in {string:text}:
+    execute:
+        set value to 0
+        set negative to false
+        loop index from 0 to text's length:
+            set character to (the character at index in text) as an integer
+            if character = 45:
+                set negative to true
+            else if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+        if negative:
+            return 0 - value
+        return value
+
+# --- The colour picker: HSV in the field and bar, the colour in the fields ---
+
+# The colour at hue (degrees), saturation and value (0..1).
+function the paint color of hue {a 64 bit floating-point number:hue} saturation {a 64 bit floating-point number:saturation} value {a 64 bit floating-point number:brightness}:
+    execute:
+        set sector to (hue / 60.0) - ((the floor of (hue / 360.0)) * 6.0)
+        set red to the hsv channel 5.0 of sector saturation saturation value brightness
+        set green to the hsv channel 3.0 of sector saturation saturation value brightness
+        set blue to the hsv channel 1.0 of sector saturation saturation value brightness
+        return the paint color red red green green blue blue
+
+local function the hsv channel {a 64 bit floating-point number:offset} of {a 64 bit floating-point number:sector} saturation {a 64 bit floating-point number:saturation} value {a 64 bit floating-point number:brightness}:
+    execute:
+        set k to offset + sector
+        if k >= 6.0:
+            set k to k - 6.0
+        set weight to the minimum of k and (the minimum of (4.0 - k) and 1.0)
+        set weight to the maximum of weight and 0.0
+        return ((the rounded value of ((brightness - ((brightness * saturation) * weight)) * 255.0)) as an integer) clamped between 0 and 255
+
+# Hue, saturation and value of the colour; a grey keeps the previous hue.
+class:
+    patterns:
+        [a|] paint hsv
+    members:
+        hue as a 64 bit floating-point number
+        saturation as a 64 bit floating-point number
+        brightness as a 64 bit floating-point number
+
+function the hsv of {paint color:color} keeping hue {a 64 bit floating-point number:previous}:
+    execute:
+        set r to color's red as a 64 bit floating-point number
+        set g to color's green as a 64 bit floating-point number
+        set b to color's blue as a 64 bit floating-point number
+        set high to the maximum of r and (the maximum of g and b)
+        set low to the minimum of r and (the minimum of g and b)
+        set spread to high - low
+        set angle to previous
+        if spread > 0.0:
+            if high = r:
+                set angle to ((g - b) / spread) * 60.0
+            else if high = g:
+                set angle to (((b - r) / spread) + 2.0) * 60.0
+            else:
+                set angle to (((r - g) / spread) + 4.0) * 60.0
+            if angle < 0.0:
+                set angle to angle + 360.0
+        set saturation to 0.0
+        if high > 0.0:
+            set saturation to spread / high
+        return @intrinsic("construct", a paint hsv, angle, saturation, high / 255.0)
+
+function the picker hue of {paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        set stored to the field "color.h" in shell
+        set previous to 0.0
+        if stored's length > 0:
+            set previous to (the integer in stored) as a 64 bit floating-point number
+        return (the hsv of app's color keeping hue previous)'s hue
+
+# What a colour field shows: what is typed while it has focus, else the colour.
+function the colour field {string:name} for {paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        if name = shell's focused:
+            return the field named name in shell
+        set color to app's color
+        if name = (the string form of "color.hex"):
+            return the hex of color
+        if name = (the string form of "color.red"):
+            return the string form of color's red
+        if name = (the string form of "color.green"):
+            return the string form of color's green
+        return the string form of color's blue
+
+local function draw the picker control {string:kind} in {paint skin box:box} for {paint app:app} on {paint canvas:frame} in {a pointer to a paint shell:shell}:
+    execute:
+        set hue to the picker hue of app in shell
+        set pixels to frame's pixels
+        if kind = (the string form of "colorpreview"):
+            fill frame at (box's x + 1) (box's y + 1) sized (box's w - 2) by (box's h - 2) with app's color
+            return nothing
+        set radius to 6
+        loop row from 0 to box's h:
+            loop column from 0 to box's w:
+                # Rounded corners: skip what lies outside the corner circles.
+                set dx to 0
+                set dy to 0
+                if column < radius:
+                    set dx to radius - column
+                if column >= (box's w - radius):
+                    set dx to (column - (box's w - radius)) + 1
+                if row < radius:
+                    set dy to radius - row
+                if row >= (box's h - radius):
+                    set dy to (row - (box's h - radius)) + 1
+                if ((dx * dx) + (dy * dy)) <= (radius * radius):
+                    set px to box's x + column
+                    set py to box's y + row
+                    if ((px >= 0) and (py >= 0)) and ((px < frame's width) and (py < frame's height)):
+                        set color to app's color
+                        if kind = (the string form of "colorfield"):
+                            set color to the paint color of hue hue saturation ((column as a 64 bit floating-point number) / ((box's w - 1) as a 64 bit floating-point number)) value (1.0 - ((row as a 64 bit floating-point number) / ((box's h - 1) as a 64 bit floating-point number)))
+                        else:
+                            set color to the paint color of hue (((column as a 64 bit floating-point number) / ((box's w - 1) as a 64 bit floating-point number)) * 360.0) saturation 1.0 value 1.0
+                        fill frame at px py sized 1 by 1 with color
+        set state to the hsv of app's color keeping hue hue
+        if kind = (the string form of "colorfield"):
+            # The marker: 12 px, a white ring, a faint dark edge, filled with the colour.
+            set cx to box's x + ((the rounded value of (state's saturation * (box's w as a 64 bit floating-point number))) as an integer)
+            set cy to box's y + ((the rounded value of ((1.0 - state's brightness) * (box's h as a 64 bit floating-point number))) as an integer)
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"><circle cx=\"8\" cy=\"8\" r=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-opacity=\"0.4\"/><circle cx=\"8\" cy=\"8\" r=\"5\" fill=\"{color}\" stroke=\"#fff\" stroke-width=\"2\"/></svg>"
+            set picture to the paint canvas of svg (markup with "{color}" as (the hex of app's color)) sized 16 by 16
+            blit picture onto frame at (cx - 8) (cy - 8)
+            free paint canvas picture
+        else:
+            set tx to box's x + ((the rounded value of ((hue / 360.0) * (box's w as a 64 bit floating-point number))) as an integer)
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"18\"><rect x=\"0.5\" y=\"0.5\" width=\"9\" height=\"17\" rx=\"3.5\" fill=\"none\" stroke=\"#000\" stroke-opacity=\"0.4\"/><rect x=\"2\" y=\"2\" width=\"6\" height=\"14\" rx=\"2\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2\"/></svg>"
+            set picture to the paint canvas of svg markup sized 10 by 18
+            blit picture onto frame at (tx - 5) (box's y - 3)
+            free paint canvas picture
+
+# --- Controls: the browser's native widgets as WebKitGTK draws them. ---
+
+local function draw control {paint skin entry:entry} in {paint skin box:box} for {paint shell view:view} on {paint canvas:frame} in {a pointer to a paint shell:shell} as image {integer:index}:
+    execute:
+        set app to view's app
+        set kind to entry's action
+        if kind has (the string form of "color") at offset 0:
+            if kind != (the string form of "color"):
+                draw the picker control kind in box for app on frame in shell
+                return nothing
+        if kind contains ":":
+            draw the field control kind in box for view on frame in shell as image index
+            return nothing
+        if kind = (the string form of "number"):
+            set typeface to the face numbered 0 in shell
+            set baseline to (box's y + ((box's h - 12) / 2)) + (the ascent of typeface at 10 pixels)
+            ignore draw (the string form of app's size) at ((box's x + 6) * 64) baseline with typeface at 10 pixels spaced 0 in (the paint color from hex "36363e") on frame
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><rect x=\"0.5\" y=\"0.5\" width=\"15\" height=\"15\" rx=\"3\" fill=\"#ffffff\" stroke=\"#d5d5d8\"/><path d=\"M5.5 6.5 8 4 10.5 6.5M5.5 9.5 8 12 10.5 9.5\" fill=\"none\" stroke=\"#36363e\" stroke-width=\"1.2\"/></svg>"
+            blit (the picture of entry index with markup sized 16 by 16 in shell) onto frame at ((box's x + box's w) - 22) (box's y + 4)
+            return nothing
+        if (kind = (the string form of "checkbox")) and (shell's vectors = false):
+            # Unchecked, as WebKitGTK draws it: a white box with a grey edge.
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"13\" height=\"13\" viewBox=\"0 0 13 13\"><rect x=\"0.5\" y=\"0.5\" width=\"12\" height=\"12\" rx=\"2.5\" fill=\"#ffffff\" stroke=\"#bbbbbc\"/></svg>"
+            blit (the picture of entry index with markup sized 13 by 13 in shell) onto frame at box's x box's y
+            return nothing
+        if kind = (the string form of "checkbox"):
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"13\" height=\"13\" viewBox=\"0 0 13 13\"><rect width=\"13\" height=\"13\" rx=\"3\" fill=\"#d97706\"/><path d=\"M3 6.6 5.4 9 10 4.3\" fill=\"none\" stroke=\"#ffffff\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+            blit (the picture of entry index with markup sized 13 by 13 in shell) onto frame at box's x box's y
+            return nothing
+        if kind = (the string form of "range"):
+            # The opacity slider (1..100) or the status bar's zoom (10..400).
+            set low to 1.0
+            set high to 100.0
+            set value to app's opacity as a 64 bit floating-point number
+            set track to the paint color from hex "e4e4e7"
+            if box's y > (view's height - 40):
+                set low to 10.0
+                set high to 400.0
+                set value to app's zoom * 100.0
+                set track to the paint color from hex "27272a"
+            set fraction to ((value - low) / (high - low)) clamped between 0.0 and 1.0
+            set thumb to 18
+            set center to (box's x + (thumb / 2)) + ((the rounded value of (fraction * ((box's w - thumb) as a 64 bit floating-point number))) as an integer)
+            set middle to box's y + (box's h / 2)
+            fill frame at box's x (middle - 2) sized box's w by 4 with track
+            fill frame at box's x (middle - 2) sized (center - box's x) by 4 with (the paint color from hex "d97706")
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 20 20\"><circle cx=\"10\" cy=\"10\" r=\"8.5\" fill=\"#ffffff\" stroke=\"#c8c8cc\"/></svg>"
+            blit (the picture of entry index with markup sized 20 by 20 in shell) onto frame at (center - 10) (middle - 10)
+            return nothing
+
+# input:focus { outline: 2px solid accent; outline-offset: 1px }
+local function draw a focus ring around {paint skin box:box} on {paint canvas:frame}:
+    execute:
+        set outline to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{W}\" height=\"{H}\"><rect x=\"1\" y=\"1\" width=\"{w}\" height=\"{h}\" rx=\"7\" fill=\"none\" stroke=\"#d97706\" stroke-width=\"2\"/></svg>"
+        set outline to outline with "{W}" as (the string form of (box's w + 6))
+        set outline to outline with "{H}" as (the string form of (box's h + 6))
+        set outline to outline with "{w}" as (the string form of (box's w + 4))
+        set outline to outline with "{h}" as (the string form of (box's h + 4))
+        set picture to the paint canvas of svg outline sized (box's w + 6) by (box's h + 6)
+        blit picture onto frame at (box's x - 3) (box's y - 3)
+        free paint canvas picture
+
+# A dialog's field: its box is in the skin; here its value, the focus ring
+# (outline 2px accent, 1px off the box), the caret, number spin buttons, the
+# select's arrow and the sliders.
+local function draw the field control {string:kind} in {paint skin box:box} for {paint shell view:view} on {paint canvas:frame} in {a pointer to a paint shell:shell} as image {integer:index}:
+    execute:
+        set sort to the segment 0 of kind
+        set name to the segment 1 of kind
+        set value to the field named name in shell
+        if name has (the string form of "color.") at offset 0:
+            set value to the colour field name for view's app in shell
+        set ink to the paint color from hex "36363e"
+        set typeface to the face numbered 0 in shell
+        if sort = (the string form of "range"):
+            set low to the integer in (the segment 2 of kind)
+            set high to the integer in (the segment 3 of kind)
+            set current to the integer in value
+            set fraction to (((current - low) as a 64 bit floating-point number) / ((high - low) as a 64 bit floating-point number)) clamped between 0.0 and 1.0
+            set center to (box's x + 9) + ((the rounded value of (fraction * ((box's w - 18) as a 64 bit floating-point number))) as an integer)
+            set middle to box's y + (box's h / 2)
+            fill frame at box's x (middle - 2) sized box's w by 4 with (the paint color from hex "e4e4e7")
+            fill frame at box's x (middle - 2) sized (center - box's x) by 4 with (the paint color from hex "d97706")
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 20 20\"><circle cx=\"10\" cy=\"10\" r=\"8.5\" fill=\"#ffffff\" stroke=\"#c8c8cc\"/></svg>"
+            blit (the picture of entry index with markup sized 20 by 20 in shell) onto frame at (center - 10) (middle - 10)
+            if name = shell's focused:
+                draw a focus ring around box on frame
+            return nothing
+        set shown to value
+        set advance to 0
+        if sort = (the string form of "password"):
+            set shown to the string form of ""
+            loop letter from 0 to value's length:
+                set shown to shown + (the string form of "•")
+        set size to 11
+        set baseline to (box's y + ((box's h - 13) / 2)) + (the ascent of typeface at size pixels)
+        set left to (box's x + 9) * 64
+        if sort != (the string form of "select"):
+            set advance to draw shown at left baseline with typeface at size pixels spaced 0 in ink on frame
+        if sort = (the string form of "select"):
+            # WebKitGTK's menu button: flat #f4f4f4, a #bbbbbc edge, the value,
+            # and Adwaita's dark triangle 13 px from the right.
+            fill frame at box's x box's y sized box's w by box's h with (the paint color from hex "f4f4f4")
+            fill frame at box's x box's y sized box's w by 1 with (the paint color from hex "bbbbbc")
+            fill frame at box's x ((box's y + box's h) - 1) sized box's w by 1 with (the paint color from hex "bbbbbc")
+            fill frame at box's x box's y sized 1 by box's h with (the paint color from hex "bbbbbc")
+            fill frame at ((box's x + box's w) - 1) box's y sized 1 by box's h with (the paint color from hex "bbbbbc")
+            set advance to draw shown at ((box's x + 12) * 64) baseline with typeface at size pixels spaced 0 in ink on frame
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"5\" viewBox=\"0 0 8 5\"><path d=\"M0 0H8L4 4.5Z\" fill=\"#2e3436\"/></svg>"
+            blit (the picture of entry index with markup sized 8 by 5 in shell) onto frame at ((box's x + box's w) - 17) (box's y + ((box's h - 5) / 2))
+        if sort = (the string form of "number"):
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><rect x=\"0.5\" y=\"0.5\" width=\"15\" height=\"15\" rx=\"3\" fill=\"#ffffff\" stroke=\"#d5d5d8\"/><path d=\"M5.5 6.5 8 4 10.5 6.5M5.5 9.5 8 12 10.5 9.5\" fill=\"none\" stroke=\"#36363e\" stroke-width=\"1.2\"/></svg>"
+            blit (the picture of entry index with markup sized 16 by 16 in shell) onto frame at ((box's x + box's w) - 24) (box's y + ((box's h - 16) / 2))
+        if name = shell's focused:
+            # The caret after the text, and the focus ring.
+            fill frame at ((left + advance) / 64) ((baseline - (the ascent of typeface at size pixels)) + 1) sized 1 by 13 with ink
+            draw a focus ring around box on frame
+
+# --- The canvas, as the browser editor lays it out ---
+
+class:
+    patterns:
+        [a|] paint stage
+    members:
+        x as a 64 bit floating-point number
+        y as a 64 bit floating-point number
+        scale as a 64 bit floating-point number
+        areaX as an integer
+        areaY as an integer
+        areaW as an integer
+        areaH as an integer
+
+# The workspace: the measured canvas area of the current tab (the
+# rectangle in the workspace colour), the whole window between title and
+# status bar in focus mode.
+function the paint workspace of {paint app:app} in {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set state to the paint skin state of app in shell
+        set entries to shell's skin's entries
+        loop index from 0 to the length of entries:
+            set entry to the item at index in entries
+            if ((entry's kind = paint skin rectangle) and (entry's color's red = 232)) and ((entry's color's blue = 229) and (entry shows in state)):
+                return the box of entry in width by height within state
+        return @intrinsic("construct", a paint skin box, 0, 224, width - 236, (height - 29) - 224, 0.0, 224.0)
+
+# Where the canvas sits in the workspace: centred in the scroll area below
+# the 34-pixel top line and above the 26-pixel tip, padding 12/24/16, with
+# the size caption 12 pixels below it; app's pan moves it from there.
+function the paint stage of {paint app:app} in {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set area to the paint workspace of app in width by height in shell
+        set areaX to area's x
+        set areaY to area's y
+        set areaW to area's w
+        set areaH to area's h
+        set scale to app's zoom
+        set shownW to (app's image's width as a 64 bit floating-point number) * scale
+        set shownH to (app's image's height as a 64 bit floating-point number) * scale
+        set x to ((areaX as a 64 bit floating-point number) + (((areaW as a 64 bit floating-point number) - shownW) / 2.0)) + app's panX
+        set scrollTop to (areaY + 34) as a 64 bit floating-point number
+        set room to ((areaH - 34) - 26) - 28
+        set content to shownH + 23.0
+        set y to ((scrollTop + 12.0) + (((room as a 64 bit floating-point number) - content) / 2.0)) + app's panY
+        if content > (room as a 64 bit floating-point number):
+            set y to (scrollTop + 12.0) + app's panY
+        if shownW > ((areaW - 48) as a 64 bit floating-point number):
+            set x to ((areaX + 24) as a 64 bit floating-point number) + app's panX
+        return @intrinsic("construct", a paint stage, the floor of x, the floor of y, scale, areaX, areaY, areaW, areaH)
+
+# The browser editor's fit: whole percents, 10..400.
+function fit {a pointer to a paint app:app} into the shell of {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set stage to the paint stage of (the value at app) in width by height in shell
+        set across to ((stage's areaW - 48) as a 64 bit floating-point number) / (app's image's width as a 64 bit floating-point number)
+        set down to ((stage's areaH - 112) as a 64 bit floating-point number) / (app's image's height as a 64 bit floating-point number)
+        set percent to ((the floor of ((the minimum of across and down) * 100.0)) as an integer) clamped between 10 and 400
+        set app's zoom to (percent as a 64 bit floating-point number) / 100.0
+        set app's panX to 0.0
+        set app's panY to 0.0
+
+# Sets the zoom to the percentage keeping the canvas point under (x, y), in
+# window pixels, in place.
+function zoom {a pointer to a paint app:app} to {integer:level} percent around {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} in {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set before to the paint stage of (the value at app) in width by height in shell
+        set canvasX to (x - before's x) / before's scale
+        set canvasY to (y - before's y) / before's scale
+        set app's zoom to ((level clamped between 10 and 400) as a 64 bit floating-point number) / 100.0
+        set after to the paint stage of (the value at app) in width by height in shell
+        set app's panX to app's panX + (x - (after's x + (canvasX * after's scale)))
+        set app's panY to app's panY + (y - (after's y + (canvasY * after's scale)))
+
+# --- The canvas on the workspace ---
+
+local function fill {paint canvas:frame} at {integer:x} {integer:y} sized {integer:w} by {integer:h} with {paint color:color} clipped to {integer:clipX} {integer:clipY} {integer:clipW} {integer:clipH}:
+    execute:
+        set left to the maximum of x and clipX
+        set top to the maximum of y and clipY
+        set right to the minimum of (x + w) and (clipX + clipW)
+        set bottom to the minimum of (y + h) and (clipY + clipH)
+        if (right > left) and (bottom > top):
+            fill frame at left top sized (right - left) by (bottom - top) with color
+
+# Copies the rectangle of source into target, both the same size.
+local function copy {paint canvas:source} into {paint canvas:target} within {integer:x} {integer:y} {integer:w} {integer:h}:
+    execute:
+        set left to the maximum of x and 0
+        set top to the maximum of y and 0
+        set right to the minimum of (x + w) and source's width
+        set bottom to the minimum of (y + h) and source's height
+        if (right <= left) or (bottom <= top):
+            return nothing
+        loop row from top to bottom:
+            set offset to ((row * source's width) + left) * 4
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, target's pixels + offset, source's pixels + offset, ((right - left) * 4) as a word sized integer)
+
+# One sampling task: the image's pixels over the checkerboard into the frame,
+# bilinear, rows top..bottom of the frame; the columns' source offsets and
+# weights are in lefts (three integers a column from left). The members carry
+# a prefix: named plainly (left, top, pixels...) they made the compiler report
+# a cycle in its precedence declarations.
+class:
+    patterns:
+        [a|] paint sample job
+    members:
+        jobSource as a pointer to a byte
+        jobStride as an integer
+        jobImageHeight as an integer
+        jobPixels as a pointer to a byte
+        jobFrameWidth as an integer
+        jobX as an integer
+        jobY as an integer
+        jobLeft as an integer
+        jobRight as an integer
+        jobTop as an integer
+        jobBottom as an integer
+        jobLefts as a pointer to an integer
+        jobInverse as a 64 bit floating-point number
+
+local function the mix of {pointer:source} at {integer:p00} {integer:p01} {integer:p10} {integer:p11} by {integer:w00} {integer:w01} {integer:w10} {integer:w11}:
+    execute:
+        set first to ((the item at p00 in source) as an integer) & 255
+        set second to ((the item at p01 in source) as an integer) & 255
+        set third to ((the item at p10 in source) as an integer) & 255
+        set fourth to ((the item at p11 in source) as an integer) & 255
+        return ((((first * w00) + (second * w01)) + ((third * w10) + (fourth * w11))) + 32768) >> 16
+
+local function sample rows {integer:from} to {integer:until} of {a pointer to a paint sample job:work}:
+    execute:
+        set source to work's jobSource
+        set pixels to work's jobPixels
+        set lefts to work's jobLefts
+        set stride to work's jobStride
+        set x to work's jobX
+        set y to work's jobY
+        set left to work's jobLeft
+        set right to work's jobRight
+        set inverse to work's jobInverse
+        loop row from from to until:
+            set sy to ((((row - y) as a 64 bit floating-point number) + 0.5) * inverse) - 0.5
+            set floorY to the floor of sy
+            set upper to (((floorY as an integer) clamped between 0 and (work's jobImageHeight - 1))) * stride
+            set lower to ((((floorY as an integer) + 1) clamped between 0 and (work's jobImageHeight - 1))) * stride
+            set fy to ((the rounded value of ((sy - floorY) * 256.0)) as an integer) clamped between 0 and 256
+            set gy to 256 - fy
+            set checkerRow to ((row - y) / 8) & 1
+            set target to ((row * work's jobFrameWidth) + left) * 4
+            loop column from left to right:
+                set slot to (column - left) * 3
+                set a to the item at slot in lefts
+                set b to the item at (slot + 1) in lefts
+                set fx to the item at (slot + 2) in lefts
+                set gx to 256 - fx
+                set checker to 255
+                if ((((column - x) / 8) & 1) ^ checkerRow) = 1:
+                    set checker to 238
+                set w00 to gx * gy
+                set w01 to fx * gy
+                set w10 to gx * fy
+                set w11 to fx * fy
+                set alpha to the mix of source at ((upper + a) + 3) ((upper + b) + 3) ((lower + a) + 3) ((lower + b) + 3) by w00 w01 w10 w11
+                if alpha >= 255:
+                    loop channel from 0 to 3:
+                        set value to the mix of source at ((upper + a) + channel) ((upper + b) + channel) ((lower + a) + channel) ((lower + b) + channel) by w00 w01 w10 w11
+                        store (value as a byte) at (pixels + (target + channel))
+                else:
+                    loop channel from 0 to 3:
+                        store (checker as a byte) at (pixels + (target + channel))
+                    if alpha > 0:
+                        set red to the mix of source at ((upper + a) + 0) ((upper + b) + 0) ((lower + a) + 0) ((lower + b) + 0) by w00 w01 w10 w11
+                        set green to the mix of source at ((upper + a) + 1) ((upper + b) + 1) ((lower + a) + 1) ((lower + b) + 1) by w00 w01 w10 w11
+                        set blue to the mix of source at ((upper + a) + 2) ((upper + b) + 2) ((lower + a) + 2) ((lower + b) + 2) by w00 w01 w10 w11
+                        blend (the paint color red red green green blue blue alpha alpha) at target in pixels by 255
+                store (255 as a byte) at (pixels + (target + 3))
+                set target to target + 4
+
+# A thread's share: the job followed by its first and last row.
+function sample paint rows {pointer:job}:
+    execute:
+        set work to job as a pointer to a paint sample job
+        set range to (job + (the size of (a paint sample job))) as a pointer to an integer
+        sample rows (the item at 0 in range) to (the item at 1 in range) of work
+        return 0 as a pointer
+
+# Samples the job's rows, spread over the processor's cores when there is
+# enough to share: every core does its band of rows.
+local function run {a pointer to a paint sample job:work}:
+    execute:
+        set rows to work's jobBottom - work's jobTop
+        set columns to work's jobRight - work's jobLeft
+        if (rows <= 0) or (columns <= 0):
+            return nothing
+        set cores to (@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer
+        set parts to the minimum of (cores clamped between 1 and 32) and (rows / 24)
+        if ((rows * columns) < 32768) or (parts < 2):
+            sample rows (work's jobTop) to (work's jobBottom) of work
+            return nothing
+        set jobSize to (the size of (a paint sample job)) as an integer
+        set block to jobSize + 16
+        set jobs to @intrinsic("call", "libc", "calloc", a pointer to a byte, (block * parts) as a word sized integer, 1 as a word sized integer)
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, parts as a word sized integer, 8 as a word sized integer)
+        loop part from 0 to parts:
+            set copy to jobs + (part * block)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, work as a pointer, jobSize as a word sized integer)
+            set range to (copy + jobSize) as a pointer to an integer
+            store (work's jobTop + ((rows * part) / parts)) at range
+            store (work's jobTop + ((rows * (part + 1)) / parts)) at (range + 1)
+            if part > 0:
+                if @intrinsic("call", "libc", "pthread_create", an integer, threads + part, 0 as a pointer, the function named "sample paint rows $", copy as a pointer) != 0:
+                    # No thread: this band is done here instead.
+                    store 0 as a C long integer at (threads + part)
+                    ignore sample paint rows (copy as a pointer)
+        ignore sample paint rows (jobs as a pointer)
+        loop part from 1 to parts:
+            if (the item at part in threads) != 0 as a C long integer:
+                ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at part in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, jobs)
+        @intrinsic("call", "libc", "free", nothing, threads)
+
+# Draws the canvas at its stage onto frame within the clip rectangle
+# (exclusive right and bottom). The whole drawing — shadow, image, grid,
+# handle and caption — when whole; only the image and what lies on it
+# otherwise, for a part of the image that changed.
+local function draw the canvas of {paint app:app} on {paint canvas:frame} in {a pointer to a paint shell:shell} at {paint stage:stage} within {integer:x1} {integer:y1} {integer:x2} {integer:y2} whole {boolean:whole}:
+    execute:
+        set image to app's image
+        set x to (stage's x) as an integer
+        set y to (stage's y) as an integer
+        set w to (the rounded value of ((image's width as a 64 bit floating-point number) * stage's scale)) as an integer
+        set h to (the rounded value of ((image's height as a 64 bit floating-point number) * stage's scale)) as an integer
+        # The visible workspace, within what is being redrawn.
+        set clipX to the maximum of (the maximum of stage's areaX and 0) and x1
+        set clipY to the maximum of (the maximum of (stage's areaY + 34) and 0) and y1
+        set clipW to (the minimum of (the minimum of (stage's areaX + stage's areaW) and frame's width) and x2) - clipX
+        set clipH to (the minimum of (the minimum of ((stage's areaY + stage's areaH) - 26) and frame's height) and y2) - clipY
+        if (clipW <= 0) or (clipH <= 0):
+            return nothing
+        if whole:
+            # The artboard's shadow and outline: rasterised once around a
+            # 200-pixel box, then laid around the canvas in nine slices
+            # (corners as drawn, edges stretched from the middle row and
+            # column), clipped to the visible area, so a 16K canvas costs
+            # what a small one does.
+            set margin to 44
+            set markup to the string form of "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"288\" height=\"288\"><defs><filter id=\"a\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"2.5\"/></filter><filter id=\"b\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feGaussianBlur stdDeviation=\"16\"/></filter></defs><rect x=\"44\" y=\"54\" width=\"200\" height=\"200\" fill=\"#000\" fill-opacity=\"0.08\" filter=\"url(#b)\"/><rect x=\"44\" y=\"46\" width=\"200\" height=\"200\" fill=\"#000\" fill-opacity=\"0.05\" filter=\"url(#a)\"/><rect x=\"43.5\" y=\"43.5\" width=\"201\" height=\"201\" fill=\"none\" stroke=\"#000\" stroke-opacity=\"0.07\"/></svg>"
+            set slot to (the length of (shell's images)) - 1
+            set patch to the picture of entry slot with markup sized 288 by 288 in shell
+            set leftPart to margin + (the minimum of 100 and (w / 2))
+            set rightPart to margin + (the minimum of 100 and (w - (w / 2)))
+            set topPart to margin + (the minimum of 100 and (h / 2))
+            set bottomPart to margin + (the minimum of 100 and (h - (h / 2)))
+            set outerX to x - margin
+            set outerY to y - margin
+            set outerW to w + (margin * 2)
+            set outerH to h + (margin * 2)
+            set middleW to outerW - (leftPart + rightPart)
+            set middleH to outerH - (topPart + bottomPart)
+            blit patch from 0 0 sized leftPart by topPart onto frame at outerX outerY stretched to leftPart by topPart within clipX clipY clipW clipH
+            blit patch from (288 - rightPart) 0 sized rightPart by topPart onto frame at ((outerX + outerW) - rightPart) outerY stretched to rightPart by topPart within clipX clipY clipW clipH
+            blit patch from 0 (288 - bottomPart) sized leftPart by bottomPart onto frame at outerX ((outerY + outerH) - bottomPart) stretched to leftPart by bottomPart within clipX clipY clipW clipH
+            blit patch from (288 - rightPart) (288 - bottomPart) sized rightPart by bottomPart onto frame at ((outerX + outerW) - rightPart) ((outerY + outerH) - bottomPart) stretched to rightPart by bottomPart within clipX clipY clipW clipH
+            if middleW > 0:
+                blit patch from 144 0 sized 1 by topPart onto frame at (outerX + leftPart) outerY stretched to middleW by topPart within clipX clipY clipW clipH
+                blit patch from 144 (288 - bottomPart) sized 1 by bottomPart onto frame at (outerX + leftPart) ((outerY + outerH) - bottomPart) stretched to middleW by bottomPart within clipX clipY clipW clipH
+            if middleH > 0:
+                blit patch from 0 144 sized leftPart by 1 onto frame at outerX (outerY + topPart) stretched to leftPart by middleH within clipX clipY clipW clipH
+                blit patch from (288 - rightPart) 144 sized rightPart by 1 onto frame at ((outerX + outerW) - rightPart) (outerY + topPart) stretched to rightPart by middleH within clipX clipY clipW clipH
+        # The image over the checkerboard, sampled bilinearly as the browser
+        # smooths a scaled canvas; weights in 1/256, per column computed once.
+        set left to the maximum of x and clipX
+        set top to the maximum of y and clipY
+        set right to the minimum of (x + w) and (clipX + clipW)
+        set bottom to the minimum of (y + h) and (clipY + clipH)
+        set columns to right - left
+        if (columns > 0) and (bottom > top):
+            set inverse to 1.0 / stage's scale
+            set lefts to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((columns * 3) * 4) as a word sized integer)
+            loop column from left to right:
+                set sx to ((((column - x) as a 64 bit floating-point number) + 0.5) * inverse) - 0.5
+                set floorX to the floor of sx
+                set slot to (column - left) * 3
+                store ((((floorX as an integer) clamped between 0 and (image's width - 1))) * 4) at (lefts + slot)
+                store (((((floorX as an integer) + 1) clamped between 0 and (image's width - 1))) * 4) at (lefts + (slot + 1))
+                store (((the rounded value of ((sx - floorX) * 256.0)) as an integer) clamped between 0 and 256) at (lefts + (slot + 2))
+            set work to @intrinsic("construct", a paint sample job, image's pixels, image's width * 4, image's height, frame's pixels, frame's width, x, y, left, right, top, bottom, lefts, inverse)
+            run (the address of work)
+            @intrinsic("call", "libc", "free", nothing, lefts)
+            # Grid lines, within the redrawn part of the image.
+            if app's grid:
+                set spacing to 20.0 * stage's scale
+                set ink to the paint color red 0 green 0 blue 0 alpha 34
+                set line to 0.0
+                loop while line < (w as a 64 bit floating-point number):
+                    set lineX to x + ((the floor of line) as an integer)
+                    if (lineX >= left) and (lineX < right):
+                        fill frame at lineX top sized 1 by (bottom - top) with ink
+                    set line to line + spacing
+                set line to 0.0
+                loop while line < (h as a 64 bit floating-point number):
+                    set lineY to y + ((the floor of line) as an integer)
+                    if (lineY >= top) and (lineY < bottom):
+                        fill frame at left lineY sized (right - left) by 1 with ink
+                    set line to line + spacing
+        # The corner handle, half on the image.
+        fill frame at ((x + w) - 3) ((y + h) - 3) sized 6 by 6 with (the paint color from hex "d97706") clipped to clipX clipY clipW clipH
+        fill frame at ((x + w) - 2) ((y + h) - 2) sized 4 by 4 with (the paint color from hex "ffffff") clipped to clipX clipY clipW clipH
+        if whole = false:
+            return nothing
+        # The size caption below, while it is within the visible workspace.
+        if ((y + h) + 24) > (clipY + clipH):
+            return nothing
+        set typeface to the face numbered 0 in shell
+        set caption to (((the string form of image's width) + (the string form of " × ")) + (the string form of image's height))
+        set captionWidth to the width of caption with typeface at 9 pixels spaced 32
+        set unitWidth to the width of (the string form of "PX") with typeface at 8 pixels spaced 32
+        set total to (captionWidth + (3 * 64)) + unitWidth
+        set start to ((x * 64) + ((w * 64) / 2)) - (total / 2)
+        set baseline to ((y + h) + 12) + (the ascent of typeface at 9 pixels)
+        set muted to the paint color red 54 green 54 blue 62 alpha 166
+        ignore draw caption at start baseline with typeface at 9 pixels spaced 32 in muted on frame
+        ignore draw (the string form of "PX") at ((start + captionWidth) + (3 * 64)) baseline with typeface at 8 pixels spaced 32 in muted on frame
+
+# --- The whole frame ---
+
+local function draw entry {integer:index} for {paint shell view:view} on {paint canvas:frame} in {a pointer to a paint shell:shell} moved down {integer:shift}:
+    execute:
+        set entry to the item at index in (shell's skin's entries)
+        set box to the box of entry in view's width by view's height within (the paint skin state of view's app in shell)
+        set box's y to box's y + shift
+        set box's top to box's top + (shift as a 64 bit floating-point number)
+        if entry's kind = paint skin rectangle:
+            fill frame at box's x box's y sized box's w by box's h with entry's color
+        else if entry's kind = paint skin image:
+            set markup to the item at entry's image in (shell's skin's svgs)
+            if markup contains "{color}":
+                set markup to markup with "{color}" as (the hex of view's app's color)
+            blit (the picture of entry index with markup sized box's w by box's h in shell) onto frame at box's x box's y
+        else if entry's kind = paint skin text:
+            draw the lettering of entry entry in box as (the label of entry for view in shell) on frame in shell
+        else if entry's kind = paint skin control:
+            draw control entry in box for view on frame in shell as image index
+        else if (entry's kind = paint skin ring) and (shell's focused's length = 0):
+            set markup to the item at entry's image in (shell's skin's svgs)
+            blit (the picture of entry index with markup sized box's w by box's h in shell) onto frame at box's x box's y
+
+function the paint skin state of {paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        return @intrinsic("construct", a paint skin state, shell's tab, shell's opened, (the length of app's steps) > 0, the paint tool key of app's tool, the hex of app's color, app's focus, shell's panelHidden)
+
+local function {paint skin entry:entry} follows the mouse:
+    execute:
+        if entry's kind != paint skin text:
+            return false
+        return entry's text contains "{mx}"
+
+# Everything the chrome shows except the mouse position: when it is the
+# same as for the cached layer, that layer is reused.
+local function the signature of {paint app:app} sized {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set text to ((the string form of width) + (the string form of "x")) + (the string form of height)
+        set text to ((text + (the string form of "|")) + (the string form of shell's tab)) + ((the string form of "|") + (the string form of shell's opened))
+        set text to ((text + (the string form of "|")) + (the paint tool key of app's tool)) + ((the string form of "|") + (the hex of app's color))
+        set text to ((text + (the string form of "|")) + (the string form of (the length of app's steps))) + ((the string form of "|") + app's path)
+        set text to ((text + (the string form of "|")) + (the string form of app's image's width)) + ((the string form of "x") + (the string form of app's image's height))
+        set text to ((text + (the string form of "|")) + (the string form of ((the rounded value of (app's zoom * 1000.0)) as an integer))) + ((the string form of "|") + (the string form of app's size))
+        set text to ((text + (the string form of "|")) + (the string form of app's opacity)) + ((the string form of "|") + shell's status)
+        set text to ((text + (the string form of "|")) + (the string form of app's focus)) + ((the string form of "|") + (the string form of app's grid))
+        set text to (text + (the string form of "|")) + (the string form of shell's panelHidden)
+        set text to (text + (the string form of "|")) + (the string form of shell's vectors)
+        set text to ((text + (the string form of "|")) + shell's focused) + ((the string form of "|") + shell's documentName)
+        loop index from 0 to the length of shell's fieldValues:
+            set text to (text + (the string form of "|")) + (the item at index in shell's fieldValues)
+        return text
+
+local function the join of {paint skin box:first} with {paint skin box:second}:
+    execute:
+        if (first's w <= 0) or (first's h <= 0):
+            return second
+        if (second's w <= 0) or (second's h <= 0):
+            return first
+        set left to the minimum of first's x and second's x
+        set top to the minimum of first's y and second's y
+        set right to the maximum of (first's x + first's w) and (second's x + second's w)
+        set bottom to the maximum of (first's y + first's h) and (second's y + second's h)
+        return @intrinsic("construct", a paint skin box, left, top, right - left, bottom - top, left as a 64 bit floating-point number, top as a 64 bit floating-point number)
+
+local function box {paint skin box:first} overlaps {paint skin box:second}:
+    execute:
+        if ((first's w <= 0) or (first's h <= 0)) or ((second's w <= 0) or (second's h <= 0)):
+            return false
+        return ((first's x < (second's x + second's w)) and (second's x < (first's x + first's w))) and ((first's y < (second's y + second's h)) and (second's y < (first's y + first's h)))
+
+local function no paint skin box:
+    execute:
+        return @intrinsic("construct", a paint skin box, 0, 0, 0, 0, 0.0, 0.0)
+
+# The text the mouse-following entries show, joined: when it is what they
+# showed last, they need no redrawing.
+local function the mouse labels of {paint shell view:view} in {a pointer to a paint shell:shell}:
+    execute:
+        set text to the string form of ""
+        set entries to shell's skin's entries
+        set state to the paint skin state of view's app in shell
+        loop index from 0 to the length of entries:
+            set entry to the item at index in entries
+            if (entry follows the mouse) and (entry shows in state):
+                set text to (text + (the label of entry for view in shell)) + (the string form of "|")
+        return text
+
+# Draws the shell and the canvas into shell's composed, the window's size.
+# The chrome is redrawn only when its signature changes, the canvas only
+# where it changed: the rectangle (left, top) to (right, bottom) in canvas
+# pixels, exclusive, nothing when left >= right. Returns the rectangle of
+# composed that changed (width 0 when nothing did).
+function draw the shell of app {paint app:app} sized {integer:width} by {integer:height} at {integer:mouseX} {integer:mouseY} redrawing the canvas within {integer:left} {integer:top} {integer:right} {integer:bottom} in {a pointer to a paint shell:shell}:
+    execute:
+        set view to @intrinsic("construct", a paint shell view, app, width, height, mouseX, mouseY, 0)
+        set state to the paint skin state of app in shell
+        set entries to shell's skin's entries
+        set count to the length of entries
+        set signature to the signature of app sized width by height in shell
+        set resized to (shell's base's width != width) or (shell's base's height != height)
+        set rebuilt to false
+        set dirty to no paint skin box
+        set frame to shell's composed
+        if ((signature = shell's signature) = false) or resized:
+            if resized:
+                free paint canvas shell's base
+                free paint canvas shell's composed
+                set shell's base to a new paint canvas width by height filled with (the paint color from hex "ffffff")
+                set shell's composed to a new paint canvas width by height filled with (the paint color from hex "ffffff")
+                set frame to shell's composed
+            set base to shell's base
+            loop index from 0 to count:
+                set entry to the item at index in entries
+                if ((entry's opened < 0) and ((entry follows the mouse) = false)) and (entry shows in state):
+                    draw entry index for view on base in shell moved down 0
+            # History rows: the latest highlighted, newest first.
+            set steps to the length of app's steps
+            if (steps > 0) and (the panel shows in state):
+                loop position from 0 to steps:
+                    set view's step to steps - position
+                    set shift to (the rounded value of ((position as a 64 bit floating-point number) * paint skin history pitch)) as an integer
+                    set wanted to 1
+                    if position = 0:
+                        set wanted to 0
+                    # The list ends above the panel's footer; what does not fit
+                    # waits below, as in the original's scrolled list.
+                    if ((434 + shift) + 33) <= ((height - 940) + 845):
+                        loop index from 0 to count:
+                            set entry to the item at index in entries
+                            if entry's row = wanted:
+                                draw entry index for view on base in shell moved down shift
+            set shell's signature to signature
+            set rebuilt to true
+        set stage to the paint stage of app in width by height in shell
+        set canvasChanged to (left < right) and (top < bottom)
+        # The whole canvas: with the chrome, or when a menu lies over it, or
+        # when the change covers the image.
+        set wholeCanvas to canvasChanged and ((((left <= 0) and (top <= 0)) and ((right >= app's image's width) and (bottom >= app's image's height))) or (shell's opened >= 0))
+        if rebuilt or wholeCanvas:
+            copy paint pixels of (shell's base) into frame
+            draw the canvas of app on frame in shell at stage within 0 0 width height whole true
+            # Menus and dialogs lie over the canvas.
+            loop index from 0 to count:
+                set entry to the item at index in entries
+                if (entry's opened >= 0) and (entry shows in state):
+                    draw entry index for view on frame in shell moved down 0
+            set dirty to @intrinsic("construct", a paint skin box, 0, 0, width, height, 0.0, 0.0)
+            set shell's overlayText to the string form of ""
+        else if canvasChanged:
+            # The part of the window the changed canvas pixels cover, a pixel
+            # around for the bilinear sampling.
+            set patchX to ((the floor of (stage's x + ((left as a 64 bit floating-point number) * stage's scale))) as an integer) - 1
+            set patchY to ((the floor of (stage's y + ((top as a 64 bit floating-point number) * stage's scale))) as an integer) - 1
+            set patchR to ((the ceiling of (stage's x + ((right as a 64 bit floating-point number) * stage's scale))) as an integer) + 1
+            set patchB to ((the ceiling of (stage's y + ((bottom as a 64 bit floating-point number) * stage's scale))) as an integer) + 1
+            set patch to @intrinsic("construct", a paint skin box, patchX, patchY, patchR - patchX, patchB - patchY, 0.0, 0.0)
+            copy (shell's base) into frame within (patch's x) (patch's y) (patch's w) (patch's h)
+            draw the canvas of app on frame in shell at stage within (patch's x) (patch's y) (patch's x + patch's w) (patch's y + patch's h) whole false
+            set dirty to patch
+            if box patch overlaps (@intrinsic("construct", a paint skin box, shell's overlayX, shell's overlayY, shell's overlayW, shell's overlayH, 0.0, 0.0)):
+                set shell's overlayText to the string form of ""
+        # What follows the mouse, on top; redrawn when its text changed.
+        set overlayText to the mouse labels of view in shell
+        if (overlayText = shell's overlayText) = false:
+            set previous to @intrinsic("construct", a paint skin box, shell's overlayX, shell's overlayY, shell's overlayW, shell's overlayH, 0.0, 0.0)
+            if (rebuilt = false) and ((previous's w > 0) and (previous's h > 0)):
+                copy (shell's base) into frame within (previous's x) (previous's y) (previous's w) (previous's h)
+                draw the canvas of app on frame in shell at stage within (previous's x) (previous's y) (previous's x + previous's w) (previous's y + previous's h) whole false
+            set current to no paint skin box
+            loop index from 0 to count:
+                set entry to the item at index in entries
+                if (entry follows the mouse) and (entry shows in state):
+                    draw entry index for view on frame in shell moved down 0
+                    set current to the join of current with (the box of entry in width by height within state)
+            set shell's overlayX to current's x
+            set shell's overlayY to current's y
+            set shell's overlayW to current's w
+            set shell's overlayH to current's h
+            set shell's overlayText to overlayText
+            set dirty to the join of dirty with (the join of previous with current)
+        # Within the frame.
+        if (dirty's w > 0) and (dirty's h > 0):
+            set dx1 to the maximum of dirty's x and 0
+            set dy1 to the maximum of dirty's y and 0
+            set dx2 to the minimum of (dirty's x + dirty's w) and width
+            set dy2 to the minimum of (dirty's y + dirty's h) and height
+            set dirty to @intrinsic("construct", a paint skin box, dx1, dy1, (the maximum of dx2 and dx1) - dx1, (the maximum of dy2 and dy1) - dy1, 0.0, 0.0)
+        return dirty
+
+# The action of the topmost click region under (x, y), or "".
+function the shell action at {integer:x} {integer:y} for {paint app:app} of {integer:width} by {integer:height} in {a pointer to a paint shell:shell}:
+    execute:
+        set state to the paint skin state of app in shell
+        set entries to shell's skin's entries
+        set found to the string form of ""
+        loop index from 0 to the length of entries:
+            set entry to the item at index in entries
+            if (entry's kind = paint skin hit) and (entry shows in state):
+                # A dialog takes every click; the File page leaves the title
+                # bar, the tabs and the status bar.
+                set reachable to true
+                if (shell's opened >= 30) and (entry's opened != shell's opened):
+                    set reachable to false
+                if ((shell's opened >= 20) and (shell's opened < 30)) and (entry's opened < 0):
+                    set reachable to (entry's y < 76.0) or (entry's y >= 911.0)
+                if reachable and (x y lies in (the box of entry in width by height within state)):
+                    set found to entry's action
+        return found

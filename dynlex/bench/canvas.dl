@@ -1,0 +1,85 @@
+# Times the editor's pixel work on a 1920 × 1080 canvas; run from the
+# repository root through `dynlex/build.sh bench`.
+import dynlex/paint/canvas.dl
+
+set checksum to 0
+
+# Reads a pixel the optimiser cannot predict, so no timed work is dropped.
+function the sample of {pointer:pixels} at {integer:index}:
+    execute:
+        return ((the item at index in pixels) as an integer) & 255
+
+local function the processor milliseconds:
+    execute:
+        return (@intrinsic("call", "libc", "clock", a C long integer) as an integer) / 1000
+
+function report {C string:name} since {integer:start}:
+    execute:
+        print (the string form of name)
+        print (the string form of " ")
+        print (the string form of ((the processor milliseconds) - start))
+        print (the string form of " ms") as a line
+
+set white to the paint color red 255 green 255 blue 255
+set red to the paint color from hex "dc2626"
+set picture to a new paint canvas 1920 by 1080 filled with white
+set base to the paint copy of picture
+set display to @intrinsic("call", "libc", "malloc", a pointer to a byte, ((1920 * 1080) * 4) as a word sized integer)
+
+set start to the processor milliseconds
+loop index from 0 to 20:
+    fill paint canvas picture with white
+    set checksum to checksum + (the sample of picture's pixels at (index * 4001))
+report "fill x20" since start
+
+set start to the processor milliseconds
+set stroke to a paint stroke of red at opacity 128 sized 40 erasing false
+loop index from 0 to 200:
+    set x to ((index * 9) as a 64 bit floating-point number)
+    draw stroke from x 100.0 to (x + 9.0) (100.0 + ((index * 4) as a 64 bit floating-point number)) on picture from base
+report "brush 200 segments size 40" since start
+
+set start to the processor milliseconds
+set thin to a paint stroke of red at opacity 255 sized 4 erasing false
+loop index from 0 to 20:
+    copy paint pixels of base into picture
+    draw paint rectangle with thin from 100 100 to 1800 1000 filled false on picture from base
+    draw paint ellipse with thin from 100 100 to 1800 1000 filled false on picture from base
+report "outline rectangle+ellipse x20" since start
+
+set start to the processor milliseconds
+loop index from 0 to 10:
+    copy paint pixels of base into picture
+    draw paint rectangle with stroke from 10 10 to 1900 1070 filled true on picture from base
+    draw paint ellipse with stroke from 10 10 to 1900 1070 filled true on picture from base
+report "filled rectangle+ellipse x10" since start
+
+set start to the processor milliseconds
+loop index from 0 to 5:
+    copy paint pixels of base into picture
+    flood fill picture at 5 5 with red at opacity 255 within 32
+report "flood fill x5" since start
+
+set start to the processor milliseconds
+loop index from 0 to 5:
+    adjust paint canvas picture by paint adjustment sepia with brightness 10 contrast 10 saturation 100
+report "sepia x5" since start
+
+set start to the processor milliseconds
+loop index from 0 to 5:
+    set turned to the paint canvas picture turned clockwise true
+    set checksum to checksum + (the sample of turned's pixels at (index * 4001))
+    free paint canvas turned
+    set flipped to the paint canvas picture flipped horizontally true
+    set checksum to checksum + (the sample of flipped's pixels at (index * 4001))
+    free paint canvas flipped
+report "turn+flip x5" since start
+
+set start to the processor milliseconds
+set bigger to the paint canvas picture resized to 3840 by 2160
+set checksum to checksum + (the sample of bigger's pixels at 123457)
+free paint canvas bigger
+report "resize to 3840x2160" since start
+
+set total to 0
+print (the string form of (checksum + total)) as a line

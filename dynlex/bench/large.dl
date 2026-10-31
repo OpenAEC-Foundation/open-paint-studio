@@ -1,0 +1,48 @@
+# Opens one image through the editor's file layer and times what a user
+# waits for: decoding, the first full frame of the window (shell and canvas,
+# fitted) and redraws of the canvas at ten zoom levels. Prints one line of
+# key=value pairs; dynlex/bench/compare.py runs it per file.
+#
+#   large IMAGE
+import dynlex/paint/shell.dl
+
+function the wall microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to (((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)) as an integer
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+set arguments to the command line arguments
+set path to the argument at 0 in arguments
+set shell to a new paint shell with fonts in (the string form of "dynlex/assets/fonts")
+# The interface's SVGs are rasterised on the first frame: not part of opening.
+set warm to a new paint app 1200 by 800
+set zero to 0
+set windowWidth to 1440
+set windowHeight to 940
+set warmed to draw the shell of app warm sized windowWidth by windowHeight at zero zero redrawing the canvas within zero zero (warm's image's width) (warm's image's height) in (the address of shell)
+
+set began to the wall microseconds
+set opened to the paint image opened from path
+set decoded to (the wall microseconds) - began
+if opened's valid = false:
+    print (the string form of "error=") + opened's message
+    print (the string form of "") as a line
+    return 1
+set app to a new paint app 1200 by 800
+free paint canvas app's image
+set app's image to opened's image
+set began to the wall microseconds
+fit (the address of app) into the shell of 1440 by 940 in (the address of shell)
+set drawn to draw the shell of app app sized windowWidth by windowHeight at zero zero redrawing the canvas within zero zero (app's image's width) (app's image's height) in (the address of shell)
+set first to (the wall microseconds) - began
+set began to the wall microseconds
+loop step from 1 to 11:
+    set app's zoom to (step as a 64 bit floating-point number) / 10.0
+    set drawn to draw the shell of app app sized windowWidth by windowHeight at step step redrawing the canvas within zero zero (app's image's width) (app's image's height) in (the address of shell)
+set frames to ((the wall microseconds) - began) / 10
+print (((the string form of "width=") + (the string form of app's image's width)) + (the string form of " height=")) + (the string form of app's image's height)
+print ((the string form of " decode_ms=") + (the string form of (decoded / 1000))) + ((the string form of " first_frame_ms=") + (the string form of (first / 1000)))
+print ((the string form of " zoom_frame_ms=") + (the string form of (frames / 1000))) + (the string form of "") as a line

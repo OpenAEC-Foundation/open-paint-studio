@@ -1,0 +1,1342 @@
+# JPEG, decoded by the editor itself: baseline and extended sequential
+# Huffman files and progressive ones, grey, YCbCr, CMYK and YCCK, any
+# sampling, restart intervals, and the camera orientation from EXIF. The
+# entropy-coded data is read once into coefficient planes; the inverse DCT,
+# upsampling and colour conversion then run over all cores, a band of MCU
+# rows per thread, straight into the RGBA canvas.
+import dynlex/paint/decoded.dl
+import lib/list.dl
+import lib/string.dl
+import dynlex/paint/inflate.dl
+
+# --- Small tables ---
+
+local function load {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+
+local function the jpeg zigzag:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 80 as a word sized integer, 4 as a word sized integer)
+        load table from (the string form of "0 1 8 16 9 2 3 10 17 24 32 25 18 11 4 5 12 19 26 33 40 48 41 34 27 20 13 6 7 14 21 28 35 42 49 56 57 50 43 36 29 22 15 23 30 37 44 51 58 59 52 45 38 31 39 46 53 60 61 54 47 55 62 63")
+        # Beyond 63 (a corrupt run): a harmless slot.
+        loop extra from 64 to 80:
+            store 63 at (table + extra)
+        return table
+
+# --- Huffman tables: a 9-bit lookup, then the canonical slow path ---
+
+class:
+    patterns:
+        [a|] jpeg huffman table
+    members:
+        jhLookup as a pointer to an integer
+        jhMaxCode as a pointer to an integer
+        jhValueOffset as a pointer to an integer
+        jhSymbols as a pointer to an integer
+        jhPresent as a boolean
+
+local function an empty jpeg huffman table:
+    execute:
+        return @intrinsic("construct", a jpeg huffman table, @intrinsic("call", "libc", "calloc", a pointer to an integer, 512 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, 18 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, 18 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer), false)
+
+local function free {jpeg huffman table:table}:
+    execute:
+        @intrinsic("call", "libc", "free", nothing, table's jhLookup)
+        @intrinsic("call", "libc", "free", nothing, table's jhMaxCode)
+        @intrinsic("call", "libc", "free", nothing, table's jhValueOffset)
+        @intrinsic("call", "libc", "free", nothing, table's jhSymbols)
+
+# Fills the table from a DHT segment's 16 counts and its symbols; returns
+# how many symbols it holds.
+local function define {a pointer to a jpeg huffman table:table} from counts at {pointer:bytes} offset {integer:start}:
+    execute:
+        set lookup to table's jhLookup
+        loop index from 0 to 512:
+            store 0 at (lookup + index)
+        set code to 0
+        set symbolIndex to 0
+        loop size from 1 to 17:
+            set count to the byte ((start - 1) + size) in bytes
+            store (symbolIndex - code) at ((table's jhValueOffset) + size)
+            loop step from 0 to count:
+                set symbol to the byte ((start + 16) + symbolIndex) in bytes
+                store symbol at ((table's jhSymbols) + symbolIndex)
+                if size <= 9:
+                    set shifted to code << (9 - size)
+                    set span to 1 << (9 - size)
+                    loop slot from 0 to span:
+                        store ((size << 8) | symbol) at (lookup + (shifted + slot))
+                set code to code + 1
+                set symbolIndex to symbolIndex + 1
+            store (code - 1) at ((table's jhMaxCode) + size)
+            if count = 0:
+                store -1 at ((table's jhMaxCode) + size)
+            set code to code << 1
+        store 2147483647 at ((table's jhMaxCode) + 17)
+        set table's jhPresent to true
+        return symbolIndex
+
+# --- The bit reader over the entropy-coded segment ---
+
+class:
+    patterns:
+        [a|] jpeg reader
+    members:
+        jrBytes as a pointer to a byte
+        jrCount as an integer
+        jrAt as an integer
+        jrBits as a C long integer
+        jrBitCount as an integer
+        jrMarker as an integer
+        jrBroken as a boolean
+
+# Loads bytes until 25 or more bits are held, left-aligned in bit 39
+# downwards; 0xFF00 is a stuffed 0xFF, and a marker stops the stream (zeros
+# follow it).
+local function top up {a pointer to a jpeg reader:reader}:
+    execute:
+        loop while (reader's jrBitCount) <= 24:
+            set next to 0
+            if ((reader's jrMarker) = 0) and ((reader's jrAt) < (reader's jrCount)):
+                set next to the byte (reader's jrAt) in (reader's jrBytes)
+                set reader's jrAt to (reader's jrAt) + 1
+                if next = 255:
+                    set following to 0
+                    if (reader's jrAt) < (reader's jrCount):
+                        set following to the byte (reader's jrAt) in (reader's jrBytes)
+                    if following = 0:
+                        set reader's jrAt to (reader's jrAt) + 1
+                    else:
+                        set reader's jrMarker to following
+                        set reader's jrAt to (reader's jrAt) - 1
+                        set next to 0
+            set reader's jrBits to (reader's jrBits) | ((next as a C long integer) << (32 - (reader's jrBitCount)))
+            set reader's jrBitCount to (reader's jrBitCount) + 8
+
+local function peek {integer:count} bits of {a pointer to a jpeg reader:reader}:
+    execute:
+        if (reader's jrBitCount) < count:
+            top up reader
+        return ((reader's jrBits) >> (40 - count)) as an integer
+
+local function drop {integer:count} bits of {a pointer to a jpeg reader:reader}:
+    execute:
+        set reader's jrBits to ((reader's jrBits) << count) & (1099511627775 as a C long integer)
+        set reader's jrBitCount to (reader's jrBitCount) - count
+
+local function take {integer:count} bits of {a pointer to a jpeg reader:reader}:
+    execute:
+        if count = 0:
+            return 0
+        set value to peek count bits of reader
+        drop count bits of reader
+        return value
+
+# The next Huffman symbol.
+local function decode {a pointer to a jpeg huffman table:table} from {a pointer to a jpeg reader:reader}:
+    execute:
+        set index to peek 9 bits of reader
+        set entry to the item at index in (table's jhLookup)
+        if entry != 0:
+            drop (entry >> 8) bits of reader
+            return entry & 255
+        # Longer codes, one bit at a time from the tenth.
+        set code to index
+        drop 9 bits of reader
+        set size to 9
+        loop while (size < 16) and (code > (the item at size in (table's jhMaxCode))):
+            set code to (code << 1) | (take 1 bits of reader)
+            set size to size + 1
+        if code > (the item at size in (table's jhMaxCode)):
+            set reader's jrBroken to true
+            return 0
+        return the item at (code + (the item at size in (table's jhValueOffset))) in (table's jhSymbols)
+
+# A value of the magnitude category (F.2.2.1).
+local function extend {integer:value} of {integer:size}:
+    execute:
+        if size = 0:
+            return 0
+        if value < (1 << (size - 1)):
+            return value - ((1 << size) - 1)
+        return value
+
+# At a restart: back to the byte boundary, past the RSTn marker.
+local function restart {a pointer to a jpeg reader:reader}:
+    execute:
+        set reader's jrBits to 0 as a C long integer
+        set reader's jrBitCount to 0
+        if ((reader's jrMarker) >= 208) and ((reader's jrMarker) <= 215):
+            set reader's jrAt to (reader's jrAt) + 2
+            set reader's jrMarker to 0
+        else:
+            # The marker was not where it should be: look for it.
+            loop while ((reader's jrAt) + 1) < (reader's jrCount):
+                if ((the byte (reader's jrAt) in (reader's jrBytes)) = 255) and (((the byte ((reader's jrAt) + 1) in (reader's jrBytes)) >= 208) and ((the byte ((reader's jrAt) + 1) in (reader's jrBytes)) <= 215)):
+                    set reader's jrAt to (reader's jrAt) + 2
+                    set reader's jrMarker to 0
+                    return nothing
+                set reader's jrAt to (reader's jrAt) + 1
+
+# --- Components and the frame ---
+
+class:
+    patterns:
+        [a|] jpeg component
+    members:
+        jcId as an integer
+        jcH as an integer
+        jcV as an integer
+        jcQuant as an integer
+        jcBlocksWide as an integer
+        jcBlocksHigh as an integer
+        jcCoefficients as a pointer to a 16 bit integer
+        jcDcTable as an integer
+        jcAcTable as an integer
+        jcPredictor as an integer
+
+class:
+    patterns:
+        [a|] jpeg frame
+    members:
+        jfWidth as an integer
+        jfHeight as an integer
+        jfComponents as a pointer to a list
+        jfProgressive as boolean
+        jfMaxH as an integer
+        jfMaxV as an integer
+        jfMcusWide as an integer
+        jfMcusHigh as an integer
+        jfQuant as a pointer to an integer
+        jfRestart as an integer
+        jfAdobe as boolean
+        jfTransform as an integer
+        jfEobRun as an integer
+        jfPredictors as a pointer to an integer
+        jfDcTables as a pointer to a pointer to a jpeg huffman table
+        jfAcTables as a pointer to a pointer to a jpeg huffman table
+
+# Reads a frame header (SOF0, SOF1 or SOF2) at the segment's data.
+local function the jpeg frame at {pointer:bytes} offset {integer:start} progressive {boolean:progressive} quant {a pointer to an integer:quant}:
+    execute:
+        set height to the big-endian half (start + 1) in bytes
+        set width to the big-endian half (start + 3) in bytes
+        set count to the byte (start + 5) in bytes
+        set components to an empty list of a jpeg component
+        set maxH to 1
+        set maxV to 1
+        loop index from 0 to count:
+            set here to (start + 6) + (index * 3)
+            set sampling to the byte (here + 1) in bytes
+            set h to (sampling >> 4) clamped between 1 and 4
+            set v to (sampling & 15) clamped between 1 and 4
+            set maxH to the maximum of maxH and h
+            set maxV to the maximum of maxV and v
+            append @intrinsic("construct", a jpeg component, the byte here in bytes, h, v, (the byte (here + 2) in bytes) & 3, 0, 0, 0 as a pointer to a 16 bit integer, 0, 0, 0) to components
+        set mcusWide to (width + ((8 * maxH) - 1)) / (8 * maxH)
+        set mcusHigh to (height + ((8 * maxV) - 1)) / (8 * maxV)
+        loop index from 0 to count:
+            set component to the item at index in components
+            set component's jcBlocksWide to mcusWide * (component's jcH)
+            set component's jcBlocksHigh to mcusHigh * (component's jcV)
+            replace item at index index in components with component
+        return @intrinsic("construct", a jpeg frame, width, height, components, progressive, maxH, maxV, mcusWide, mcusHigh, quant, 0, false, 0, 0, @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to a pointer to a jpeg huffman table, 4 as a word sized integer, 8 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to a pointer to a jpeg huffman table, 4 as a word sized integer, 8 as a word sized integer))
+
+# The blocks a non-interleaved scan of the component covers.
+local function the ceiling blocks of {integer:pixels} by {integer:sampling} over {integer:maxSampling}:
+    execute:
+        set samples to ((pixels * sampling) + (maxSampling - 1)) / maxSampling
+        return (samples + 7) / 8
+
+# --- Scans ---
+
+class:
+    patterns:
+        [a|] jpeg scan
+    members:
+        jsComponents as a pointer to a list
+        jsStart as an integer
+        jsEnd as an integer
+        jsHigh as an integer
+        jsLow as an integer
+
+# Refines the nonzero coefficient at slot by one bit (G.1.2.3).
+local function refine {a pointer to a 16 bit integer:slot} by {integer:bit} through {a pointer to a jpeg reader:reader}:
+    execute:
+        set current to (the item at 0 in slot) as an integer
+        if (take 1 bits of reader) = 1:
+            if (current & bit) = 0:
+                if current >= 0:
+                    store ((current + bit) as a 16 bit integer) at slot
+                else:
+                    store ((current - bit) as a 16 bit integer) at slot
+
+# Decodes one block's coefficients for the scan (sequential, or a
+# progressive DC or AC pass, first or refining) into the component's plane.
+local function decode block {integer:blockRow} {integer:blockColumn} of component {integer:componentIndex} wide {integer:blocksWide} at {a pointer to a 16 bit integer:plane} in {a pointer to a jpeg frame:frame} for {jpeg scan:scan} through {a pointer to a jpeg reader:reader} zigzag {a pointer to an integer:zigzag}:
+    execute:
+        set coefficients to plane + (((blockRow * blocksWide) + blockColumn) * 64)
+        set dcTable to the item at componentIndex in (frame's jfDcTables)
+        set acTable to the item at componentIndex in (frame's jfAcTables)
+        set predictors to frame's jfPredictors
+        if frame's jfProgressive = false:
+            # Sequential: the DC difference, then the AC run lengths.
+            set size to decode dcTable from reader
+            set difference to extend (take size bits of reader) of size
+            set predicted to (the item at componentIndex in predictors) + difference
+            store predicted at (predictors + componentIndex)
+            store (predicted as a 16 bit integer) at coefficients
+            set position to 1
+            loop while position < 64:
+                set symbol to decode acTable from reader
+                set run to symbol >> 4
+                set size to symbol & 15
+                if size = 0:
+                    if run = 15:
+                        set position to position + 16
+                    else:
+                        set position to 64
+                else:
+                    set position to position + run
+                    if position < 64:
+                        store ((extend (take size bits of reader) of size) as a 16 bit integer) at (coefficients + (the item at position in zigzag))
+                    set position to position + 1
+            return nothing
+        if scan's jsStart = 0:
+            # Progressive DC: the first pass carries the difference, later
+            # passes one bit.
+            if scan's jsHigh = 0:
+                set size to decode dcTable from reader
+                set difference to extend (take size bits of reader) of size
+                set predicted to (the item at componentIndex in predictors) + difference
+                store predicted at (predictors + componentIndex)
+                store ((predicted << (scan's jsLow)) as a 16 bit integer) at coefficients
+            else if (take 1 bits of reader) = 1:
+                store ((((the item at 0 in coefficients) as an integer) | (1 << (scan's jsLow))) as a 16 bit integer) at coefficients
+            return nothing
+        if scan's jsHigh = 0:
+            # Progressive AC, first pass, with end-of-band runs.
+            if frame's jfEobRun > 0:
+                set frame's jfEobRun to (frame's jfEobRun) - 1
+                return nothing
+            set position to scan's jsStart
+            loop while position <= (scan's jsEnd):
+                set symbol to decode acTable from reader
+                set run to symbol >> 4
+                set size to symbol & 15
+                if size = 0:
+                    if run < 15:
+                        set frame's jfEobRun to ((1 << run) + (take run bits of reader)) - 1
+                        set position to 64
+                    else:
+                        set position to position + 16
+                else:
+                    set position to position + run
+                    if position < 64:
+                        store (((extend (take size bits of reader) of size) << (scan's jsLow)) as a 16 bit integer) at (coefficients + (the item at position in zigzag))
+                    set position to position + 1
+            return nothing
+        # Progressive AC refinement (G.1.2.3, as libjpeg orders it).
+        set p1 to 1 << (scan's jsLow)
+        set m1 to 0 - p1
+        set k to scan's jsStart
+        if frame's jfEobRun = 0:
+            set halted to false
+            loop while (k <= (scan's jsEnd)) and (halted = false):
+                set symbol to decode acTable from reader
+                set r to symbol >> 4
+                set s to symbol & 15
+                if s != 0:
+                    if (take 1 bits of reader) = 1:
+                        set s to p1
+                    else:
+                        set s to m1
+                else if r != 15:
+                    # An end-of-band run: this band's rest is refined below.
+                    set frame's jfEobRun to 1 << r
+                    if r > 0:
+                        set frame's jfEobRun to (frame's jfEobRun) + (take r bits of reader)
+                    set halted to true
+                if halted = false:
+                    # Over the next r zero coefficients, refining the nonzero
+                    # ones passed on the way, to the place of the new one.
+                    set searching to true
+                    loop while (k <= (scan's jsEnd)) and searching:
+                        set slot to coefficients + (the item at k in zigzag)
+                        if ((the item at 0 in slot) as an integer) != 0:
+                            refine slot by p1 through reader
+                            set k to k + 1
+                        else if r = 0:
+                            set searching to false
+                        else:
+                            set r to r - 1
+                            set k to k + 1
+                    if (s != 0) and (k <= (scan's jsEnd)):
+                        store (s as a 16 bit integer) at (coefficients + (the item at k in zigzag))
+                    set k to k + 1
+        if frame's jfEobRun > 0:
+            loop while k <= (scan's jsEnd):
+                set slot to coefficients + (the item at k in zigzag)
+                if ((the item at 0 in slot) as an integer) != 0:
+                    refine slot by p1 through reader
+                set k to k + 1
+            set frame's jfEobRun to (frame's jfEobRun) - 1
+
+# Decodes one scan's entropy-coded data, from the reader's position.
+local function decode scan {jpeg scan:scan} of {a pointer to a jpeg frame:frame} through {a pointer to a jpeg reader:reader} with {pointer:tables} zigzag {a pointer to an integer:zigzag}:
+    execute:
+        set members to the length of (scan's jsComponents)
+        set count to the length of (frame's jfComponents)
+        set tableSize to (the size of (a jpeg huffman table)) as an integer
+        loop index from 0 to count:
+            set component to the item at index in (frame's jfComponents)
+            store 0 at ((frame's jfPredictors) + index)
+            store (((tables as a pointer to a byte) + ((component's jcDcTable) * tableSize)) as a pointer to a jpeg huffman table) at ((frame's jfDcTables) + index)
+            store (((tables as a pointer to a byte) + ((4 + (component's jcAcTable)) * tableSize)) as a pointer to a jpeg huffman table) at ((frame's jfAcTables) + index)
+        set frame's jfEobRun to 0
+        set sinceRestart to 0
+        if members = 1:
+            # Non-interleaved: the component's own blocks, row by row.
+            set componentIndex to the item at 0 in (scan's jsComponents)
+            set component to the item at componentIndex in (frame's jfComponents)
+            set wide to the ceiling blocks of (frame's jfWidth) by (component's jcH) over (frame's jfMaxH)
+            set high to the ceiling blocks of (frame's jfHeight) by (component's jcV) over (frame's jfMaxV)
+            loop blockRow from 0 to high:
+                loop blockColumn from 0 to wide:
+                    if ((frame's jfRestart) > 0) and (sinceRestart = (frame's jfRestart)):
+                        restart reader
+                        store 0 at ((frame's jfPredictors) + componentIndex)
+                        set frame's jfEobRun to 0
+                        set sinceRestart to 0
+                    decode block blockRow blockColumn of component componentIndex wide (component's jcBlocksWide) at (component's jcCoefficients) in frame for scan through reader zigzag zigzag
+                    set sinceRestart to sinceRestart + 1
+                    if reader's jrBroken:
+                        return nothing
+            return nothing
+        loop mcuRow from 0 to (frame's jfMcusHigh):
+            loop mcuColumn from 0 to (frame's jfMcusWide):
+                if ((frame's jfRestart) > 0) and (sinceRestart = (frame's jfRestart)):
+                    restart reader
+                    loop index from 0 to count:
+                        store 0 at ((frame's jfPredictors) + index)
+                    set frame's jfEobRun to 0
+                    set sinceRestart to 0
+                loop member from 0 to members:
+                    set componentIndex to the item at member in (scan's jsComponents)
+                    set component to the item at componentIndex in (frame's jfComponents)
+                    loop v from 0 to (component's jcV):
+                        loop h from 0 to (component's jcH):
+                            decode block ((mcuRow * (component's jcV)) + v) ((mcuColumn * (component's jcH)) + h) of component componentIndex wide (component's jcBlocksWide) at (component's jcCoefficients) in frame for scan through reader zigzag zigzag
+                set sinceRestart to sinceRestart + 1
+                if reader's jrBroken:
+                    return nothing
+
+# --- The inverse DCT (the accurate integer one, as libjpeg's islow) ---
+
+local function descale {integer:value} by {integer:bits}:
+    execute:
+        return (value + (1 << (bits - 1))) >> bits
+
+local function clamp sample {integer:value}:
+    execute:
+        return value clamped between 0 and 255
+
+# Dequantises and transforms the block into 8 x 8 samples at out with the
+# given stride; work holds 64 integers.
+local function transform block {a pointer to a 16 bit integer:block} with {a pointer to an integer:quant} into {pointer:out} stride {integer:stride} using {a pointer to an integer:work}:
+    execute:
+        loop column from 0 to 8:
+            set c0 to ((the item at column in block) as an integer) * (the item at column in quant)
+            set c1 to ((the item at (column + 8) in block) as an integer) * (the item at (column + 8) in quant)
+            set c2 to ((the item at (column + 16) in block) as an integer) * (the item at (column + 16) in quant)
+            set c3 to ((the item at (column + 24) in block) as an integer) * (the item at (column + 24) in quant)
+            set c4 to ((the item at (column + 32) in block) as an integer) * (the item at (column + 32) in quant)
+            set c5 to ((the item at (column + 40) in block) as an integer) * (the item at (column + 40) in quant)
+            set c6 to ((the item at (column + 48) in block) as an integer) * (the item at (column + 48) in quant)
+            set c7 to ((the item at (column + 56) in block) as an integer) * (the item at (column + 56) in quant)
+            if (((c1 = 0) and (c2 = 0)) and ((c3 = 0) and (c4 = 0))) and (((c5 = 0) and (c6 = 0)) and (c7 = 0)):
+                set dc to c0 << 2
+                loop row from 0 to 8:
+                    store dc at (work + ((row * 8) + column))
+            else:
+                set z2 to c2
+                set z3 to c6
+                set z1 to (z2 + z3) * 4433
+                set tmp2 to z1 + (z3 * (0 - 15137))
+                set tmp3 to z1 + (z2 * 6270)
+                set tmp0 to (c0 + c4) << 13
+                set tmp1 to (c0 - c4) << 13
+                set tmp10 to tmp0 + tmp3
+                set tmp13 to tmp0 - tmp3
+                set tmp11 to tmp1 + tmp2
+                set tmp12 to tmp1 - tmp2
+                set tmp0 to c7
+                set tmp1 to c5
+                set tmp2 to c3
+                set tmp3 to c1
+                set z1 to tmp0 + tmp3
+                set z2 to tmp1 + tmp2
+                set z3 to tmp0 + tmp2
+                set z4 to tmp1 + tmp3
+                set z5 to (z3 + z4) * 9633
+                set tmp0 to tmp0 * 2446
+                set tmp1 to tmp1 * 16819
+                set tmp2 to tmp2 * 25172
+                set tmp3 to tmp3 * 12299
+                set z1 to z1 * (0 - 7373)
+                set z2 to z2 * (0 - 20995)
+                set z3 to z3 * (0 - 16069)
+                set z4 to z4 * (0 - 3196)
+                set z3 to z3 + z5
+                set z4 to z4 + z5
+                set tmp0 to tmp0 + (z1 + z3)
+                set tmp1 to tmp1 + (z2 + z4)
+                set tmp2 to tmp2 + (z2 + z3)
+                set tmp3 to tmp3 + (z1 + z4)
+                store (descale (tmp10 + tmp3) by 11) at (work + column)
+                store (descale (tmp10 - tmp3) by 11) at (work + (56 + column))
+                store (descale (tmp11 + tmp2) by 11) at (work + (8 + column))
+                store (descale (tmp11 - tmp2) by 11) at (work + (48 + column))
+                store (descale (tmp12 + tmp1) by 11) at (work + (16 + column))
+                store (descale (tmp12 - tmp1) by 11) at (work + (40 + column))
+                store (descale (tmp13 + tmp0) by 11) at (work + (24 + column))
+                store (descale (tmp13 - tmp0) by 11) at (work + (32 + column))
+        set target to out as a pointer to a byte
+        loop row from 0 to 8:
+            set base to work + (row * 8)
+            set r0 to the item at 0 in base
+            set r1 to the item at 1 in base
+            set r2 to the item at 2 in base
+            set r3 to the item at 3 in base
+            set r4 to the item at 4 in base
+            set r5 to the item at 5 in base
+            set r6 to the item at 6 in base
+            set r7 to the item at 7 in base
+            set outRow to target + (row * stride)
+            if (((r1 = 0) and (r2 = 0)) and ((r3 = 0) and (r4 = 0))) and (((r5 = 0) and (r6 = 0)) and (r7 = 0)):
+                set flat to clamp sample ((descale r0 by 5) + 128)
+                loop column from 0 to 8:
+                    store (flat as a byte) at (outRow + column)
+            else:
+                set z2 to r2
+                set z3 to r6
+                set z1 to (z2 + z3) * 4433
+                set tmp2 to z1 + (z3 * (0 - 15137))
+                set tmp3 to z1 + (z2 * 6270)
+                set tmp0 to (r0 + r4) << 13
+                set tmp1 to (r0 - r4) << 13
+                set tmp10 to tmp0 + tmp3
+                set tmp13 to tmp0 - tmp3
+                set tmp11 to tmp1 + tmp2
+                set tmp12 to tmp1 - tmp2
+                set tmp0 to r7
+                set tmp1 to r5
+                set tmp2 to r3
+                set tmp3 to r1
+                set z1 to tmp0 + tmp3
+                set z2 to tmp1 + tmp2
+                set z3 to tmp0 + tmp2
+                set z4 to tmp1 + tmp3
+                set z5 to (z3 + z4) * 9633
+                set tmp0 to tmp0 * 2446
+                set tmp1 to tmp1 * 16819
+                set tmp2 to tmp2 * 25172
+                set tmp3 to tmp3 * 12299
+                set z1 to z1 * (0 - 7373)
+                set z2 to z2 * (0 - 20995)
+                set z3 to z3 * (0 - 16069)
+                set z4 to z4 * (0 - 3196)
+                set z3 to z3 + z5
+                set z4 to z4 + z5
+                set tmp0 to tmp0 + (z1 + z3)
+                set tmp1 to tmp1 + (z2 + z4)
+                set tmp2 to tmp2 + (z2 + z3)
+                set tmp3 to tmp3 + (z1 + z4)
+                store ((clamp sample ((descale (tmp10 + tmp3) by 18) + 128)) as a byte) at outRow
+                store ((clamp sample ((descale (tmp10 - tmp3) by 18) + 128)) as a byte) at (outRow + 7)
+                store ((clamp sample ((descale (tmp11 + tmp2) by 18) + 128)) as a byte) at (outRow + 1)
+                store ((clamp sample ((descale (tmp11 - tmp2) by 18) + 128)) as a byte) at (outRow + 6)
+                store ((clamp sample ((descale (tmp12 + tmp1) by 18) + 128)) as a byte) at (outRow + 2)
+                store ((clamp sample ((descale (tmp12 - tmp1) by 18) + 128)) as a byte) at (outRow + 5)
+                store ((clamp sample ((descale (tmp13 + tmp0) by 18) + 128)) as a byte) at (outRow + 3)
+                store ((clamp sample ((descale (tmp13 - tmp0) by 18) + 128)) as a byte) at (outRow + 4)
+
+# --- The output: the inverse DCT of every component into its own plane,
+# then upsampling and colour conversion per pixel row, both over all cores ---
+
+class:
+    patterns:
+        [a|] jpeg plane job
+    members:
+        jpQuant as a pointer to an integer
+        jpBlocksWide as an integer
+        jpCoefficients as a pointer to a 16 bit integer
+        jpPlane as a pointer to a byte
+        jpStride as an integer
+        jpFirst as an integer
+        jpLast as an integer
+
+# Block rows first..last of one component into its plane.
+function transform jpeg rows {pointer:address}:
+    execute:
+        set job to address as a pointer to a jpeg plane job
+        set work to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set wide to job's jpBlocksWide
+        loop blockRow from (job's jpFirst) to (job's jpLast):
+            loop blockColumn from 0 to wide:
+                transform block ((job's jpCoefficients) + (((blockRow * wide) + blockColumn) * 64)) with (job's jpQuant) into (((job's jpPlane) + (((blockRow * 8) * (job's jpStride)) + (blockColumn * 8))) as pointer) stride (job's jpStride) using work
+        @intrinsic("call", "libc", "free", nothing, work)
+        return 0 as a pointer
+
+# YCbCr to RGB, as libjpeg rounds it.
+local function the red of {integer:y} {integer:cr}:
+    execute:
+        return (y + (((91881 * (cr - 128)) + 32768) >> 16)) clamped between 0 and 255
+
+local function the green of {integer:y} {integer:cb} {integer:cr}:
+    execute:
+        return (y - ((((22554 * (cb - 128)) + (46802 * (cr - 128))) + 32768) >> 16)) clamped between 0 and 255
+
+local function the blue of {integer:y} {integer:cb}:
+    execute:
+        return (y + (((116130 * (cb - 128)) + 32768) >> 16)) clamped between 0 and 255
+
+class:
+    patterns:
+        [a|] jpeg row job
+    members:
+        jrFrame as a pointer to a jpeg frame
+        jrPixels as a pointer to a byte
+        jrCount as an integer
+        jrH as a pointer to an integer
+        jrV as a pointer to an integer
+        jrPlanes as a pointer to a pointer to a byte
+        jrStrides as a pointer to an integer
+        jrFirst as an integer
+        jrLast as an integer
+
+# Component index's samples for pixel row y, upsampled to the full width into
+# out: libjpeg's triangle filter for the common 2:1 cases, nearest otherwise.
+local function upsample {integer:index} of {a pointer to a jpeg row job:job} row {integer:y} into {pointer:out}:
+    execute:
+        set frame to job's jrFrame
+        set width to frame's jfWidth
+        set h to the item at index in (job's jrH)
+        set v to the item at index in (job's jrV)
+        set maxH to frame's jfMaxH
+        set maxV to frame's jfMaxV
+        set plane to the item at index in (job's jrPlanes)
+        set stride to the item at index in (job's jrStrides)
+        set target to out as a pointer to a byte
+        set planeWidth to (width * h) / maxH
+        if ((width * h) - (planeWidth * maxH)) > 0:
+            set planeWidth to planeWidth + 1
+        set planeHeight to ((frame's jfHeight) * v) / maxV
+        if (((frame's jfHeight) * v) - (planeHeight * maxV)) > 0:
+            set planeHeight to planeHeight + 1
+        if (h = maxH) and (v = maxV):
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, target, plane + (y * stride), width as a word sized integer)
+            return nothing
+        set twiceWide to (maxH = (2 * h))
+        set twiceHigh to (maxV = (2 * v))
+        if ((twiceWide or (h = maxH)) and (twiceHigh or (v = maxV))) and (twiceWide or twiceHigh):
+            # The source row, and its neighbour on the side the output row
+            # leans to (the same row at the edges).
+            set sourceRow to (y * v) / maxV
+            set neighbour to sourceRow
+            if twiceHigh:
+                if (y & 1) = 0:
+                    set neighbour to the maximum of 0 and (sourceRow - 1)
+                else:
+                    set neighbour to the minimum of (planeHeight - 1) and (sourceRow + 1)
+            set near to plane + (sourceRow * stride)
+            set far to plane + (neighbour * stride)
+            if twiceWide = false:
+                # h1v2: vertical triangle only.
+                loop x from 0 to width:
+                    set value to (3 * (the byte x in near)) + (the byte x in far)
+                    if (y & 1) = 0:
+                        store (((value + 1) >> 2) as a byte) at (target + x)
+                    else:
+                        store (((value + 2) >> 2) as a byte) at (target + x)
+                return nothing
+            # Column sums (3 near + 1 far, or 4 near for h2v1), then the
+            # horizontal triangle with libjpeg's alternating bias.
+            set last to 0
+            set this to 0
+            set next to 0
+            loop column from 0 to planeWidth:
+                if twiceHigh:
+                    set this to (3 * (the byte column in near)) + (the byte column in far)
+                else:
+                    set this to 4 * (the byte column in near)
+                if column = 0:
+                    set last to this
+                if (column + 1) < planeWidth:
+                    if twiceHigh:
+                        set next to (3 * (the byte (column + 1) in near)) + (the byte (column + 1) in far)
+                    else:
+                        set next to 4 * (the byte (column + 1) in near)
+                else:
+                    set next to this
+                set left to (column * 2)
+                if left < width:
+                    store (((((3 * this) + last) + 8) >> 4) as a byte) at (target + left)
+                if (left + 1) < width:
+                    store (((((3 * this) + next) + 7) >> 4) as a byte) at (target + (left + 1))
+                set last to this
+            return nothing
+        # Any other ratio: nearest.
+        set sourceRow to (y * v) / maxV
+        set near to plane + (sourceRow * stride)
+        loop x from 0 to width:
+            store (the item at ((x * h) / maxH) in near) at (target + x)
+
+# Pixel rows first..last of the image from the planes.
+function convert jpeg rows {pointer:address}:
+    execute:
+        set job to address as a pointer to a jpeg row job
+        set frame to job's jrFrame
+        set width to frame's jfWidth
+        set count to job's jrCount
+        set bands to @intrinsic("call", "libc", "calloc", a pointer to a byte, (width * 4) as a word sized integer, 1 as a word sized integer)
+        loop y from (job's jrFirst) to (job's jrLast):
+            loop index from 0 to count:
+                upsample index of job row y into ((bands + (index * width)) as pointer)
+            set out to (job's jrPixels) + ((y * width) * 4)
+            loop x from 0 to width:
+                set c0 to the byte x in bands
+                if count = 1:
+                    store (c0 as a byte) at (out + (x * 4))
+                    store (c0 as a byte) at (out + ((x * 4) + 1))
+                    store (c0 as a byte) at (out + ((x * 4) + 2))
+                else:
+                    set c1 to the byte (width + x) in bands
+                    set c2 to the byte ((2 * width) + x) in bands
+                    if count = 3:
+                        store ((the red of c0 c2) as a byte) at (out + (x * 4))
+                        store ((the green of c0 c1 c2) as a byte) at (out + ((x * 4) + 1))
+                        store ((the blue of c0 c1) as a byte) at (out + ((x * 4) + 2))
+                    else:
+                        set c3 to the byte ((3 * width) + x) in bands
+                        set cyan to c0
+                        set magenta to c1
+                        set yellow to c2
+                        if frame's jfTransform = 2:
+                            # YCCK: the first three are YCbCr of the inverted CMY.
+                            set cyan to 255 - (the red of c0 c2)
+                            set magenta to 255 - (the green of c0 c1 c2)
+                            set yellow to 255 - (the blue of c0 c1)
+                        if frame's jfAdobe:
+                            # Adobe writes CMYK inverted: the values are the
+                            # light that remains.
+                            store (((cyan * c3) / 255) as a byte) at (out + (x * 4))
+                            store (((magenta * c3) / 255) as a byte) at (out + ((x * 4) + 1))
+                            store (((yellow * c3) / 255) as a byte) at (out + ((x * 4) + 2))
+                        else:
+                            store ((((255 - cyan) * (255 - c3)) / 255) as a byte) at (out + (x * 4))
+                            store ((((255 - magenta) * (255 - c3)) / 255) as a byte) at (out + ((x * 4) + 1))
+                            store ((((255 - yellow) * (255 - c3)) / 255) as a byte) at (out + ((x * 4) + 2))
+                store (255 as a byte) at (out + ((x * 4) + 3))
+        @intrinsic("call", "libc", "free", nothing, bands)
+        return 0 as a pointer
+
+# Runs the jobs (jobSize bytes each) on their own threads and joins them:
+# the block transform when transforming, the row conversion otherwise.
+local function run {integer:parts} jobs of {integer:jobSize} at {pointer:jobs} transforming {boolean:transforming}:
+    execute:
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, parts as a word sized integer, 8 as a word sized integer)
+        set bytes to jobs as a pointer to a byte
+        loop part from 1 to parts:
+            set created to 1
+            if transforming:
+                set created to @intrinsic("call", "libc", "pthread_create", an integer, threads + part, 0 as a pointer, the function named "transform jpeg rows $", (bytes + (part * jobSize)) as a pointer)
+            else:
+                set created to @intrinsic("call", "libc", "pthread_create", an integer, threads + part, 0 as a pointer, the function named "convert jpeg rows $", (bytes + (part * jobSize)) as a pointer)
+            if created != 0:
+                store 0 as a C long integer at (threads + part)
+                if transforming:
+                    ignore transform jpeg rows ((bytes + (part * jobSize)) as a pointer)
+                else:
+                    ignore convert jpeg rows ((bytes + (part * jobSize)) as a pointer)
+        if transforming:
+            ignore transform jpeg rows (bytes as pointer)
+        else:
+            ignore convert jpeg rows (bytes as pointer)
+        loop part from 1 to parts:
+            if (the item at part in threads) != (0 as a C long integer):
+                ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at part in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, threads)
+
+# Converts the whole frame into the image, the work shared over the cores.
+local function convert {a pointer to a jpeg frame:frame} into {paint canvas:image}:
+    execute:
+        set count to the length of (frame's jfComponents)
+        set cores to (@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer
+        set parts to cores clamped between 1 and 32
+        if ((frame's jfWidth) * (frame's jfHeight)) < 262144:
+            set parts to 1
+        set hs to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set vs to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set strides to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set planes to @intrinsic("call", "libc", "calloc", a pointer to a pointer to a byte, 4 as a word sized integer, 8 as a word sized integer)
+        # Pass one: each component's blocks into its plane; the coefficients
+        # go as soon as they are used.
+        set planeJobSize to (the size of (a jpeg plane job)) as an integer
+        loop index from 0 to count:
+            set component to the item at index in (frame's jfComponents)
+            store (component's jcH) at (hs + index)
+            store (component's jcV) at (vs + index)
+            set stride to (component's jcBlocksWide) * 8
+            store stride at (strides + index)
+            set plane to @intrinsic("call", "libc", "malloc", a pointer to a byte, (stride * ((component's jcBlocksHigh) * 8)) as a word sized integer)
+            store plane at (planes + index)
+            set share to the minimum of parts and (component's jcBlocksHigh)
+            set jobs to @intrinsic("call", "libc", "calloc", a pointer to a byte, (planeJobSize * share) as a word sized integer, 1 as a word sized integer)
+            loop part from 0 to share:
+                set job to @intrinsic("construct", a jpeg plane job, (frame's jfQuant) + ((component's jcQuant) * 64), component's jcBlocksWide, component's jcCoefficients, plane, stride, ((component's jcBlocksHigh) * part) / share, ((component's jcBlocksHigh) * (part + 1)) / share)
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, jobs + (part * planeJobSize), (the address of job) as a pointer, planeJobSize as a word sized integer)
+            run share jobs of planeJobSize at (jobs as pointer) transforming true
+            @intrinsic("call", "libc", "free", nothing, jobs)
+            @intrinsic("call", "libc", "free", nothing, component's jcCoefficients)
+            set component's jcCoefficients to 0 as a pointer to a 16 bit integer
+            replace item at index index in (frame's jfComponents) with component
+        # Pass two: pixel rows.
+        set rowJobSize to (the size of (a jpeg row job)) as an integer
+        set share to the minimum of parts and (frame's jfHeight)
+        set jobs to @intrinsic("call", "libc", "calloc", a pointer to a byte, (rowJobSize * share) as a word sized integer, 1 as a word sized integer)
+        loop part from 0 to share:
+            set job to @intrinsic("construct", a jpeg row job, frame, image's pixels, count, hs, vs, planes, strides, ((frame's jfHeight) * part) / share, ((frame's jfHeight) * (part + 1)) / share)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, jobs + (part * rowJobSize), (the address of job) as a pointer, rowJobSize as a word sized integer)
+        run share jobs of rowJobSize at (jobs as pointer) transforming false
+        @intrinsic("call", "libc", "free", nothing, jobs)
+        loop index from 0 to count:
+            @intrinsic("call", "libc", "free", nothing, the item at index in planes)
+        @intrinsic("call", "libc", "free", nothing, hs)
+        @intrinsic("call", "libc", "free", nothing, vs)
+        @intrinsic("call", "libc", "free", nothing, strides)
+        @intrinsic("call", "libc", "free", nothing, planes)
+
+# --- The file ---
+
+class:
+    patterns:
+        [a|] paint jpeg result
+    members:
+        decoded as a boolean
+        unsupported as a boolean
+        image as a paint canvas
+
+local function a failed jpeg because {boolean:unsupported}:
+    execute:
+        return @intrinsic("construct", a paint jpeg result, false, unsupported, a new paint canvas 1 by 1 filled with the transparent paint color)
+
+# Decodes the JPEG in memory. Unsupported says the kind of file is not read
+# (arithmetic coding, lossless, 12-bit); decoded false otherwise means the
+# file is broken.
+function the paint jpeg from {pointer:data} of {integer:length}:
+    execute:
+        if (length < 4) or (((the byte 0 in data) != 255) or ((the byte 1 in data) != 216)):
+            return a failed jpeg because false
+        set tableSize to (the size of (a jpeg huffman table)) as an integer
+        set quant to @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer)
+        set tables to @intrinsic("call", "libc", "calloc", a pointer to a byte, (tableSize * 8) as a word sized integer, 1 as a word sized integer)
+        loop index from 0 to 8:
+            set table to an empty jpeg huffman table
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, tables + (index * tableSize), (the address of table) as a pointer, tableSize as a word sized integer)
+        set zigzag to the jpeg zigzag
+        set frame to @intrinsic("construct", a jpeg frame, 0, 0, an empty list of a jpeg component, false, 1, 1, 0, 0, quant, 0, false, 0, 0, @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to a pointer to a jpeg huffman table, 4 as a word sized integer, 8 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to a pointer to a jpeg huffman table, 4 as a word sized integer, 8 as a word sized integer))
+        set framed to false
+        set unsupported to false
+        set broken to false
+        set finished to false
+        set cursor to 2
+        loop while ((finished = false) and (broken = false)) and (((cursor + 4) <= length) and (unsupported = false)):
+            if (the byte cursor in data) != 255:
+                set cursor to cursor + 1
+            else:
+                set marker to the byte (cursor + 1) in data
+                if (marker = 255) or (marker = 1):
+                    set cursor to cursor + 1
+                else if (marker >= 208) and (marker <= 217):
+                    if marker = 217:
+                        set finished to true
+                    set cursor to cursor + 2
+                else:
+                    set size to the big-endian half (cursor + 2) in data
+                    set start to cursor + 4
+                    if ((cursor + 2) + size) > length:
+                        set broken to true
+                    else if marker = 219:
+                        # DQT: one or more tables, 8 or 16 bit, in zigzag order.
+                        set here to start
+                        loop while here < ((cursor + 2) + size):
+                            set precision to (the byte here in data) >> 4
+                            set id to (the byte here in data) & 3
+                            loop index from 0 to 64:
+                                set value to 0
+                                if precision = 0:
+                                    set value to the byte ((here + 1) + index) in data
+                                else:
+                                    set value to the big-endian half ((here + 1) + (index * 2)) in data
+                                store value at (quant + ((id * 64) + (the item at index in zigzag)))
+                            set here to (here + 1) + (64 * (precision + 1))
+                    else if marker = 196:
+                        # DHT: one or more tables.
+                        set here to start
+                        loop while here < ((cursor + 2) + size):
+                            set class to (the byte here in data) >> 4
+                            set id to (the byte here in data) & 3
+                            set table to (tables + ((((class & 1) * 4) + id) * tableSize)) as a pointer to a jpeg huffman table
+                            set symbols to define table from counts at data offset (here + 1)
+                            set here to (here + 17) + symbols
+                    else if marker = 221:
+                        set frame's jfRestart to the big-endian half start in data
+                    else if (marker = 192) or ((marker = 193) or (marker = 194)):
+                        if (the byte start in data) != 8:
+                            set unsupported to true
+                        else:
+                            set earlier to frame
+                            set frame to the jpeg frame at data offset start progressive (marker = 194) quant quant
+                            set frame's jfAdobe to earlier's jfAdobe
+                            set frame's jfTransform to earlier's jfTransform
+                            set frame's jfRestart to earlier's jfRestart
+                            if ((frame's jfWidth) < 1) or ((frame's jfHeight) < 1):
+                                set broken to true
+                            else if (a paint canvas (frame's jfWidth) by (frame's jfHeight) fits) = false:
+                                set unsupported to true
+                            else:
+                                loop index from 0 to (the length of (frame's jfComponents)):
+                                    set component to the item at index in (frame's jfComponents)
+                                    set component's jcCoefficients to @intrinsic("call", "libc", "calloc", a pointer to a 16 bit integer, (((component's jcBlocksWide) * (component's jcBlocksHigh)) * 64) as a word sized integer, 2 as a word sized integer)
+                                    replace item at index index in (frame's jfComponents) with component
+                                set framed to true
+                    else if ((marker >= 195) and (marker <= 207)) and ((marker != 196) and (marker != 200)):
+                        # Lossless, hierarchical and arithmetic-coded files.
+                        set unsupported to true
+                    else if marker = 238:
+                        # APP14 "Adobe": the colour transform flag.
+                        if (size >= 13) and (the bytes start in data spell "Adobe"):
+                            set frame's jfAdobe to true
+                            set frame's jfTransform to the byte (start + 11) in data
+                    else if marker = 218:
+                        if framed = false:
+                            set broken to true
+                        else:
+                            set members to the byte start in data
+                            set scanComponents to an empty list of an integer
+                            loop member from 0 to members:
+                                set id to the byte ((start + 1) + (member * 2)) in data
+                                set selectors to the byte ((start + 2) + (member * 2)) in data
+                                loop index from 0 to (the length of (frame's jfComponents)):
+                                    set component to the item at index in (frame's jfComponents)
+                                    if component's jcId = id:
+                                        set component's jcDcTable to (selectors >> 4) & 3
+                                        set component's jcAcTable to selectors & 3
+                                        replace item at index index in (frame's jfComponents) with component
+                                        append index to scanComponents
+                            set after to (start + 1) + (members * 2)
+                            set scan to @intrinsic("construct", a jpeg scan, scanComponents, the byte after in data, the byte (after + 1) in data, (the byte (after + 2) in data) >> 4, (the byte (after + 2) in data) & 15)
+                            if frame's jfProgressive = false:
+                                set scan's jsStart to 0
+                                set scan's jsEnd to 63
+                            set reader to @intrinsic("construct", a jpeg reader, data as a pointer to a byte, length, (cursor + 2) + size, 0 as a C long integer, 0, 0, false)
+                            decode scan scan of (the address of frame) through (the address of reader) with (tables as pointer) zigzag zigzag
+                            free scanComponents
+                            if reader's jrBroken:
+                                set broken to true
+                            # Continue at the marker that ended the scan.
+                            set cursor to reader's jrAt
+                            loop while ((cursor + 1) < length) and (((the byte cursor in data) != 255) or (((the byte (cursor + 1) in data) = 0) or (((the byte (cursor + 1) in data) >= 208) and ((the byte (cursor + 1) in data) <= 215)))):
+                                set cursor to cursor + 1
+                            set size to -2
+                            set cursor to cursor - 2
+                    set cursor to (cursor + 2) + size
+        set result to a failed jpeg because unsupported
+        if (framed and (broken = false)) and (unsupported = false):
+            set image to an unfilled paint canvas (frame's jfWidth) by (frame's jfHeight)
+            convert (the address of frame) into image
+            set turn to the camera turn within data sized length
+            if turn = 1:
+                set result to @intrinsic("construct", a paint jpeg result, true, false, image)
+            else:
+                set result to @intrinsic("construct", a paint jpeg result, true, false, image oriented by turn)
+                free paint canvas image
+        loop index from 0 to (the length of (frame's jfComponents)):
+            set component to the item at index in (frame's jfComponents)
+            if (component's jcCoefficients) != (0 as a pointer to a 16 bit integer):
+                @intrinsic("call", "libc", "free", nothing, component's jcCoefficients)
+        free frame's jfComponents
+        @intrinsic("call", "libc", "free", nothing, frame's jfPredictors)
+        @intrinsic("call", "libc", "free", nothing, frame's jfDcTables)
+        @intrinsic("call", "libc", "free", nothing, frame's jfAcTables)
+        loop index from 0 to 8:
+            free (the value at ((tables + (index * tableSize)) as a pointer to a jpeg huffman table))
+        @intrinsic("call", "libc", "free", nothing, tables)
+        @intrinsic("call", "libc", "free", nothing, quant)
+        @intrinsic("call", "libc", "free", nothing, zigzag)
+        return result
+
+# --- EXIF orientation, read from the file's APP1 segment ---
+
+local function the big-endian {integer:size} byte number at {integer:offset} in {pointer:bytes} swapped {boolean:little}:
+    execute:
+        set value to 0
+        loop index from 0 to size:
+            set position to offset + index
+            if little:
+                set position to offset + ((size - 1) - index)
+            set value to (value << 8) | (((the item at position in (bytes as a pointer to a byte)) as an integer) & 255)
+        return value
+
+# The orientation tag (1..8), 1 when the file has none.
+function the camera turn within {pointer:bytes} sized {integer:count}:
+    execute:
+        set offset to 2
+        loop while (offset + 4) <= count:
+            if (((the item at offset in (bytes as a pointer to a byte)) as an integer) & 255) != 255:
+                return 1
+            set marker to ((the item at (offset + 1) in (bytes as a pointer to a byte)) as an integer) & 255
+            set size to the big-endian 2 byte number at (offset + 2) in bytes swapped false
+            if marker = 218:
+                return 1
+            if (marker = 225) and ((offset + 18) <= count):
+                set tiff to offset + 10
+                if ((((the item at (offset + 4) in (bytes as a pointer to a byte)) as an integer) & 255) = 69) and ((((the item at (offset + 5) in (bytes as a pointer to a byte)) as an integer) & 255) = 120):
+                    set little to (((the item at tiff in (bytes as a pointer to a byte)) as an integer) & 255) = 73
+                    set first to tiff + (the big-endian 4 byte number at (tiff + 4) in bytes swapped little)
+                    if (first + 2) <= count:
+                        set entries to the big-endian 2 byte number at first in bytes swapped little
+                        loop entry from 0 to entries:
+                            set cursor to (first + 2) + (entry * 12)
+                            if (cursor + 12) <= count:
+                                if (the big-endian 2 byte number at cursor in bytes swapped little) = 274:
+                                    set orientation to the big-endian 2 byte number at (cursor + 8) in bytes swapped little
+                                    if (orientation >= 1) and (orientation <= 8):
+                                        return orientation
+                                    return 1
+                return 1
+            set offset to (offset + 2) + size
+        return 1
+
+# The image as the camera held it: EXIF 2..8 mirror and turn it.
+function {paint canvas:image} oriented by {integer:orientation}:
+    execute:
+        if orientation = 2:
+            return the paint canvas image flipped horizontally true
+        if orientation = 3:
+            set mirrored to the paint canvas image flipped horizontally true
+            set turned to the paint canvas mirrored flipped horizontally false
+            free paint canvas mirrored
+            return turned
+        if orientation = 4:
+            return the paint canvas image flipped horizontally false
+        if orientation = 5:
+            set turned to the paint canvas image turned clockwise true
+            set mirrored to the paint canvas turned flipped horizontally true
+            free paint canvas turned
+            return mirrored
+        if orientation = 6:
+            return the paint canvas image turned clockwise true
+        if orientation = 7:
+            set turned to the paint canvas image turned clockwise true
+            set mirrored to the paint canvas turned flipped horizontally false
+            free paint canvas turned
+            return mirrored
+        if orientation = 8:
+            return the paint canvas image turned clockwise false
+        return the paint copy of image
+
+# --- Writing: baseline, 4:2:0, the standard tables scaled to the quality ---
+
+class:
+    patterns:
+        [a|] jpeg writer
+    members:
+        jwBytes as a pointer to a byte
+        jwCapacity as an integer
+        jwCount as an integer
+        jwBits as an integer
+        jwBitCount as an integer
+
+local function put byte {integer:value} to {a pointer to a jpeg writer:writer}:
+    execute:
+        if (writer's jwCount) >= (writer's jwCapacity):
+            set writer's jwCapacity to ((writer's jwCapacity) * 2) + 4096
+            set writer's jwBytes to @intrinsic("call", "libc", "realloc", a pointer to a byte, writer's jwBytes, (writer's jwCapacity) as a word sized integer)
+        store ((value & 255) as a byte) at ((writer's jwBytes) + (writer's jwCount))
+        set writer's jwCount to (writer's jwCount) + 1
+
+local function put half {integer:value} to {a pointer to a jpeg writer:writer}:
+    execute:
+        put byte (value >> 8) to writer
+        put byte value to writer
+
+# Entropy-coded bits, most significant first, with 0xFF stuffing.
+local function put {integer:value} in {integer:count} bits to {a pointer to a jpeg writer:writer}:
+    execute:
+        if count = 0:
+            return nothing
+        set writer's jwBits to ((writer's jwBits) << count) | (value & ((1 << count) - 1))
+        set writer's jwBitCount to (writer's jwBitCount) + count
+        loop while (writer's jwBitCount) >= 8:
+            set out to ((writer's jwBits) >> ((writer's jwBitCount) - 8)) & 255
+            put byte out to writer
+            if out = 255:
+                put byte 0 to writer
+            set writer's jwBitCount to (writer's jwBitCount) - 8
+            set writer's jwBits to (writer's jwBits) & ((1 << (writer's jwBitCount)) - 1)
+
+local function flush {a pointer to a jpeg writer:writer}:
+    execute:
+        if (writer's jwBitCount) > 0:
+            put 127 in (8 - (writer's jwBitCount)) bits to writer
+
+# The standard luminance and chrominance quantisation tables (K.1, K.2).
+local function the jpeg standard quantiser {boolean:chroma}:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        if chroma:
+            load table from (the string form of "17 18 24 47 99 99 99 99 18 21 26 66 99 99 99 99 24 26 56 99 99 99 99 99 47 66 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99 99")
+        else:
+            load table from (the string form of "16 11 10 16 24 40 51 61 12 12 14 19 26 58 60 55 14 13 16 24 40 57 69 56 14 17 22 29 51 87 80 62 18 22 37 56 68 109 103 77 24 35 55 64 81 104 113 92 49 64 78 87 103 121 120 101 72 92 95 98 112 100 103 99")
+        return table
+
+# The standard Huffman tables (K.3–K.6) as code and length per symbol.
+local function the jpeg standard codes {boolean:chroma} {boolean:ac} into {a pointer to an integer:codes} {a pointer to an integer:sizes} tallies {a pointer to an integer:counts} alphabet {a pointer to an integer:symbols}:
+    execute:
+        if ac = false:
+            if chroma:
+                load counts from (the string form of "0 3 1 1 1 1 1 1 1 1 1 0 0 0 0 0")
+            else:
+                load counts from (the string form of "0 1 5 1 1 1 1 1 1 0 0 0 0 0 0 0")
+            load symbols from (the string form of "0 1 2 3 4 5 6 7 8 9 10 11")
+        else if chroma:
+            load counts from (the string form of "0 2 1 2 4 4 3 4 7 5 4 4 0 1 2 119")
+            load symbols from (the string form of "0 1 2 3 17 4 5 33 49 6 18 65 81 7 97 113 19 34 50 129 8 20 66 145 161 177 193 9 35 51 82 240 21 98 114 209 10 22 36 52 225 37 241 23 24 25 26 38 39 40 41 42 53 54 55 56 57 58 67 68 69 70 71 72 73 74 83 84 85 86 87 88 89 90 99 100 101 102 103 104 105 106 115 116 117 118 119 120 121 122 130 131 132 133 134 135 136 137 138 146 147 148 149 150 151 152 153 154 162 163 164 165 166 167 168 169 170 178 179 180 181 182 183 184 185 186 194 195 196 197 198 199 200 201 202 210 211 212 213 214 215 216 217 218 226 227 228 229 230 231 232 233 234 242 243 244 245 246 247 248 249 250")
+        else:
+            load counts from (the string form of "0 2 1 3 3 2 4 3 5 5 4 4 0 0 1 125")
+            load symbols from (the string form of "1 2 3 0 4 17 5 18 33 49 65 6 19 81 97 7 34 113 20 50 129 145 161 8 35 66 177 193 21 82 209 240 36 51 98 114 130 9 10 22 23 24 25 26 37 38 39 40 41 42 52 53 54 55 56 57 58 67 68 69 70 71 72 73 74 83 84 85 86 87 88 89 90 99 100 101 102 103 104 105 106 115 116 117 118 119 120 121 122 131 132 133 134 135 136 137 138 146 147 148 149 150 151 152 153 154 162 163 164 165 166 167 168 169 170 178 179 180 181 182 183 184 185 186 194 195 196 197 198 199 200 201 202 210 211 212 213 214 215 216 217 218 225 226 227 228 229 230 231 232 233 234 241 242 243 244 245 246 247 248 249 250")
+        set code to 0
+        set index to 0
+        loop size from 1 to 17:
+            loop step from 0 to (the item at (size - 1) in counts):
+                set symbol to the item at index in symbols
+                store code at (codes + symbol)
+                store size at (sizes + symbol)
+                set code to code + 1
+                set index to index + 1
+            set code to code << 1
+        return index
+
+local function the jpeg category of {integer:value}:
+    execute:
+        set magnitude to the absolute value of value
+        set size to 0
+        loop while magnitude > 0:
+            set magnitude to magnitude >> 1
+            set size to size + 1
+        return size
+
+# Forward DCT of the 8 x 8 samples (floats), quantised in zigzag order into
+# out.
+local function quantise block {a pointer to a 64 bit floating-point number:samples} by {a pointer to an integer:quant} zigzag {a pointer to an integer:zigzag} into {a pointer to an integer:out} using {a pointer to a 64 bit floating-point number:cosines}:
+    execute:
+        set work to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, 64 as a word sized integer, 8 as a word sized integer)
+        # Rows.
+        loop row from 0 to 8:
+            loop u from 0 to 8:
+                set sum to 0.0
+                loop x from 0 to 8:
+                    set sum to sum + ((the item at ((row * 8) + x) in samples) * (the item at ((u * 8) + x) in cosines))
+                store sum at (work + ((row * 8) + u))
+        loop v from 0 to 8:
+            loop u from 0 to 8:
+                set sum to 0.0
+                loop y from 0 to 8:
+                    set sum to sum + ((the item at ((y * 8) + u) in work) * (the item at ((v * 8) + y) in cosines))
+                set index to (v * 8) + u
+                set quantised to (the rounded value of (sum / ((the item at index in quant) as a 64 bit floating-point number))) as an integer
+                store quantised at (out + index)
+        @intrinsic("call", "libc", "free", nothing, work)
+        ignore zigzag
+
+local function the jpeg cosines:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, 64 as a word sized integer, 8 as a word sized integer)
+        loop u from 0 to 8:
+            set scale to 0.5
+            if u = 0:
+                set scale to 0.353553390593274
+            loop x from 0 to 8:
+                store (scale * (the cosine of ((((2.0 * (x as a 64 bit floating-point number)) + 1.0) * (u as a 64 bit floating-point number)) * 0.19634954084936207))) at (table + ((u * 8) + x))
+        return table
+
+# Writes one quantised block (natural order) with the DC predictor.
+local function write block {a pointer to an integer:block} after {integer:predictor} with dc {a pointer to an integer:dcCodes} {a pointer to an integer:dcSizes} ac {a pointer to an integer:acCodes} {a pointer to an integer:acSizes} zigzag {a pointer to an integer:zigzag} to {a pointer to a jpeg writer:writer}:
+    execute:
+        set direct to the item at 0 in block
+        set difference to direct - predictor
+        set size to the jpeg category of difference
+        put (the item at size in dcCodes) in (the item at size in dcSizes) bits to writer
+        if difference < 0:
+            set difference to difference - 1
+        put difference in size bits to writer
+        set run to 0
+        loop position from 1 to 64:
+            set value to the item at (the item at position in zigzag) in block
+            if value = 0:
+                set run to run + 1
+            else:
+                loop while run > 15:
+                    put (the item at 240 in acCodes) in (the item at 240 in acSizes) bits to writer
+                    set run to run - 16
+                set size to the jpeg category of value
+                set symbol to (run << 4) | size
+                put (the item at symbol in acCodes) in (the item at symbol in acSizes) bits to writer
+                if value < 0:
+                    set value to value - 1
+                put value in size bits to writer
+                set run to 0
+        if run > 0:
+            put (the item at 0 in acCodes) in (the item at 0 in acSizes) bits to writer
+        return direct
+
+# The image as a baseline JPEG at the quality (1..100), composited on white.
+function the jpeg bytes of {paint canvas:image} quality {integer:quality}:
+    execute:
+        set writer to @intrinsic("construct", a jpeg writer, @intrinsic("call", "libc", "malloc", a pointer to a byte, 65536 as a word sized integer), 65536, 0, 0, 0)
+        set out to the address of writer
+        set zigzag to the jpeg zigzag
+        set cosines to the jpeg cosines
+        set scale to 5000 / (quality clamped between 1 and 100)
+        if quality >= 50:
+            set scale to 200 - (2 * (quality clamped between 1 and 100))
+        set lumaQuant to the jpeg standard quantiser false
+        set chromaQuant to the jpeg standard quantiser true
+        loop index from 0 to 64:
+            store ((((the item at index in lumaQuant) * scale) + 50) / 100) clamped between 1 and 255 at (lumaQuant + index)
+            store ((((the item at index in chromaQuant) * scale) + 50) / 100) clamped between 1 and 255 at (chromaQuant + index)
+        # Headers: SOI, DQT x2, SOF0, DHT x4, SOS.
+        put half 65496 to out
+        loop table from 0 to 2:
+            put half 65499 to out
+            put half 67 to out
+            put byte table to out
+            loop index from 0 to 64:
+                if table = 0:
+                    put byte (the item at (the item at index in zigzag) in lumaQuant) to out
+                else:
+                    put byte (the item at (the item at index in zigzag) in chromaQuant) to out
+        put half 65472 to out
+        put half 17 to out
+        put byte 8 to out
+        put half (image's height) to out
+        put half (image's width) to out
+        put byte 3 to out
+        put byte 1 to out
+        put byte 34 to out
+        put byte 0 to out
+        put byte 2 to out
+        put byte 17 to out
+        put byte 1 to out
+        put byte 3 to out
+        put byte 17 to out
+        put byte 1 to out
+        set codes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1024 as a word sized integer, 4 as a word sized integer)
+        set sizes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1024 as a word sized integer, 4 as a word sized integer)
+        set counts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set symbols to @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer)
+        loop table from 0 to 4:
+            set chroma to (table & 1) = 1
+            set ac to table >= 2
+            set total to the jpeg standard codes chroma ac into (codes + (table * 256)) (sizes + (table * 256)) tallies counts alphabet symbols
+            put half 65476 to out
+            put half (19 + total) to out
+            put byte (((table >> 1) << 4) | (table & 1)) to out
+            loop index from 0 to 16:
+                put byte (the item at index in counts) to out
+            loop index from 0 to total:
+                put byte (the item at index in symbols) to out
+        put half 65498 to out
+        put half 12 to out
+        put byte 3 to out
+        put byte 1 to out
+        put byte 0 to out
+        put byte 2 to out
+        put byte 17 to out
+        put byte 3 to out
+        put byte 17 to out
+        put byte 0 to out
+        put byte 63 to out
+        put byte 0 to out
+        # The MCUs: four Y blocks, one Cb, one Cr, from pixels on white.
+        set yBlock to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, 64 as a word sized integer, 8 as a word sized integer)
+        set cbBlock to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, 64 as a word sized integer, 8 as a word sized integer)
+        set crBlock to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, 64 as a word sized integer, 8 as a word sized integer)
+        set quantised to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set predictors to @intrinsic("call", "libc", "calloc", a pointer to an integer, 3 as a word sized integer, 4 as a word sized integer)
+        set pixels to image's pixels
+        set width to image's width
+        set height to image's height
+        set mcusWide to (width + 15) / 16
+        set mcusHigh to (height + 15) / 16
+        loop mcuRow from 0 to mcusHigh:
+            loop mcuColumn from 0 to mcusWide:
+                loop index from 0 to 64:
+                    store 0.0 at (cbBlock + index)
+                    store 0.0 at (crBlock + index)
+                loop quarter from 0 to 4:
+                    loop row from 0 to 8:
+                        loop column from 0 to 8:
+                            set x to the minimum of (width - 1) and ((((mcuColumn * 16) + ((quarter & 1) * 8)) + column))
+                            set y to the minimum of (height - 1) and ((((mcuRow * 16) + ((quarter >> 1) * 8)) + row))
+                            set offset to ((y * width) + x) * 4
+                            set alpha to ((the item at (offset + 3) in pixels) as an integer) & 255
+                            set red to ((((the item at offset in pixels) as an integer) & 255) * alpha + (255 * (255 - alpha))) / 255
+                            set green to ((((the item at (offset + 1) in pixels) as an integer) & 255) * alpha + (255 * (255 - alpha))) / 255
+                            set blue to ((((the item at (offset + 2) in pixels) as an integer) & 255) * alpha + (255 * (255 - alpha))) / 255
+                            set luma to ((0.299 * (red as a 64 bit floating-point number)) + (0.587 * (green as a 64 bit floating-point number))) + (0.114 * (blue as a 64 bit floating-point number))
+                            set cb to (((0.0 - 0.168736) * (red as a 64 bit floating-point number)) - (0.331264 * (green as a 64 bit floating-point number))) + (0.5 * (blue as a 64 bit floating-point number))
+                            set cr to ((0.5 * (red as a 64 bit floating-point number)) - (0.418688 * (green as a 64 bit floating-point number))) - (0.081312 * (blue as a 64 bit floating-point number))
+                            store (luma - 128.0) at (yBlock + ((row * 8) + column))
+                            set chromaIndex to ((((quarter >> 1) * 4) + (row / 2)) * 8) + (((quarter & 1) * 4) + (column / 2))
+                            store ((the item at chromaIndex in cbBlock) + (cb / 4.0)) at (cbBlock + chromaIndex)
+                            store ((the item at chromaIndex in crBlock) + (cr / 4.0)) at (crBlock + chromaIndex)
+                    quantise block yBlock by lumaQuant zigzag zigzag into quantised using cosines
+                    store (write block quantised after (the item at 0 in predictors) with dc codes sizes ac (codes + 512) (sizes + 512) zigzag zigzag to out) at predictors
+                quantise block cbBlock by chromaQuant zigzag zigzag into quantised using cosines
+                store (write block quantised after (the item at 1 in predictors) with dc (codes + 256) (sizes + 256) ac (codes + 768) (sizes + 768) zigzag zigzag to out) at (predictors + 1)
+                quantise block crBlock by chromaQuant zigzag zigzag into quantised using cosines
+                store (write block quantised after (the item at 2 in predictors) with dc (codes + 256) (sizes + 256) ac (codes + 768) (sizes + 768) zigzag zigzag to out) at (predictors + 2)
+        flush out
+        put half 65497 to out
+        @intrinsic("call", "libc", "free", nothing, yBlock)
+        @intrinsic("call", "libc", "free", nothing, cbBlock)
+        @intrinsic("call", "libc", "free", nothing, crBlock)
+        @intrinsic("call", "libc", "free", nothing, quantised)
+        @intrinsic("call", "libc", "free", nothing, predictors)
+        @intrinsic("call", "libc", "free", nothing, codes)
+        @intrinsic("call", "libc", "free", nothing, sizes)
+        @intrinsic("call", "libc", "free", nothing, counts)
+        @intrinsic("call", "libc", "free", nothing, symbols)
+        @intrinsic("call", "libc", "free", nothing, lumaQuant)
+        @intrinsic("call", "libc", "free", nothing, chromaQuant)
+        @intrinsic("call", "libc", "free", nothing, cosines)
+        @intrinsic("call", "libc", "free", nothing, zigzag)
+        return a paint byte stream of (writer's jwBytes) spanning (writer's jwCount)

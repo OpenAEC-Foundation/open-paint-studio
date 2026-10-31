@@ -1,0 +1,456 @@
+# The window, through X11 itself: Xlib for the window, its properties and
+# input, MIT-SHM for the frames. The frame is composed on the processor, so
+# the shortest path to the screen is a shared-memory image the X server reads
+# in place — one copy, no graphics driver, no swapchain. Wayland desktops run
+# this through XWayland, which is also how the window's icon reaches them
+# (the .desktop entry's StartupWMClass matches WM_CLASS).
+#
+# Input arrives as events and is kept as state the editor polls between
+# frames: the pointer, the two buttons it uses, the wheel, which keys are
+# down (numbered as GLFW numbers them, so the editor's key handling is
+# unchanged) and the text the key presses typed. A release that follows its
+# press within one batch of events waits for the next poll, so no press is
+# lost between two frames.
+import dynlex/paint/canvas.dl
+import lib/list.dl
+import lib/string.dl
+
+class:
+    patterns:
+        [a|] paint window
+    members:
+        display as a pointer to a byte
+        handle as a C long integer
+        root as a C long integer
+        screen as an integer
+        gc as a pointer to a byte
+        visual as a pointer to a byte
+        depth as an integer
+        width as an integer
+        height as an integer
+        image as a pointer to a byte
+        shm as a pointer to a byte
+        pixels as a pointer to a byte
+        stride as an integer
+        imageWidth as an integer
+        imageHeight as an integer
+        sharing as a boolean
+        mouseX as a 64 bit floating-point number
+        mouseY as a 64 bit floating-point number
+        rootX as an integer
+        rootY as an integer
+        left as a boolean
+        middle as a boolean
+        wheel as a 64 bit floating-point number
+        keys as a pointer to a byte
+        pressed as a pointer to a byte
+        keyEvent as boolean
+        typed as a string
+        closing as a boolean
+        exposed as a boolean
+        resized as a boolean
+        event as a pointer to a byte
+        wmProtocols as a C long integer
+        wmDelete as a C long integer
+        netWmState as a C long integer
+        maximizedVertically as a C long integer
+        maximizedHorizontally as a C long integer
+        netWmName as a C long integer
+        utf8String as a C long integer
+        netWmIcon as a C long integer
+        motifHints as a C long integer
+        moveResize as a C long integer
+
+local function the atom {C string:name} in {pointer:display}:
+    execute:
+        return @intrinsic("call", ":libX11.so.6", "XInternAtom", a C long integer, display, name, 0)
+
+# Opens the window, undecorated (the shell draws its own title bar) and
+# shown; its display is null when there is no X server to reach.
+function a new paint window {integer:width} by {integer:height} titled {C string:title}:
+    execute:
+        set display to @intrinsic("call", ":libX11.so.6", "XOpenDisplay", a pointer to a byte, 0 as a pointer to a byte)
+        set keys to @intrinsic("call", "libc", "calloc", a pointer to a byte, 1024 as a word sized integer, 1 as a word sized integer)
+        set pressed to @intrinsic("call", "libc", "calloc", a pointer to a byte, 1024 as a word sized integer, 1 as a word sized integer)
+        set event to @intrinsic("call", "libc", "calloc", a pointer to a byte, 256 as a word sized integer, 1 as a word sized integer)
+        if display = 0 as a pointer to a byte:
+            return @intrinsic("construct", a paint window, display, 0 as a C long integer, 0 as a C long integer, 0, 0 as a pointer to a byte, 0 as a pointer to a byte, 0, width, height, 0 as a pointer to a byte, 0 as a pointer to a byte, 0 as a pointer to a byte, 0, 0, 0, false, 0.0, 0.0, 0, 0, false, false, 0.0, keys, pressed, false, the string form of "", true, false, false, event, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer, 0 as a C long integer)
+        # Holding a key repeats KeyPress without KeyRelease in between.
+        ignore @intrinsic("call", ":libX11.so.6", "XkbSetDetectableAutoRepeat", an integer, display, 1, 0 as a pointer to a byte)
+        set screen to @intrinsic("call", ":libX11.so.6", "XDefaultScreen", an integer, display)
+        set root to @intrinsic("call", ":libX11.so.6", "XDefaultRootWindow", a C long integer, display)
+        set visual to @intrinsic("call", ":libX11.so.6", "XDefaultVisual", a pointer to a byte, display, screen)
+        set depth to @intrinsic("call", ":libX11.so.6", "XDefaultDepth", an integer, display, screen)
+        # XSetWindowAttributes: background_pixel (8), bit_gravity (32),
+        # event_mask (72); CWBackPixel | CWBitGravity | CWEventMask.
+        set attributes to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 14 as a word sized integer, 8 as a word sized integer)
+        store 16448250 as a C long integer at (attributes + 1)
+        store 1 as a C long integer at (attributes + 4)
+        # KeyPress, KeyRelease, ButtonPress, ButtonRelease, PointerMotion,
+        # EnterWindow, LeaveWindow, Exposure, StructureNotify.
+        store 163967 as a C long integer at (attributes + 9)
+        set handle to @intrinsic("call", ":libX11.so.6", "XCreateWindow", a C long integer, display, root, 0, 0, width, height, 0, depth, 1, visual, 2066 as a C long integer, attributes)
+        @intrinsic("call", "libc", "free", nothing, attributes)
+        set wmProtocols to the atom "WM_PROTOCOLS" in display
+        set wmDelete to the atom "WM_DELETE_WINDOW" in display
+        set netWmState to the atom "_NET_WM_STATE" in display
+        set maximizedVertically to the atom "_NET_WM_STATE_MAXIMIZED_VERT" in display
+        set maximizedHorizontally to the atom "_NET_WM_STATE_MAXIMIZED_HORZ" in display
+        set netWmName to the atom "_NET_WM_NAME" in display
+        set utf8String to the atom "UTF8_STRING" in display
+        set netWmIcon to the atom "_NET_WM_ICON" in display
+        set motifHints to the atom "_MOTIF_WM_HINTS" in display
+        set moveResize to the atom "_NET_WM_MOVERESIZE" in display
+        # The title, and the class the desktop matches to the .desktop entry.
+        @intrinsic("call", ":libX11.so.6", "XStoreName", nothing, display, handle, title)
+        @intrinsic("call", ":libX11.so.6", "XChangeProperty", nothing, display, handle, netWmName, utf8String, 8, 0, title, (the length of (title as a C string)) as an integer)
+        set hint to @intrinsic("call", "libc", "calloc", a pointer to a pointer to a byte, 2 as a word sized integer, 8 as a word sized integer)
+        store (title as a pointer to a byte) at hint
+        store (title as a pointer to a byte) at (hint + 1)
+        @intrinsic("call", ":libX11.so.6", "XSetClassHint", nothing, display, handle, hint)
+        @intrinsic("call", "libc", "free", nothing, hint)
+        # Closing goes through WM_DELETE_WINDOW.
+        set protocols to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 1 as a word sized integer, 8 as a word sized integer)
+        store wmDelete at protocols
+        ignore @intrinsic("call", ":libX11.so.6", "XSetWMProtocols", an integer, display, handle, protocols, 1)
+        @intrinsic("call", "libc", "free", nothing, protocols)
+        # No decorations: _MOTIF_WM_HINTS with flags MWM_HINTS_DECORATIONS and
+        # decorations 0.
+        set hints to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 5 as a word sized integer, 8 as a word sized integer)
+        store 2 as a C long integer at hints
+        @intrinsic("call", ":libX11.so.6", "XChangeProperty", nothing, display, handle, motifHints, motifHints, 32, 0, hints, 5)
+        @intrinsic("call", "libc", "free", nothing, hints)
+        # XSizeHints: flags PMinSize, min_width (24), min_height (28).
+        set sizes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 20 as a word sized integer, 4 as a word sized integer)
+        store 16 at sizes
+        store 640 at (sizes + 6)
+        store 400 at (sizes + 7)
+        @intrinsic("call", ":libX11.so.6", "XSetWMNormalHints", nothing, display, handle, sizes)
+        @intrinsic("call", "libc", "free", nothing, sizes)
+        set gc to @intrinsic("call", ":libX11.so.6", "XCreateGC", a pointer to a byte, display, handle, 0 as a C long integer, 0 as a pointer to a byte)
+        set sharing to (@intrinsic("call", ":libXext.so.6", "XShmQueryExtension", an integer, display)) != 0
+        @intrinsic("call", ":libX11.so.6", "XMapWindow", nothing, display, handle)
+        @intrinsic("call", ":libX11.so.6", "XFlush", nothing, display)
+        return @intrinsic("construct", a paint window, display, handle, root, screen, gc, visual, depth, width, height, 0 as a pointer to a byte, 0 as a pointer to a byte, 0 as a pointer to a byte, 0, 0, 0, sharing, 0.0, 0.0, 0, 0, false, false, 0.0, keys, pressed, false, the string form of "", false, false, false, event, wmProtocols, wmDelete, netWmState, maximizedVertically, maximizedHorizontally, netWmName, utf8String, netWmIcon, motifHints, moveResize)
+
+function {a pointer to a paint window:window} is open:
+    execute:
+        return window's display != 0 as a pointer to a byte
+
+# The icon the desktop shows for the window: _NET_WM_ICON, ARGB in longs.
+function set the icon of {a pointer to a paint window:window} to {paint canvas:picture}:
+    execute:
+        set count to picture's width * picture's height
+        set data to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, (count + 2) as a word sized integer, 8 as a word sized integer)
+        store (picture's width as a C long integer) at data
+        store (picture's height as a C long integer) at (data + 1)
+        set source to picture's pixels
+        loop index from 0 to count:
+            set red to ((the item at (index * 4) in source) as an integer) & 255
+            set green to ((the item at ((index * 4) + 1) in source) as an integer) & 255
+            set blue to ((the item at ((index * 4) + 2) in source) as an integer) & 255
+            set alpha to ((the item at ((index * 4) + 3) in source) as an integer) & 255
+            store ((((alpha << 24) | (red << 16)) | ((green << 8) | blue)) as a C long integer) at (data + (index + 2))
+        @intrinsic("call", ":libX11.so.6", "XChangeProperty", nothing, window's display, window's handle, window's netWmIcon, 6 as a C long integer, 32, 0, data, count + 2)
+        @intrinsic("call", "libc", "free", nothing, data)
+
+function set the title of {a pointer to a paint window:window} to {string:title}:
+    execute:
+        @intrinsic("call", ":libX11.so.6", "XStoreName", nothing, window's display, window's handle, the data of title)
+        @intrinsic("call", ":libX11.so.6", "XChangeProperty", nothing, window's display, window's handle, window's netWmName, window's utf8String, 8, 0, the data of title, title's length)
+        @intrinsic("call", ":libX11.so.6", "XFlush", nothing, window's display)
+
+function request that {a pointer to a paint window:window} close:
+    execute:
+        set window's closing to true
+
+function {a pointer to a paint window:window} remains open:
+    execute:
+        return window's closing = false
+
+function key {integer:number} is down in {a pointer to a paint window:window}:
+    execute:
+        return (the item at number in (window's keys)) != (0 as a byte)
+
+# --- The frame image ---
+
+local function release the shared picture of {a pointer to a paint window:window}:
+    execute:
+        if window's image = 0 as a pointer to a byte:
+            return nothing
+        if window's sharing:
+            ignore @intrinsic("call", ":libXext.so.6", "XShmDetach", an integer, window's display, window's shm)
+            # XDestroyImage leaves shared data alone; the segment goes with
+            # its detachment (it was marked for removal when attached).
+            ignore @intrinsic("call", ":libX11.so.6", "XDestroyImage", an integer, window's image)
+            ignore @intrinsic("call", "libc", "shmdt", an integer, window's pixels)
+            @intrinsic("call", "libc", "free", nothing, window's shm)
+        else:
+            # XDestroyImage frees the data it was given.
+            ignore @intrinsic("call", ":libX11.so.6", "XDestroyImage", an integer, window's image)
+        set window's image to 0 as a pointer to a byte
+        set window's pixels to 0 as a pointer to a byte
+        set window's shm to 0 as a pointer to a byte
+
+# An image of the size, shared with the server when it can be.
+local function prepare the shared picture of {a pointer to a paint window:window} sized {integer:width} by {integer:height}:
+    execute:
+        if (window's image != 0 as a pointer to a byte) and ((window's imageWidth = width) and (window's imageHeight = height)):
+            return nothing
+        release the shared picture of window
+        if window's sharing:
+            # XShmSegmentInfo: shmseg, shmid (8), shmaddr (16), readOnly (24).
+            set info to @intrinsic("call", "libc", "calloc", a pointer to a byte, 32 as a word sized integer, 1 as a word sized integer)
+            set image to @intrinsic("call", ":libXext.so.6", "XShmCreateImage", a pointer to a byte, window's display, window's visual, window's depth, 2, 0 as a pointer to a byte, info, width, height)
+            set stride to @intrinsic("dereference", (image + 44) as a pointer to an integer)
+            set size to (stride * height) as word sized integer
+            # IPC_PRIVATE, IPC_CREAT | 0600
+            set id to @intrinsic("call", "libc", "shmget", an integer, 0, size, 896)
+            set address to @intrinsic("call", "libc", "shmat", a pointer to a byte, id, 0 as a pointer to a byte, 0)
+            @intrinsic("store at", (info + 8) as a pointer to an integer, id)
+            @intrinsic("store at", (info + 16) as a pointer to a pointer to a byte, address)
+            @intrinsic("store at", (image + 16) as a pointer to a pointer to a byte, address)
+            ignore @intrinsic("call", ":libXext.so.6", "XShmAttach", an integer, window's display, info)
+            @intrinsic("call", ":libX11.so.6", "XSync", nothing, window's display, 0)
+            # Removed once both sides detach.
+            ignore @intrinsic("call", "libc", "shmctl", an integer, id, 0, 0 as a pointer to a byte)
+            set window's shm to info
+            set window's image to image
+            set window's pixels to address
+            set window's stride to stride
+        else:
+            set stride to width * 4
+            set address to @intrinsic("call", "libc", "malloc", a pointer to a byte, (stride * height) as a word sized integer)
+            set image to @intrinsic("call", ":libX11.so.6", "XCreateImage", a pointer to a byte, window's display, window's visual, window's depth, 2, 0, address, width, height, 32, stride)
+            set window's image to image
+            set window's pixels to address
+            set window's stride to stride
+        set window's imageWidth to width
+        set window's imageHeight to height
+
+# Shows the rectangle of frame (RGBA, the window's size) on the window: the
+# pixels become the server's BGRX order on the way into the shared image.
+function present {paint canvas:frame} within {integer:x} {integer:y} {integer:w} {integer:h} on {a pointer to a paint window:window}:
+    execute:
+        if (w <= 0) or (h <= 0):
+            return nothing
+        prepare the shared picture of window sized (frame's width) by (frame's height)
+        set source to frame's pixels as a pointer to an integer
+        set target to window's pixels
+        set wordStride to window's stride / 4
+        loop row from y to (y + h):
+            set from to (row * frame's width) + x
+            set to to (target + (row * window's stride)) as a pointer to an integer
+            set to to to + x
+            loop column from 0 to w:
+                set value to the item at (from + column) in source
+                store (((((value & 255) << 16) | (value & 65280)) | ((value >> 16) & 255)) | -16777216) at (to + column)
+        ignore wordStride
+        if window's sharing:
+            ignore @intrinsic("call", ":libXext.so.6", "XShmPutImage", an integer, window's display, window's handle, window's gc, window's image, x, y, x, y, w, h, 0)
+            # The image is written again after this returns: wait for the
+            # server to have read it.
+            @intrinsic("call", ":libX11.so.6", "XSync", nothing, window's display, 0)
+        else:
+            ignore @intrinsic("call", ":libX11.so.6", "XPutImage", an integer, window's display, window's handle, window's gc, window's image, x, y, x, y, w, h)
+            @intrinsic("call", ":libX11.so.6", "XFlush", nothing, window's display)
+
+# --- Events ---
+
+# GLFW's number for the key, from its unshifted keysym; 0 for keys the editor
+# has no use for.
+local function the key number of keysym {integer:keysym}:
+    execute:
+        if (keysym >= 97) and (keysym <= 122):
+            return keysym - 32
+        if (keysym >= 32) and (keysym <= 96):
+            return keysym
+        if keysym = 65307:
+            return 256
+        if (keysym = 65293) or (keysym = 65421):
+            return 257
+        if keysym = 65289:
+            return 258
+        if keysym = 65288:
+            return 259
+        if keysym = 65535:
+            return 261
+        if keysym = 65363:
+            return 262
+        if keysym = 65361:
+            return 263
+        if keysym = 65364:
+            return 264
+        if keysym = 65362:
+            return 265
+        if keysym = 65505:
+            return 340
+        if keysym = 65506:
+            return 344
+        if keysym = 65507:
+            return 341
+        if keysym = 65508:
+            return 345
+        return 0
+
+local function the event integer {integer:index} of {a pointer to a paint window:window}:
+    execute:
+        return the item at index in (window's event as a pointer to an integer)
+
+local function digest one message for {a pointer to a paint window:window}:
+    execute:
+        set event to window's event
+        @intrinsic("call", ":libX11.so.6", "XNextEvent", nothing, window's display, event)
+        set kind to the event integer 0 of window
+        if (kind = 2) or (kind = 3):
+            set keycode to the event integer 21 of window
+            set keysym to @intrinsic("call", ":libX11.so.6", "XkbKeycodeToKeysym", a C long integer, window's display, keycode, 0, 0) as an integer
+            set number to the key number of keysym keysym
+            set window's keyEvent to true
+            if kind = 2:
+                if number > 0:
+                    store (1 as a byte) at (window's keys + number)
+                    store (1 as a byte) at (window's pressed + number)
+                set letters to a new string buffer containing 32 bytes
+                set count to @intrinsic("call", ":libX11.so.6", "XLookupString", an integer, event, the data of letters, 32, 0 as a pointer to a byte, 0 as a pointer to a byte)
+                loop index from 0 to count:
+                    set letter to ((the character at index in letters) as an integer) & 255
+                    if (letter >= 32) and (letter != 127):
+                        set window's typed to window's typed + (the substring of letters from index spanning 1 bytes)
+            else if number > 0:
+                store (0 as a byte) at (window's keys + number)
+        else if (kind = 4) or (kind = 5):
+            set button to the event integer 21 of window
+            set window's mouseX to (the event integer 16 of window) as a 64 bit floating-point number
+            set window's mouseY to (the event integer 17 of window) as a 64 bit floating-point number
+            set window's rootX to the event integer 18 of window
+            set window's rootY to the event integer 19 of window
+            if kind = 4:
+                if button = 1:
+                    set window's left to true
+                    store (1 as a byte) at (window's pressed + (512 + button))
+                if button = 2:
+                    set window's middle to true
+                    store (1 as a byte) at (window's pressed + (512 + button))
+                if button = 4:
+                    set window's wheel to window's wheel + 1.0
+                if button = 5:
+                    set window's wheel to window's wheel - 1.0
+            else:
+                if button = 1:
+                    set window's left to false
+                if button = 2:
+                    set window's middle to false
+        else if ((kind = 6) or (kind = 7)) or (kind = 8):
+            set window's mouseX to (the event integer 16 of window) as a 64 bit floating-point number
+            set window's mouseY to (the event integer 17 of window) as a 64 bit floating-point number
+        else if kind = 22:
+            set width to the event integer 14 of window
+            set height to the event integer 15 of window
+            if (width != window's width) or (height != window's height):
+                set window's width to width
+                set window's height to height
+                set window's resized to true
+        else if kind = 12:
+            set window's exposed to true
+        else if kind = 33:
+            set longs to event as a pointer to a C long integer
+            if ((the item at 5 in longs) = window's wmProtocols) and ((the item at 7 in longs) = window's wmDelete):
+                set window's closing to true
+        else if kind = 34:
+            ignore @intrinsic("call", ":libX11.so.6", "XRefreshKeyboardMapping", an integer, event)
+
+# Whether the queued event is a release of what was pressed in this batch:
+# it then waits for the next poll, so the press is seen.
+local function the next event of {a pointer to a paint window:window} waits:
+    execute:
+        @intrinsic("call", ":libX11.so.6", "XPeekEvent", nothing, window's display, window's event)
+        set kind to the event integer 0 of window
+        if kind = 3:
+            set keysym to @intrinsic("call", ":libX11.so.6", "XkbKeycodeToKeysym", a C long integer, window's display, the event integer 21 of window, 0, 0) as an integer
+            set number to the key number of keysym keysym
+            return (number > 0) and ((the item at number in (window's pressed)) != (0 as a byte))
+        if kind = 5:
+            set button to the event integer 21 of window
+            return (the item at (512 + button) in (window's pressed)) != (0 as a byte)
+        return false
+
+# Takes what the server has queued into the window's state.
+function poll {a pointer to a paint window:window}:
+    execute:
+        set window's typed to the string form of ""
+        set window's keyEvent to false
+        set window's exposed to false
+        set window's resized to false
+        ignore @intrinsic("call", "libc", "memset", a pointer, window's pressed, 0, 1024 as a word sized integer)
+        loop while (@intrinsic("call", ":libX11.so.6", "XPending", an integer, window's display)) > 0:
+            if the next event of window waits:
+                return nothing
+            digest one message for window
+
+# Sleeps until the server has something to tell; the loop polls afterwards.
+function wait for an event in {a pointer to a paint window:window}:
+    execute:
+        if (@intrinsic("call", ":libX11.so.6", "XPending", an integer, window's display)) = 0:
+            @intrinsic("call", ":libX11.so.6", "XPeekEvent", nothing, window's display, window's event)
+
+# Sleeps until the server has something to tell or the time (milliseconds)
+# has passed: for frames that must follow something other than input.
+function wait for an event in {a pointer to a paint window:window} for {integer:milliseconds}:
+    execute:
+        if (@intrinsic("call", ":libX11.so.6", "XPending", an integer, window's display)) > 0:
+            return nothing
+        # struct pollfd: fd, events (POLLIN), revents.
+        set descriptor to @intrinsic("call", "libc", "calloc", a pointer to an integer, 2 as a word sized integer, 4 as a word sized integer)
+        store (@intrinsic("call", ":libX11.so.6", "XConnectionNumber", an integer, window's display)) at descriptor
+        store 1 at (descriptor + 1)
+        ignore @intrinsic("call", "libc", "poll", an integer, descriptor, 1 as a C long integer, milliseconds)
+        @intrinsic("call", "libc", "free", nothing, descriptor)
+
+# --- Window management ---
+
+local function send {integer:first} {integer:second} {integer:third} {integer:fourth} {integer:fifth} as {a C long integer:kind} from {a pointer to a paint window:window}:
+    execute:
+        set message to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 24 as a word sized integer, 8 as a word sized integer)
+        @intrinsic("store at", message as a pointer to an integer, 33)
+        store window's handle at (message + 4)
+        store kind at (message + 5)
+        @intrinsic("store at", (message + 6) as a pointer to an integer, 32)
+        store (first as a C long integer) at (message + 7)
+        store (second as a C long integer) at (message + 8)
+        store (third as a C long integer) at (message + 9)
+        store (fourth as a C long integer) at (message + 10)
+        store (fifth as a C long integer) at (message + 11)
+        # SubstructureRedirectMask | SubstructureNotifyMask
+        ignore @intrinsic("call", ":libX11.so.6", "XSendEvent", an integer, window's display, window's root, 0, 1572864 as a C long integer, message)
+        @intrinsic("call", ":libX11.so.6", "XFlush", nothing, window's display)
+        @intrinsic("call", "libc", "free", nothing, message)
+
+function iconify {a pointer to a paint window:window}:
+    execute:
+        ignore @intrinsic("call", ":libX11.so.6", "XIconifyWindow", an integer, window's display, window's handle, window's screen)
+        @intrinsic("call", ":libX11.so.6", "XFlush", nothing, window's display)
+
+# _NET_WM_STATE_TOGGLE of both maximised states.
+function toggle maximising {a pointer to a paint window:window}:
+    execute:
+        send 2 (window's maximizedVertically as an integer) (window's maximizedHorizontally as an integer) 1 0 as (window's netWmState) from window
+
+# Hands the drag that began at the pointer to the window manager
+# (_NET_WM_MOVERESIZE_MOVE), which moves the window with it.
+function start moving {a pointer to a paint window:window}:
+    execute:
+        ignore @intrinsic("call", ":libX11.so.6", "XUngrabPointer", an integer, window's display, 0 as a C long integer)
+        send (window's rootX) (window's rootY) 8 1 1 as (window's moveResize) from window
+        # The manager keeps the release.
+        set window's left to false
+
+function close {a pointer to a paint window:window}:
+    execute:
+        if window's display = 0 as a pointer to a byte:
+            return nothing
+        release the shared picture of window
+        @intrinsic("call", ":libX11.so.6", "XFreeGC", nothing, window's display, window's gc)
+        @intrinsic("call", ":libX11.so.6", "XDestroyWindow", nothing, window's display, window's handle)
+        @intrinsic("call", ":libX11.so.6", "XCloseDisplay", nothing, window's display)
+        set window's display to 0 as a pointer to a byte

@@ -1,0 +1,50 @@
+# What a decoder hands back: the image, or a reason it could not.
+import dynlex/paint/canvas.dl
+import lib/string.dl
+
+class:
+    patterns:
+        [a|] paint decoded image
+    members:
+        ok as a boolean
+        image as a paint canvas
+        note as a string
+
+function a decoded {paint canvas:image}:
+    execute:
+        return @intrinsic("construct", a paint decoded image, true, image, the string form of "")
+
+function no decoded image because {C string:reason}:
+    execute:
+        return @intrinsic("construct", a paint decoded image, false, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of reason)
+
+# --- Byte reading shared by the decoders ---
+
+function the byte {integer:at} in {pointer:bytes}:
+    execute:
+        return ((the item at at in (bytes as a pointer to a byte)) as an integer) & 255
+
+function the big-endian word {integer:at} in {pointer:bytes}:
+    execute:
+        return (((the byte at in bytes) << 24) | ((the byte (at + 1) in bytes) << 16)) | (((the byte (at + 2) in bytes) << 8) | (the byte (at + 3) in bytes))
+
+function the big-endian half {integer:at} in {pointer:bytes}:
+    execute:
+        return ((the byte at in bytes) << 8) | (the byte (at + 1) in bytes)
+
+function the little-endian word {integer:at} in {pointer:bytes}:
+    execute:
+        return (((the byte (at + 3) in bytes) << 24) | ((the byte (at + 2) in bytes) << 16)) | (((the byte (at + 1) in bytes) << 8) | (the byte at in bytes))
+
+function the little-endian half {integer:at} in {pointer:bytes}:
+    execute:
+        return ((the byte (at + 1) in bytes) << 8) | (the byte at in bytes)
+
+function the bytes {integer:at} in {pointer:data} spell {C string:word}:
+    execute:
+        set spelled to word as a C string
+        set size to (the length of spelled) as an integer
+        loop index from 0 to size:
+            if (the byte (at + index) in data) != ((((the item at index in (word as a pointer to a byte)) as an integer) & 255)):
+                return false
+        return true

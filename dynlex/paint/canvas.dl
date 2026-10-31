@@ -66,18 +66,45 @@ local function the byte count of a paint canvas {integer:width} by {integer:heig
     execute:
         return ((width as a word sized integer) * (height as a word sized integer)) * (4 as a word sized integer)
 
-# A canvas of the given size, every pixel the given colour. Sizes are limited
-# to 1..8192 pixels a side, the editor's own limit is 4096.
+# Canvases hold up to 32768 pixels a side and 268 million pixels (1 GB) in
+# all, which keeps every byte offset within a 32-bit integer; new canvases
+# the editor makes stay at its own limit of 4096.
+function paint canvas largest side:
+    replacement: 32768
+function paint canvas largest area:
+    replacement: 268435456
+
+function a paint canvas {integer:width} by {integer:height} fits:
+    execute:
+        if ((width < 1) or (height < 1)) or ((width > paint canvas largest side) or (height > paint canvas largest side)):
+            return false
+        return ((width as a word sized integer) * (height as a word sized integer)) <= (paint canvas largest area as a word sized integer)
+
+# A canvas of the given size, every pixel the given colour; a size beyond the
+# limits above is clamped to them.
 function a new paint canvas {integer:width} by {integer:height} filled with {paint color:color}:
     execute:
-        set clampedWidth to width clamped between 1 and 8192
-        set clampedHeight to height clamped between 1 and 8192
+        set clampedWidth to width clamped between 1 and paint canvas largest side
+        set clampedHeight to height clamped between 1 and paint canvas largest side
+        if ((clampedWidth as a word sized integer) * (clampedHeight as a word sized integer)) > (paint canvas largest area as a word sized integer):
+            set clampedHeight to paint canvas largest area / clampedWidth
         set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
         if pixels = 0 as a pointer to a byte:
             @intrinsic("call", "libc", "abort", nothing)
         set image to the paint canvas record clampedWidth by clampedHeight at pixels
         fill paint canvas image with color
         return image
+
+# A canvas whose pixels are left as allocated, for a decoder that writes
+# every one of them.
+function an unfilled paint canvas {integer:width} by {integer:height}:
+    execute:
+        set clampedWidth to width clamped between 1 and paint canvas largest side
+        set clampedHeight to height clamped between 1 and paint canvas largest side
+        set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
+        if pixels = 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "abort", nothing)
+        return the paint canvas record clampedWidth by clampedHeight at pixels
 
 function free paint canvas {paint canvas:image}:
     execute:
@@ -99,16 +126,18 @@ function copy paint pixels of {paint canvas:source} into {paint canvas:target}:
         if (source's width = target's width) and (source's height = target's height):
             ignore @intrinsic("call", "libc", "memcpy", a pointer, target's pixels, source's pixels, the byte count of a paint canvas source's width by source's height)
 
+# The colour as one little-endian RGBA word, the canvas's memory order.
+local function the paint word of {paint color:color}:
+    execute:
+        return ((color's red | (color's green << 8)) | (color's blue << 16)) | (color's alpha << 24)
+
 function fill paint canvas {paint canvas:image} with {paint color:color}:
     execute:
         set count to image's width * image's height
-        set pixels to image's pixels
+        set words to image's pixels as a pointer to an integer
+        set word to the paint word of color
         loop index from 0 to count:
-            set offset to index * 4
-            store (color's red as a byte) at (pixels + offset)
-            store (color's green as a byte) at (pixels + (offset + 1))
-            store (color's blue as a byte) at (pixels + (offset + 2))
-            store (color's alpha as a byte) at (pixels + (offset + 3))
+            store word at (words + index)
 
 function {integer:x} {integer:y} lies on {paint canvas:image}:
     execute:
@@ -162,20 +191,57 @@ class:
         opacity as an integer
         radius as a 64 bit floating-point number
         erasing as a boolean
+        amount as an integer
 
 function a paint stroke of {paint color:color} at opacity {integer:opacity} sized {integer:size} erasing {boolean:erasing}:
     execute:
         set radius to ((size clamped between 1 and 200) as a 64 bit floating-point number) / 2.0
-        return @intrinsic("construct", a paint stroke, color, opacity clamped between 0 and 255, radius, erasing)
+        set clampedOpacity to opacity clamped between 0 and 255
+        return @intrinsic("construct", a paint stroke, color, clampedOpacity, radius, erasing, (color's alpha * clampedOpacity) / 255)
 
-local function apply {paint stroke:stroke} at {integer:x} {integer:y} on {paint canvas:image} from {paint canvas:base}:
+# Paints the stroke on the pixel at the byte offset, composited on the same
+# pixel of source; target and source may be the same buffer. An opaque pixel
+# below, the common case, needs no division by the resulting alpha and gives
+# the same bytes as the general source-over above.
+local function blend {paint stroke:stroke} at {integer:offset} in {pointer:target} from {pointer:source}:
     execute:
-        set below to the paint color at x y in base
+        set alpha to the paint channel at (offset + 3) in source
         if stroke's erasing:
-            set remaining to (below's alpha * (255 - stroke's opacity)) / 255
-            put (the paint color red below's red green below's green blue below's blue alpha remaining) at x y in image
+            store (the item at offset in source) at (target + offset)
+            store (the item at (offset + 1) in source) at (target + (offset + 1))
+            store (the item at (offset + 2) in source) at (target + (offset + 2))
+            store (((alpha * (255 - stroke's opacity)) / 255) as a byte) at (target + (offset + 3))
+            return nothing
+        set amount to stroke's amount
+        set color to stroke's color
+        if (alpha = 255) and (amount = 255):
+            store (color's red as a byte) at (target + offset)
+            store (color's green as a byte) at (target + (offset + 1))
+            store (color's blue as a byte) at (target + (offset + 2))
+            store (255 as a byte) at (target + (offset + 3))
+        else if alpha = 255:
+            set kept to 255 - amount
+            store ((((color's red * amount) + ((the paint channel at offset in source) * kept)) / 255) as a byte) at (target + offset)
+            store ((((color's green * amount) + ((the paint channel at (offset + 1) in source) * kept)) / 255) as a byte) at (target + (offset + 1))
+            store ((((color's blue * amount) + ((the paint channel at (offset + 2) in source) * kept)) / 255) as a byte) at (target + (offset + 2))
+            store (255 as a byte) at (target + (offset + 3))
         else:
-            put (stroke's color over below at opacity stroke's opacity) at x y in image
+            set below to the paint color red (the paint channel at offset in source) green (the paint channel at (offset + 1) in source) blue (the paint channel at (offset + 2) in source) alpha alpha
+            set painted to color over below at opacity stroke's opacity
+            store (painted's red as a byte) at (target + offset)
+            store (painted's green as a byte) at (target + (offset + 1))
+            store (painted's blue as a byte) at (target + (offset + 2))
+            store (painted's alpha as a byte) at (target + (offset + 3))
+
+# Paints columns left..right (inclusive) of the row, already clipped.
+local function paint {paint stroke:stroke} along row {integer:row} from {integer:left} to {integer:right} on {paint canvas:image} from {paint canvas:base}:
+    execute:
+        set offset to ((row * image's width) + left) * 4
+        set target to image's pixels
+        set source to base's pixels
+        loop column from left to (right + 1):
+            blend stroke at offset in target from source
+            set offset to offset + 4
 
 # A round dab of the stroke centred on (x, y).
 function dab {paint stroke:stroke} at {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} on {paint canvas:image} from {paint canvas:base}:
@@ -186,12 +252,23 @@ function dab {paint stroke:stroke} at {a 64 bit floating-point number:x} {a 64 b
         set top to (the floor of (y - radius)) as an integer
         set bottom to (the ceiling of (y + radius)) as an integer
         set limit to (radius * radius) + 0.25
+        set first to the maximum of left and 0
+        set last to the minimum of right and (image's width - 1)
+        # Each row's pixel centres within the radius form one span: estimated
+        # through the square root, then settled by the exact test.
         loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
-            loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
-                set dx to ((column as a 64 bit floating-point number) + 0.5) - x
-                set dy to ((row as a 64 bit floating-point number) + 0.5) - y
-                if ((dx * dx) + (dy * dy)) <= limit:
-                    apply stroke at column row on image from base
+            set dy to ((row as a 64 bit floating-point number) + 0.5) - y
+            set room to limit - (dy * dy)
+            if room >= 0.0:
+                set reach to the square root of room
+                set low to the maximum of ((the floor of ((x - 0.5) - reach)) as an integer) and first
+                set high to the minimum of ((the ceiling of ((x - 0.5) + reach)) as an integer) and last
+                loop while (low <= high) and ((((((low as a 64 bit floating-point number) + 0.5) - x) * (((low as a 64 bit floating-point number) + 0.5) - x)) + (dy * dy)) > limit):
+                    set low to low + 1
+                loop while (high >= low) and ((((((high as a 64 bit floating-point number) + 0.5) - x) * (((high as a 64 bit floating-point number) + 0.5) - x)) + (dy * dy)) > limit):
+                    set high to high - 1
+                if low <= high:
+                    paint stroke along row row from low to high on image from base
 
 # Dabs along the segment, at most half the radius apart, ending at (x2, y2).
 function draw {paint stroke:stroke} from {a 64 bit floating-point number:x1} {a 64 bit floating-point number:y1} to {a 64 bit floating-point number:x2} {a 64 bit floating-point number:y2} on {paint canvas:image} from {paint canvas:base}:
@@ -216,9 +293,11 @@ function draw paint rectangle with {paint stroke:stroke} from {integer:x1} {inte
         set top to the minimum of y1 and y2
         set bottom to the maximum of y1 and y2
         if filled:
-            loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
-                loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
-                    apply stroke at column row on image from base
+            set first to the maximum of left and 0
+            set last to the minimum of right and (image's width - 1)
+            if first <= last:
+                loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
+                    paint stroke along row row from first to last on image from base
             return nothing
         set l to left as a 64 bit floating-point number
         set r to right as a 64 bit floating-point number
@@ -242,12 +321,21 @@ function draw paint ellipse with {paint stroke:stroke} from {integer:x1} {intege
             set bottom to (the ceiling of (cy + ry)) as an integer
             set left to (the floor of (cx - rx)) as an integer
             set right to (the ceiling of (cx + rx)) as an integer
+            set first to the maximum of left and 0
+            set last to the minimum of right and (image's width - 1)
             loop row from (the maximum of top and 0) to ((the minimum of bottom and (image's height - 1)) + 1):
-                loop column from (the maximum of left and 0) to ((the minimum of right and (image's width - 1)) + 1):
-                    set nx to (((column as a 64 bit floating-point number) + 0.5) - cx) / rx
-                    set ny to (((row as a 64 bit floating-point number) + 0.5) - cy) / ry
-                    if ((nx * nx) + (ny * ny)) <= 1.0:
-                        apply stroke at column row on image from base
+                set ny to (((row as a 64 bit floating-point number) + 0.5) - cy) / ry
+                set room to 1.0 - (ny * ny)
+                if room >= 0.0:
+                    set reach to (the square root of room) * rx
+                    set low to the maximum of ((the floor of ((cx - 0.5) - reach)) as an integer) and first
+                    set high to the minimum of ((the ceiling of ((cx - 0.5) + reach)) as an integer) and last
+                    loop while (low <= high) and ((((((((low as a 64 bit floating-point number) + 0.5) - cx) / rx) * ((((low as a 64 bit floating-point number) + 0.5) - cx) / rx))) + (ny * ny)) > 1.0):
+                        set low to low + 1
+                    loop while (high >= low) and ((((((((high as a 64 bit floating-point number) + 0.5) - cx) / rx) * ((((high as a 64 bit floating-point number) + 0.5) - cx) / rx))) + (ny * ny)) > 1.0):
+                        set high to high - 1
+                    if low <= high:
+                        paint stroke along row row from low to high on image from base
             return nothing
         set segments to ((the maximum of rx and ry) as an integer) + 24
         set px to cx + rx
@@ -260,13 +348,17 @@ function draw paint ellipse with {paint stroke:stroke} from {integer:x1} {intege
             set px to qx
             set py to qy
 
-local function the paint distance between {paint color:first} and {paint color:second}:
+# Whether the pixel at the byte offset lies within tolerance of target in
+# every channel.
+local function the pixel at {integer:offset} in {pointer:pixels} matches {paint color:target} within {integer:tolerance}:
     execute:
-        set red to the absolute value of (first's red - second's red)
-        set green to the absolute value of (first's green - second's green)
-        set blue to the absolute value of (first's blue - second's blue)
-        set alpha to the absolute value of (first's alpha - second's alpha)
-        return the maximum of (the maximum of red and green) and (the maximum of blue and alpha)
+        if (the absolute value of ((the paint channel at offset in pixels) - target's red)) > tolerance:
+            return false
+        if (the absolute value of ((the paint channel at (offset + 1) in pixels) - target's green)) > tolerance:
+            return false
+        if (the absolute value of ((the paint channel at (offset + 2) in pixels) - target's blue)) > tolerance:
+            return false
+        return (the absolute value of ((the paint channel at (offset + 3) in pixels) - target's alpha)) <= tolerance
 
 # Flood fill of the 4-connected region around (x, y) whose colour lies within
 # tolerance of the clicked colour, one scanline span at a time.
@@ -278,8 +370,10 @@ function flood fill {paint canvas:image} at {integer:x} {integer:y} with {paint 
         set painted to color over target at opacity opacity
         if paint colors painted and target are equal:
             return nothing
+        set stroke to a paint stroke of color at opacity opacity sized 1 erasing false
         set width to image's width
         set height to image's height
+        set pixels to image's pixels
         set visited to @intrinsic("call", "libc", "calloc", a pointer to a byte, (width * height) as a word sized integer, 1 as a word sized integer)
         set pending to an empty list of an integer
         append ((y * width) + x) to pending
@@ -287,25 +381,27 @@ function flood fill {paint canvas:image} at {integer:x} {integer:y} with {paint 
             set seed to the last item of pending
             remove item ((the length of pending) - 1) from pending
             set row to seed / width
+            set rowStart to row * width
             set left to the remainder of seed divided by width
-            loop while ((left > 0) and ((the item at ((row * width) + (left - 1)) in visited) = 0 as a byte)) and ((the paint distance between (the paint color at (left - 1) row in image) and target) <= tolerance):
+            loop while ((left > 0) and ((the item at (rowStart + (left - 1)) in visited) = 0 as a byte)) and (the pixel at ((rowStart + (left - 1)) * 4) in pixels matches target within tolerance):
                 set left to left - 1
             set right to left
             set aboveOpen to false
             set belowOpen to false
-            loop while ((right < width) and ((the item at ((row * width) + right) in visited) = 0 as a byte)) and ((the paint distance between (the paint color at right row in image) and target) <= tolerance):
-                set here to the paint color at right row in image
-                put (color over here at opacity opacity) at right row in image
-                store (1 as a byte) at (visited + ((row * width) + right))
+            loop while ((right < width) and ((the item at (rowStart + right) in visited) = 0 as a byte)) and (the pixel at ((rowStart + right) * 4) in pixels matches target within tolerance):
+                blend stroke at ((rowStart + right) * 4) in pixels from pixels
+                store (1 as a byte) at (visited + (rowStart + right))
                 if row > 0:
-                    set aboveMatches to ((the item at (((row - 1) * width) + right) in visited) = 0 as a byte) and ((the paint distance between (the paint color at right (row - 1) in image) and target) <= tolerance)
+                    set above to (rowStart - width) + right
+                    set aboveMatches to ((the item at above in visited) = 0 as a byte) and (the pixel at (above * 4) in pixels matches target within tolerance)
                     if aboveMatches and (aboveOpen = false):
-                        append (((row - 1) * width) + right) to pending
+                        append above to pending
                     set aboveOpen to aboveMatches
                 if row < (height - 1):
-                    set belowMatches to ((the item at (((row + 1) * width) + right) in visited) = 0 as a byte) and ((the paint distance between (the paint color at right (row + 1) in image) and target) <= tolerance)
+                    set below to (rowStart + width) + right
+                    set belowMatches to ((the item at below in visited) = 0 as a byte) and (the pixel at (below * 4) in pixels matches target within tolerance)
                     if belowMatches and (belowOpen = false):
-                        append (((row + 1) * width) + right) to pending
+                        append below to pending
                     set belowOpen to belowMatches
                 set right to right + 1
         free pending
@@ -324,27 +420,18 @@ function the paint canvas {paint canvas:image} cropped to {integer:x1} {integer:
             ignore @intrinsic("call", "libc", "memcpy", a pointer, result's pixels + ((row * result's width) * 4), image's pixels + ((((row + top) * image's width) + left) * 4), ((result's width * 4) as a word sized integer))
         return result
 
-local function the paint channel {integer:channel} between {paint color:first} and {paint color:second} at {a 64 bit floating-point number:fraction}:
+# One channel bilinearly: a and b at fraction across, rounded, as the editor's
+# colour interpolation rounds each step.
+# Copies patch into image with its top-left corner at (x, y); the patch lies
+# inside the image.
+function paste paint canvas {paint canvas:patch} into {paint canvas:image} at {integer:x} {integer:y}:
     execute:
-        set low to 0
-        set high to 0
-        if channel = 0:
-            set low to first's red
-            set high to second's red
-        else if channel = 1:
-            set low to first's green
-            set high to second's green
-        else if channel = 2:
-            set low to first's blue
-            set high to second's blue
-        else:
-            set low to first's alpha
-            set high to second's alpha
-        return ((low as a 64 bit floating-point number) + (((high - low) as a 64 bit floating-point number) * fraction))
+        loop row from 0 to patch's height:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, image's pixels + ((((row + y) * image's width) + x) * 4), patch's pixels + ((row * patch's width) * 4), ((patch's width * 4) as a word sized integer))
 
-local function the paint color between {paint color:first} and {paint color:second} at {a 64 bit floating-point number:fraction}:
+local function the paint channel between {integer:low} and {integer:high} at {a 64 bit floating-point number:fraction}:
     execute:
-        return the paint color red ((the rounded value of (the paint channel 0 between first and second at fraction)) as an integer) green ((the rounded value of (the paint channel 1 between first and second at fraction)) as an integer) blue ((the rounded value of (the paint channel 2 between first and second at fraction)) as an integer) alpha ((the rounded value of (the paint channel 3 between first and second at fraction)) as an integer)
+        return (the rounded value of ((low as a 64 bit floating-point number) + (((high - low) as a 64 bit floating-point number) * fraction))) as an integer
 
 # Bilinear resampling to the new size, as the browser's smoothed drawImage does.
 function the paint canvas {paint canvas:image} resized to {integer:width} by {integer:height}:
@@ -352,44 +439,69 @@ function the paint canvas {paint canvas:image} resized to {integer:width} by {in
         set result to a new paint canvas width by height filled with the transparent paint color
         set scaleX to (image's width as a 64 bit floating-point number) / (result's width as a 64 bit floating-point number)
         set scaleY to (image's height as a 64 bit floating-point number) / (result's height as a 64 bit floating-point number)
+        # The source columns and weight of every result column, computed once.
+        set lefts to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((result's width * 2) * 4) as a word sized integer)
+        set weights to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, (result's width * 8) as a word sized integer)
+        loop column from 0 to result's width:
+            set sx to ((((column as a 64 bit floating-point number) + 0.5) * scaleX) - 0.5) clamped between 0.0 and ((image's width - 1) as a 64 bit floating-point number)
+            set x0 to (the floor of sx) as an integer
+            store (x0 * 4) at (lefts + (column * 2))
+            store ((the minimum of (x0 + 1) and (image's width - 1)) * 4) at (lefts + ((column * 2) + 1))
+            store (sx - (x0 as a 64 bit floating-point number)) at (weights + column)
+        set source to image's pixels
+        set target to result's pixels
+        set stride to image's width * 4
         loop row from 0 to result's height:
             set sy to ((((row as a 64 bit floating-point number) + 0.5) * scaleY) - 0.5) clamped between 0.0 and ((image's height - 1) as a 64 bit floating-point number)
             set y0 to (the floor of sy) as an integer
-            set y1 to the minimum of (y0 + 1) and (image's height - 1)
             set fy to sy - (y0 as a 64 bit floating-point number)
+            set upperRow to y0 * stride
+            set lowerRow to (the minimum of (y0 + 1) and (image's height - 1)) * stride
+            set offset to (row * result's width) * 4
             loop column from 0 to result's width:
-                set sx to ((((column as a 64 bit floating-point number) + 0.5) * scaleX) - 0.5) clamped between 0.0 and ((image's width - 1) as a 64 bit floating-point number)
-                set x0 to (the floor of sx) as an integer
-                set x1 to the minimum of (x0 + 1) and (image's width - 1)
-                set fx to sx - (x0 as a 64 bit floating-point number)
-                set upper to the paint color between (the paint color at x0 y0 in image) and (the paint color at x1 y0 in image) at fx
-                set lower to the paint color between (the paint color at x0 y1 in image) and (the paint color at x1 y1 in image) at fx
-                put (the paint color between upper and lower at fy) at column row in result
+                set a to the item at (column * 2) in lefts
+                set b to the item at ((column * 2) + 1) in lefts
+                set fx to the item at column in weights
+                loop channel from 0 to 4:
+                    set upper to the paint channel between (the paint channel at ((upperRow + a) + channel) in source) and (the paint channel at ((upperRow + b) + channel) in source) at fx
+                    set lower to the paint channel between (the paint channel at ((lowerRow + a) + channel) in source) and (the paint channel at ((lowerRow + b) + channel) in source) at fx
+                    store ((the paint channel between upper and lower at fy) as a byte) at (target + (offset + channel))
+                set offset to offset + 4
+        @intrinsic("call", "libc", "free", nothing, lefts)
+        @intrinsic("call", "libc", "free", nothing, weights)
         return result
 
 # Quarter turns: clockwise when clockwise is true.
 function the paint canvas {paint canvas:image} turned clockwise {boolean:clockwise}:
     execute:
         set result to a new paint canvas image's height by image's width filled with the transparent paint color
-        loop row from 0 to image's height:
-            loop column from 0 to image's width:
-                set color to the paint color at column row in image
+        set source to image's pixels as a pointer to an integer
+        set target to result's pixels as a pointer to an integer
+        set width to image's width
+        set height to image's height
+        loop row from 0 to height:
+            set from to row * width
+            loop column from 0 to width:
                 if clockwise:
-                    put color at ((image's height - 1) - row) column in result
+                    store (the item at (from + column) in source) at (target + ((column * height) + ((height - 1) - row)))
                 else:
-                    put color at row ((image's width - 1) - column) in result
+                    store (the item at (from + column) in source) at (target + ((((width - 1) - column) * height) + row))
         return result
 
 function the paint canvas {paint canvas:image} flipped horizontally {boolean:horizontal}:
     execute:
         set result to a new paint canvas image's width by image's height filled with the transparent paint color
-        loop row from 0 to image's height:
-            loop column from 0 to image's width:
-                set color to the paint color at column row in image
-                if horizontal:
-                    put color at ((image's width - 1) - column) row in result
-                else:
-                    put color at column ((image's height - 1) - row) in result
+        set source to image's pixels as a pointer to an integer
+        set target to result's pixels as a pointer to an integer
+        set width to image's width
+        set height to image's height
+        loop row from 0 to height:
+            set from to row * width
+            if horizontal:
+                loop column from 0 to width:
+                    store (the item at (from + column) in source) at (target + ((from + width) - (column + 1)))
+            else:
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, target + (((height - 1) - row) * width), source + from, (width * 4) as a word sized integer)
         return result
 
 # --- Colour corrections, the same formulas as shared/adjustments.ts. ---

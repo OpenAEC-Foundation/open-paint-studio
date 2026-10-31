@@ -1,0 +1,1060 @@
+# The smaller image formats, read by the editor itself: GIF (the first
+# frame), TGA, ICO (the largest image, PNG or bitmap), TIFF (strips, the
+# usual compressions), QOI, XBM, XPM and the six PNM kinds. Each gives a
+# paint decoded image.
+import dynlex/paint/decoded.dl
+import dynlex/paint/inflate.dl
+import dynlex/paint/png.dl
+import lib/list.dl
+import lib/string.dl
+
+local function store pixel {integer:red} {integer:green} {integer:blue} {integer:alpha} at {integer:x} {integer:y} in {paint canvas:image}:
+    execute:
+        if ((x < 0) or (y < 0)) or ((x >= image's width) or (y >= image's height)):
+            return nothing
+        set offset to ((y * image's width) + x) * 4
+        store (red as a byte) at ((image's pixels) + offset)
+        store (green as a byte) at ((image's pixels) + (offset + 1))
+        store (blue as a byte) at ((image's pixels) + (offset + 2))
+        store (alpha as a byte) at ((image's pixels) + (offset + 3))
+
+# --- GIF ---
+
+class:
+    patterns:
+        [a|] gif lzw state
+    members:
+        glBytes as a pointer to a byte
+        glAt as an integer
+        glEnd as an integer
+        glBlockLeft as an integer
+        glBits as an integer
+        glBitCount as an integer
+
+# The next code of codeSize bits from the data sub-blocks.
+local function the gif code of {integer:codeSize} from {a pointer to a gif lzw state:state}:
+    execute:
+        loop while (state's glBitCount) < codeSize:
+            if (state's glBlockLeft) = 0:
+                if (state's glAt) >= (state's glEnd):
+                    return -1
+                set state's glBlockLeft to the byte (state's glAt) in (state's glBytes)
+                set state's glAt to (state's glAt) + 1
+                if (state's glBlockLeft) = 0:
+                    return -1
+            if (state's glAt) >= (state's glEnd):
+                return -1
+            set state's glBits to (state's glBits) | ((the byte (state's glAt) in (state's glBytes)) << (state's glBitCount))
+            set state's glAt to (state's glAt) + 1
+            set state's glBlockLeft to (state's glBlockLeft) - 1
+            set state's glBitCount to (state's glBitCount) + 8
+        set symbol to (state's glBits) & ((1 << codeSize) - 1)
+        set state's glBits to (state's glBits) >> codeSize
+        set state's glBitCount to (state's glBitCount) - codeSize
+        return symbol
+
+# Decodes the LZW image data starting at start into count indices.
+local function the gif indices from {pointer:bytes} starting {integer:start} ending {integer:end} using {integer:minimum} for {integer:count}:
+    execute:
+        set output to @intrinsic("call", "libc", "calloc", a pointer to a byte, (the maximum of count and 1) as a word sized integer, 1 as a word sized integer)
+        set prefixes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        set suffixes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        set lengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        set state to @intrinsic("construct", a gif lzw state, bytes as a pointer to a byte, start, end, 0, 0, 0)
+        set reader to the address of state
+        set clear to 1 << minimum
+        set stop to clear + 1
+        set codeSize to minimum + 1
+        set next to clear + 2
+        set previous to -1
+        set filled to 0
+        loop index from 0 to clear:
+            store index at (suffixes + index)
+            store 1 at (lengths + index)
+        set running to true
+        loop while running and (filled < count):
+            set code to the gif code of codeSize from reader
+            if (code < 0) or (code = stop):
+                set running to false
+            else if code = clear:
+                set codeSize to minimum + 1
+                set next to clear + 2
+                set previous to -1
+            else:
+                set first to code
+                set emit to code
+                if code >= next:
+                    if previous < 0:
+                        set running to false
+                    else:
+                        # The code being defined: previous string plus its
+                        # first character.
+                        set emit to previous
+                        set first to previous
+                        loop while first >= clear:
+                            set first to the item at first in prefixes
+                        set size to (the item at previous in lengths) + 1
+                        if (filled + size) <= count:
+                            # Write previous string then its first byte.
+                            set slot to (filled + size) - 1
+                            store ((the item at first in suffixes) as a byte) at (output + slot)
+                            set walk to previous
+                            set slot to slot - 1
+                            loop while walk >= 0:
+                                store ((the item at walk in suffixes) as a byte) at (output + slot)
+                                set slot to slot - 1
+                                if walk >= clear:
+                                    set walk to the item at walk in prefixes
+                                else:
+                                    set walk to -1
+                        set filled to filled + size
+                        if (next < 4096) and (previous >= 0):
+                            store previous at (prefixes + next)
+                            store (the item at first in suffixes) at (suffixes + next)
+                            store size at (lengths + next)
+                            set next to next + 1
+                        set previous to code
+                        if (next = (1 << codeSize)) and (codeSize < 12):
+                            set codeSize to codeSize + 1
+                        set emit to -1
+                if emit >= 0:
+                    set size to the item at emit in lengths
+                    if (filled + size) <= count:
+                        set slot to (filled + size) - 1
+                        set walk to emit
+                        loop while walk >= 0:
+                            store ((the item at walk in suffixes) as a byte) at (output + slot)
+                            set slot to slot - 1
+                            if walk >= clear:
+                                set walk to the item at walk in prefixes
+                            else:
+                                set walk to -1
+                    set filled to filled + size
+                    if previous >= 0:
+                        loop while first >= clear:
+                            set first to the item at first in prefixes
+                        if next < 4096:
+                            store previous at (prefixes + next)
+                            store (the item at first in suffixes) at (suffixes + next)
+                            store ((the item at previous in lengths) + 1) at (lengths + next)
+                            set next to next + 1
+                    set previous to code
+                    if (next = (1 << codeSize)) and (codeSize < 12):
+                        set codeSize to codeSize + 1
+        @intrinsic("call", "libc", "free", nothing, prefixes)
+        @intrinsic("call", "libc", "free", nothing, suffixes)
+        @intrinsic("call", "libc", "free", nothing, lengths)
+        return output
+
+function the paint gif from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 13) or ((the bytes 0 in bytes spell "GIF") = false):
+            return no decoded image because "not a GIF file"
+        set width to the little-endian half 6 in bytes
+        set height to the little-endian half 8 in bytes
+        set flags to the byte 10 in bytes
+        if (width < 1) or (height < 1):
+            return no decoded image because "the GIF has no size"
+        if (a paint canvas width by height fits) = false:
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        set palette to 0 as pointer
+        set colours to 0
+        set cursor to 13
+        if (flags & 128) != 0:
+            set colours to 1 << ((flags & 7) + 1)
+            set palette to ((bytes as a pointer to a byte) + 13) as pointer
+            set cursor to 13 + (colours * 3)
+        set transparent to -1
+        set image to a new paint canvas width by height filled with the transparent paint color
+        loop while (cursor + 1) < count:
+            set block to the byte cursor in bytes
+            if block = 33:
+                set label to the byte (cursor + 1) in bytes
+                set cursor to cursor + 2
+                if (label = 249) and ((cursor + 5) < count):
+                    if ((the byte (cursor + 1) in bytes) & 1) = 1:
+                        set transparent to the byte (cursor + 4) in bytes
+                # Skip the sub-blocks.
+                loop while (cursor < count) and ((the byte cursor in bytes) != 0):
+                    set cursor to (cursor + 1) + (the byte cursor in bytes)
+                set cursor to cursor + 1
+            else if block = 44:
+                if (cursor + 10) > count:
+                    return a decoded image
+                set left to the little-endian half (cursor + 1) in bytes
+                set top to the little-endian half (cursor + 3) in bytes
+                set frameWidth to the little-endian half (cursor + 5) in bytes
+                set frameHeight to the little-endian half (cursor + 7) in bytes
+                set frameFlags to the byte (cursor + 9) in bytes
+                set cursor to cursor + 10
+                set framePalette to palette
+                set frameColours to colours
+                if (frameFlags & 128) != 0:
+                    set frameColours to 1 << ((frameFlags & 7) + 1)
+                    set framePalette to ((bytes as a pointer to a byte) + cursor) as pointer
+                    set cursor to cursor + (frameColours * 3)
+                set interlaced to (frameFlags & 64) != 0
+                set minimum to the byte cursor in bytes
+                set cursor to cursor + 1
+                set indices to the gif indices from bytes starting cursor ending count using (minimum clamped between 2 and 11) for (frameWidth * frameHeight)
+                set row to 0
+                set pass to 0
+                loop y from 0 to frameHeight:
+                    set targetRow to y
+                    if interlaced:
+                        set targetRow to row
+                    loop x from 0 to frameWidth:
+                        set index to the byte ((y * frameWidth) + x) in indices
+                        if (index != transparent) and (index < frameColours):
+                            store pixel (the byte (index * 3) in framePalette) (the byte ((index * 3) + 1) in framePalette) (the byte ((index * 3) + 2) in framePalette) 255 at (left + x) (top + targetRow) in image
+                    if interlaced:
+                        set step to 8
+                        if pass = 3:
+                            set step to 2
+                        if pass = 2:
+                            set step to 4
+                        set row to row + step
+                        loop while (row >= frameHeight) and (pass < 3):
+                            set pass to pass + 1
+                            if pass = 1:
+                                set row to 4
+                            if pass = 2:
+                                set row to 2
+                            if pass = 3:
+                                set row to 1
+                @intrinsic("call", "libc", "free", nothing, indices)
+                # The first frame is the image.
+                return a decoded image
+            else if block = 59:
+                return a decoded image
+            else:
+                set cursor to cursor + 1
+        return a decoded image
+
+# --- TGA ---
+
+function the paint tga from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if count < 18:
+            return no decoded image because "not a TGA file"
+        set idLength to the byte 0 in bytes
+        set mapType to the byte 1 in bytes
+        set kind to the byte 2 in bytes
+        set mapStart to the little-endian half 3 in bytes
+        set mapLength to the little-endian half 5 in bytes
+        set mapDepth to the byte 7 in bytes
+        set width to the little-endian half 12 in bytes
+        set height to the little-endian half 14 in bytes
+        set depth to the byte 16 in bytes
+        set descriptor to the byte 17 in bytes
+        set base to kind & 7
+        if ((base != 1) and ((base != 2) and (base != 3))) or ((width < 1) or (height < 1)):
+            return no decoded image because "not a TGA image the editor reads"
+        if (a paint canvas width by height fits) = false:
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        set cursor to 18 + idLength
+        set palette to cursor
+        if mapType = 1:
+            set cursor to cursor + ((mapLength * ((mapDepth + 7) / 8)))
+        set bytesPerPixel to (depth + 7) / 8
+        set image to a new paint canvas width by height filled with the transparent paint color
+        set compressed to (kind & 8) != 0
+        set total to width * height
+        set filled to 0
+        set runLeft to 0
+        set rawLeft to 0
+        set runRed to 0
+        set runGreen to 0
+        set runBlue to 0
+        set runAlpha to 255
+        loop while (filled < total) and ((cursor + bytesPerPixel) <= (count + 1)):
+            set takeStored to true
+            if compressed and ((runLeft = 0) and (rawLeft = 0)):
+                set packet to the byte cursor in bytes
+                set cursor to cursor + 1
+                if (packet & 128) != 0:
+                    set runLeft to (packet & 127) + 1
+                else:
+                    set rawLeft to (packet & 127) + 1
+            if runLeft > 0:
+                set takeStored to runLeft = ((the byte (cursor - 1) in bytes) & 127) + 1
+            set red to runRed
+            set green to runGreen
+            set blue to runBlue
+            set alpha to runAlpha
+            if (runLeft = 0) or takeStored:
+                if (cursor + bytesPerPixel) > count:
+                    set filled to total
+                else:
+                    if depth = 8:
+                        set value to the byte cursor in bytes
+                        if (base = 1) and (mapType = 1):
+                            set entry to palette + ((value - mapStart) * ((mapDepth + 7) / 8))
+                            if mapDepth = 24:
+                                set blue to the byte entry in bytes
+                                set green to the byte (entry + 1) in bytes
+                                set red to the byte (entry + 2) in bytes
+                            else if mapDepth = 32:
+                                set blue to the byte entry in bytes
+                                set green to the byte (entry + 1) in bytes
+                                set red to the byte (entry + 2) in bytes
+                                set alpha to the byte (entry + 3) in bytes
+                            else:
+                                set packed to the little-endian half entry in bytes
+                                set red to (((packed >> 10) & 31) * 255) / 31
+                                set green to (((packed >> 5) & 31) * 255) / 31
+                                set blue to ((packed & 31) * 255) / 31
+                        else:
+                            set red to value
+                            set green to value
+                            set blue to value
+                    else if (depth = 15) or (depth = 16):
+                        set packed to the little-endian half cursor in bytes
+                        set red to (((packed >> 10) & 31) * 255) / 31
+                        set green to (((packed >> 5) & 31) * 255) / 31
+                        set blue to ((packed & 31) * 255) / 31
+                        set alpha to 255
+                    else if depth = 24:
+                        set blue to the byte cursor in bytes
+                        set green to the byte (cursor + 1) in bytes
+                        set red to the byte (cursor + 2) in bytes
+                    else:
+                        set blue to the byte cursor in bytes
+                        set green to the byte (cursor + 1) in bytes
+                        set red to the byte (cursor + 2) in bytes
+                        set alpha to the byte (cursor + 3) in bytes
+                    set cursor to cursor + bytesPerPixel
+                    if runLeft > 0:
+                        set runRed to red
+                        set runGreen to green
+                        set runBlue to blue
+                        set runAlpha to alpha
+            if filled < total:
+                set x to the remainder of filled divided by width
+                set y to filled / width
+                if (descriptor & 32) = 0:
+                    set y to (height - 1) - y
+                if (descriptor & 16) != 0:
+                    set x to (width - 1) - x
+                store pixel red green blue alpha at x y in image
+                set filled to filled + 1
+                if runLeft > 0:
+                    set runLeft to runLeft - 1
+                else if rawLeft > 0:
+                    set rawLeft to rawLeft - 1
+        return a decoded image
+
+# --- ICO: the largest entry, a PNG or a bitmap with its mask ---
+
+function the paint ico from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 6) or (((the little-endian half 0 in bytes) != 0) or (((the little-endian half 2 in bytes) != 1) and ((the little-endian half 2 in bytes) != 2))):
+            return no decoded image because "not an ICO file"
+        set entries to the little-endian half 4 in bytes
+        set best to -1
+        set bestArea to -1
+        set bestDepth to -1
+        loop index from 0 to entries:
+            set entry to 6 + (index * 16)
+            if (entry + 16) <= count:
+                set w to the byte entry in bytes
+                set h to the byte (entry + 1) in bytes
+                if w = 0:
+                    set w to 256
+                if h = 0:
+                    set h to 256
+                set depth to the little-endian half (entry + 6) in bytes
+                if ((w * h) > bestArea) or (((w * h) = bestArea) and (depth > bestDepth)):
+                    set best to index
+                    set bestArea to w * h
+                    set bestDepth to depth
+        if best < 0:
+            return no decoded image because "the ICO holds no image"
+        set entry to 6 + (best * 16)
+        set size to the little-endian word (entry + 8) in bytes
+        set offset to the little-endian word (entry + 12) in bytes
+        if ((offset + size) > count) or (size < 16):
+            return no decoded image because "the ICO is cut short"
+        set data to ((bytes as a pointer to a byte) + offset) as pointer
+        if ((the byte 0 in data) = 137) and ((the byte 1 in data) = 80):
+            return the paint png from data spanning size
+        # A BITMAPINFOHEADER with the height doubled for the mask.
+        set headerSize to the little-endian word 0 in data
+        set width to the little-endian word 4 in data
+        set height to (the little-endian word 8 in data) / 2
+        set depth to the little-endian half 14 in data
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "the ICO's bitmap has a size the editor cannot use"
+        set colours to 0
+        if depth <= 8:
+            set colours to the little-endian word 32 in data
+            if colours = 0:
+                set colours to 1 << depth
+        set palette to headerSize
+        set pixelsAt to palette + (colours * 4)
+        set rowBytes to (((width * depth) + 31) / 32) * 4
+        set maskAt to pixelsAt + (rowBytes * height)
+        set maskRowBytes to ((width + 31) / 32) * 4
+        set image to a new paint canvas width by height filled with the transparent paint color
+        set anyAlpha to false
+        loop y from 0 to height:
+            set rowAt to pixelsAt + ((height - 1 - y) * rowBytes)
+            loop x from 0 to width:
+                set red to 0
+                set green to 0
+                set blue to 0
+                set alpha to 255
+                if depth = 32:
+                    set blue to the byte (rowAt + (x * 4)) in data
+                    set green to the byte ((rowAt + (x * 4)) + 1) in data
+                    set red to the byte ((rowAt + (x * 4)) + 2) in data
+                    set alpha to the byte ((rowAt + (x * 4)) + 3) in data
+                    if alpha != 0:
+                        set anyAlpha to true
+                else if depth = 24:
+                    set blue to the byte (rowAt + (x * 3)) in data
+                    set green to the byte ((rowAt + (x * 3)) + 1) in data
+                    set red to the byte ((rowAt + (x * 3)) + 2) in data
+                else:
+                    set index to 0
+                    if depth = 8:
+                        set index to the byte (rowAt + x) in data
+                    else if depth = 4:
+                        set index to ((the byte (rowAt + (x / 2)) in data) >> (4 * (1 - (x & 1)))) & 15
+                    else:
+                        set index to ((the byte (rowAt + (x / 8)) in data) >> (7 - (x & 7))) & 1
+                    if index < colours:
+                        set blue to the byte (palette + (index * 4)) in data
+                        set green to the byte ((palette + (index * 4)) + 1) in data
+                        set red to the byte ((palette + (index * 4)) + 2) in data
+                store pixel red green blue alpha at x y in image
+        # The AND mask hides pixels, unless the 32-bit alpha is in use.
+        if ((depth != 32) or (anyAlpha = false)) and ((maskAt + (maskRowBytes * height)) <= size):
+            loop y from 0 to height:
+                set rowAt to maskAt + ((height - 1 - y) * maskRowBytes)
+                loop x from 0 to width:
+                    if (((the byte (rowAt + (x / 8)) in data) >> (7 - (x & 7))) & 1) = 1:
+                        store (0 as a byte) at ((image's pixels) + ((((y * width) + x) * 4) + 3))
+            if (depth = 32) and (anyAlpha = false):
+                loop index from 0 to (width * height):
+                    if (the byte ((index * 4) + 3) in (image's pixels as pointer)) != 0:
+                        store (255 as a byte) at ((image's pixels) + ((index * 4) + 3))
+        return a decoded image
+
+# --- TIFF ---
+
+class:
+    patterns:
+        [a|] tiff field
+    members:
+        tfTag as an integer
+        tfType as an integer
+        tfCount as an integer
+        tfAt as an integer
+
+local function the tiff number {integer:at} of type {integer:kind} in {pointer:bytes} swapped {boolean:little}:
+    execute:
+        if kind = 1:
+            return the byte at in bytes
+        if kind = 3:
+            if little:
+                return the little-endian half at in bytes
+            return the big-endian half at in bytes
+        if little:
+            return the little-endian word at in bytes
+        return the big-endian word at in bytes
+
+# Value number index of the field (inline when it fits in four bytes).
+local function tiff value {integer:index} of {tiff field:field} in {pointer:bytes} swapped {boolean:little}:
+    execute:
+        set size to 4
+        if field's tfType = 1:
+            set size to 1
+        if field's tfType = 3:
+            set size to 2
+        set at to field's tfAt
+        if (size * (field's tfCount)) > 4:
+            set at to the tiff number (field's tfAt) of type 4 in bytes swapped little
+        return the tiff number (at + (index * size)) of type (field's tfType) in bytes swapped little
+
+# PackBits into out.
+local function unpack bits from {pointer:bytes} at {integer:start} to {integer:end} into {pointer:out} of {integer:capacity}:
+    execute:
+        set cursor to start
+        set filled to 0
+        set target to out as a pointer to a byte
+        loop while (cursor < end) and (filled < capacity):
+            set header to the byte cursor in bytes
+            set cursor to cursor + 1
+            if header < 128:
+                loop step from 0 to (header + 1):
+                    if (cursor < end) and (filled < capacity):
+                        store ((the byte cursor in bytes) as a byte) at (target + filled)
+                        set filled to filled + 1
+                    set cursor to cursor + 1
+            else if header > 128:
+                if cursor < end:
+                    set value to the byte cursor in bytes
+                    set cursor to cursor + 1
+                    loop step from 0 to (257 - header):
+                        if filled < capacity:
+                            store (value as a byte) at (target + filled)
+                            set filled to filled + 1
+        return filled
+
+# TIFF's LZW (codes most significant bit first, early change) into out.
+local function unpack lzw from {pointer:bytes} at {integer:start} to {integer:end} into {pointer:out} of {integer:capacity}:
+    execute:
+        set target to out as a pointer to a byte
+        set prefixes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        set suffixes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        set lengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4096 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 256:
+            store index at (suffixes + index)
+            store 1 at (lengths + index)
+        set cursor to start
+        set bits to 0 as a C long integer
+        set bitCount to 0
+        set codeSize to 9
+        set next to 258
+        set previous to -1
+        set filled to 0
+        set running to true
+        loop while running and (filled < capacity):
+            loop while (bitCount < codeSize) and (cursor < end):
+                set bits to (bits << 8) | ((the byte cursor in bytes) as a C long integer)
+                set cursor to cursor + 1
+                set bitCount to bitCount + 8
+            if bitCount < codeSize:
+                set running to false
+            else:
+                set code to ((bits >> (bitCount - codeSize)) & (((1 as a C long integer) << codeSize) - 1)) as an integer
+                set bitCount to bitCount - codeSize
+                if code = 257:
+                    set running to false
+                else if code = 256:
+                    set codeSize to 9
+                    set next to 258
+                    set previous to -1
+                else:
+                    set first to code
+                    if code >= next:
+                        set first to previous
+                    loop while first >= 258:
+                        set first to the item at first in prefixes
+                    if first < 0:
+                        set running to false
+                    else:
+                        if (previous >= 0) and (next < 4096):
+                            store previous at (prefixes + next)
+                            store (the item at first in suffixes) at (suffixes + next)
+                            store ((the item at previous in lengths) + 1) at (lengths + next)
+                            set next to next + 1
+                        set emit to code
+                        if code >= next:
+                            set running to false
+                        else:
+                            set size to the item at emit in lengths
+                            set at to (filled + size) - 1
+                            set walk to emit
+                            loop while walk >= 0:
+                                if at < capacity:
+                                    store ((the item at walk in suffixes) as a byte) at (target + at)
+                                set at to at - 1
+                                if walk >= 258:
+                                    set walk to the item at walk in prefixes
+                                else:
+                                    set walk to -1
+                            set filled to filled + size
+                            set previous to code
+                            if ((next + 1) >= (1 << codeSize)) and (codeSize < 12):
+                                set codeSize to codeSize + 1
+        @intrinsic("call", "libc", "free", nothing, prefixes)
+        @intrinsic("call", "libc", "free", nothing, suffixes)
+        @intrinsic("call", "libc", "free", nothing, lengths)
+        return the minimum of filled and capacity
+
+function the paint tiff from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if count < 8:
+            return no decoded image because "not a TIFF file"
+        set little to ((the byte 0 in bytes) = 73) and ((the byte 1 in bytes) = 73)
+        if ((little = false) and (((the byte 0 in bytes) != 77) or ((the byte 1 in bytes) != 77))):
+            return no decoded image because "not a TIFF file"
+        set first to the tiff number 4 of type 4 in bytes swapped little
+        if (first + 2) > count:
+            return no decoded image because "the TIFF is cut short"
+        set entries to the tiff number first of type 3 in bytes swapped little
+        set fields to an empty list of a tiff field
+        loop index from 0 to entries:
+            set at to (first + 2) + (index * 12)
+            if (at + 12) <= count:
+                append @intrinsic("construct", a tiff field, the tiff number at of type 3 in bytes swapped little, the tiff number (at + 2) of type 3 in bytes swapped little, the tiff number (at + 4) of type 4 in bytes swapped little, at + 8) to fields
+        set width to 0
+        set height to 0
+        set bits to 8
+        set compression to 1
+        set photometric to 1
+        set samples to 1
+        set rowsPerStrip to 0
+        set predictor to 1
+        set planar to 1
+        set offsetsField to @intrinsic("construct", a tiff field, 0, 4, 0, 0)
+        set countsField to @intrinsic("construct", a tiff field, 0, 4, 0, 0)
+        set colormapField to @intrinsic("construct", a tiff field, 0, 3, 0, 0)
+        set extraSamples to 0
+        loop index from 0 to the length of fields:
+            set field to the item at index in fields
+            set tag to field's tfTag
+            if tag = 256:
+                set width to tiff value 0 of field in bytes swapped little
+            else if tag = 257:
+                set height to tiff value 0 of field in bytes swapped little
+            else if tag = 258:
+                set bits to tiff value 0 of field in bytes swapped little
+            else if tag = 259:
+                set compression to tiff value 0 of field in bytes swapped little
+            else if tag = 262:
+                set photometric to tiff value 0 of field in bytes swapped little
+            else if tag = 273:
+                set offsetsField to field
+            else if tag = 277:
+                set samples to tiff value 0 of field in bytes swapped little
+            else if tag = 278:
+                set rowsPerStrip to tiff value 0 of field in bytes swapped little
+            else if tag = 279:
+                set countsField to field
+            else if tag = 284:
+                set planar to tiff value 0 of field in bytes swapped little
+            else if tag = 317:
+                set predictor to tiff value 0 of field in bytes swapped little
+            else if tag = 320:
+                set colormapField to field
+            else if tag = 338:
+                set extraSamples to field's tfCount
+        if (width < 1) or (height < 1):
+            free fields
+            return no decoded image because "the TIFF has no size"
+        if (a paint canvas width by height fits) = false:
+            free fields
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        if ((planar != 1) or ((bits != 1) and ((bits != 8) and (bits != 16)))) or ((compression != 1) and ((compression != 5) and ((compression != 8) and ((compression != 32946) and (compression != 32773))))):
+            free fields
+            return no decoded image because "a TIFF variant the editor does not read (tiles, planar, or an unusual compression or depth)"
+        if rowsPerStrip = 0:
+            set rowsPerStrip to height
+        set bytesPerRow to ((width * samples * bits) + 7) / 8
+        set raw to @intrinsic("call", "libc", "calloc", a pointer to a byte, (bytesPerRow * height) as a word sized integer, 1 as a word sized integer)
+        set strips to (height + (rowsPerStrip - 1)) / rowsPerStrip
+        loop strip from 0 to strips:
+            if strip < (offsetsField's tfCount):
+                set at to tiff value strip of offsetsField in bytes swapped little
+                set size to tiff value strip of countsField in bytes swapped little
+                if (countsField's tfCount) = 0:
+                    set size to count - at
+                set rowsHere to the minimum of rowsPerStrip and (height - (strip * rowsPerStrip))
+                set capacity to rowsHere * bytesPerRow
+                set target to (raw + ((strip * rowsPerStrip) * bytesPerRow)) as pointer
+                if (at + size) <= count:
+                    if compression = 1:
+                        ignore @intrinsic("call", "libc", "memcpy", a pointer, target, (bytes as a pointer to a byte) + at, (the minimum of size and capacity) as a word sized integer)
+                    else if compression = 32773:
+                        ignore unpack bits from bytes at at to (at + size) into target of capacity
+                    else if compression = 5:
+                        ignore unpack lzw from bytes at at to (at + size) into target of capacity
+                    else:
+                        set inflated to the zlib inflation of ((bytes as a pointer to a byte) + at) spanning size expecting capacity
+                        if inflated's valid:
+                            ignore @intrinsic("call", "libc", "memcpy", a pointer, target, inflated's bytes, (the minimum of (inflated's count) and capacity) as a word sized integer)
+                            @intrinsic("call", "libc", "free", nothing, inflated's bytes)
+        # Horizontal differencing.
+        if (predictor = 2) and (bits = 8):
+            loop y from 0 to height:
+                set rowAt to raw + (y * bytesPerRow)
+                loop index from samples to bytesPerRow:
+                    store ((((the item at index in rowAt) as an integer) + ((the item at (index - samples) in rowAt) as an integer)) as a byte) at (rowAt + index)
+        set image to an unfilled paint canvas width by height
+        set colourSamples to samples - extraSamples
+        loop y from 0 to height:
+            set rowAt to (raw + (y * bytesPerRow)) as pointer
+            loop x from 0 to width:
+                set red to 0
+                set green to 0
+                set blue to 0
+                set alpha to 255
+                if bits = 1:
+                    set bit to ((the byte (x / 8) in rowAt) >> (7 - (x & 7))) & 1
+                    set red to bit * 255
+                    if photometric = 0:
+                        set red to 255 - red
+                    set green to red
+                    set blue to red
+                else:
+                    set step to bits / 8
+                    set base to (x * samples) * step
+                    set first to the byte base in rowAt
+                    if bits = 16:
+                        if little:
+                            set first to the byte (base + 1) in rowAt
+                    if photometric = 3:
+                        set index to the byte base in rowAt
+                        if bits = 16:
+                            set index to first
+                        set levels to 1 << bits
+                        set red to (tiff value index of colormapField in bytes swapped little) >> 8
+                        set green to (tiff value (levels + index) of colormapField in bytes swapped little) >> 8
+                        set blue to (tiff value ((2 * levels) + index) of colormapField in bytes swapped little) >> 8
+                    else if colourSamples >= 3:
+                        set red to first
+                        set green to the byte (base + step) in rowAt
+                        set blue to the byte (base + (2 * step)) in rowAt
+                        if bits = 16:
+                            if little:
+                                set green to the byte ((base + step) + 1) in rowAt
+                                set blue to the byte ((base + (2 * step)) + 1) in rowAt
+                        if samples > colourSamples:
+                            set alpha to the byte (base + (3 * step)) in rowAt
+                            if (bits = 16) and little:
+                                set alpha to the byte ((base + (3 * step)) + 1) in rowAt
+                    else:
+                        set red to first
+                        if photometric = 0:
+                            set red to 255 - red
+                        set green to red
+                        set blue to red
+                        if samples > colourSamples:
+                            set alpha to the byte (base + step) in rowAt
+                            if (bits = 16) and little:
+                                set alpha to the byte ((base + step) + 1) in rowAt
+                store pixel red green blue alpha at x y in image
+        @intrinsic("call", "libc", "free", nothing, raw)
+        free fields
+        return a decoded image
+
+# --- QOI ---
+
+function the paint qoi from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 22) or ((the bytes 0 in bytes spell "qoif") = false):
+            return no decoded image because "not a QOI file"
+        set width to the big-endian word 4 in bytes
+        set height to the big-endian word 8 in bytes
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "the QOI has a size the editor cannot use"
+        set image to an unfilled paint canvas width by height
+        set seen to @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer)
+        set red to 0
+        set green to 0
+        set blue to 0
+        set alpha to 255
+        set cursor to 14
+        set total to width * height
+        set filled to 0
+        set run to 0
+        loop while filled < total:
+            if run > 0:
+                set run to run - 1
+            else if cursor < (count - 8):
+                set tag to the byte cursor in bytes
+                set cursor to cursor + 1
+                if tag = 254:
+                    set red to the byte cursor in bytes
+                    set green to the byte (cursor + 1) in bytes
+                    set blue to the byte (cursor + 2) in bytes
+                    set cursor to cursor + 3
+                else if tag = 255:
+                    set red to the byte cursor in bytes
+                    set green to the byte (cursor + 1) in bytes
+                    set blue to the byte (cursor + 2) in bytes
+                    set alpha to the byte (cursor + 3) in bytes
+                    set cursor to cursor + 4
+                else if (tag >> 6) = 0:
+                    set packed to the item at (tag & 63) in (seen + 0)
+                    set packed to the item at (tag & 63) in seen
+                    set red to (packed >> 24) & 255
+                    set green to (packed >> 16) & 255
+                    set blue to (packed >> 8) & 255
+                    set alpha to packed & 255
+                else if (tag >> 6) = 1:
+                    set red to (red + (((tag >> 4) & 3) - 2)) & 255
+                    set green to (green + (((tag >> 2) & 3) - 2)) & 255
+                    set blue to (blue + ((tag & 3) - 2)) & 255
+                else if (tag >> 6) = 2:
+                    set second to the byte cursor in bytes
+                    set cursor to cursor + 1
+                    set dg to (tag & 63) - 32
+                    set red to (red + ((dg - 8) + ((second >> 4) & 15))) & 255
+                    set green to (green + dg) & 255
+                    set blue to (blue + ((dg - 8) + (second & 15))) & 255
+                else:
+                    set run to tag & 63
+            else:
+                set filled to total
+            if filled < total:
+                set x to the remainder of filled divided by width
+                set y to filled / width
+                store pixel red green blue alpha at x y in image
+                set slot to the remainder of ((((red * 3) + (green * 5)) + (blue * 7)) + (alpha * 11)) divided by 64
+                store ((((red << 24) | (green << 16)) | ((blue << 8) | alpha))) at (seen + slot)
+                set filled to filled + 1
+        @intrinsic("call", "libc", "free", nothing, seen)
+        return a decoded image
+
+# --- Text formats: XBM, XPM, PNM ---
+
+# The next unsigned number in the text from cursor (skipping anything else);
+# -1 when there is none. Returns its end position through the scan record.
+class:
+    patterns:
+        [a|] paint text scan
+    members:
+        tsValue as an integer
+        tsNext as an integer
+
+local function the number after {integer:cursor} in {pointer:bytes} spanning {integer:count} hexadecimal {boolean:base16}:
+    execute:
+        set here to cursor
+        loop while (here < count) and (((the byte here in bytes) < 48) or ((the byte here in bytes) > 57)):
+            # Comments in PNM run to the end of the line.
+            if (the byte here in bytes) = 35:
+                loop while (here < count) and ((the byte here in bytes) != 10):
+                    set here to here + 1
+            set here to here + 1
+        if here >= count:
+            return @intrinsic("construct", a paint text scan, -1, count)
+        set value to 0
+        if base16 and (((here + 1) < count) and (((the byte here in bytes) = 48) and (((the byte (here + 1) in bytes) = 120) or ((the byte (here + 1) in bytes) = 88)))):
+            set here to here + 2
+            loop while here < count:
+                set digit to the byte here in bytes
+                if (digit >= 48) and (digit <= 57):
+                    set value to (value * 16) + (digit - 48)
+                else if (digit >= 97) and (digit <= 102):
+                    set value to (value * 16) + (digit - 87)
+                else if (digit >= 65) and (digit <= 70):
+                    set value to (value * 16) + (digit - 55)
+                else:
+                    return @intrinsic("construct", a paint text scan, value, here)
+                set here to here + 1
+            return @intrinsic("construct", a paint text scan, value, here)
+        loop while (here < count) and (((the byte here in bytes) >= 48) and ((the byte here in bytes) <= 57)):
+            set value to (value * 10) + ((the byte here in bytes) - 48)
+            set here to here + 1
+        return @intrinsic("construct", a paint text scan, value, here)
+
+function the paint xbm from {pointer:bytes} spanning {integer:count}:
+    execute:
+        # #define name_width W / #define name_height H / 0x.. bytes.
+        set first to the number after 0 in bytes spanning count hexadecimal false
+        set second to the number after (first's tsNext) in bytes spanning count hexadecimal false
+        set width to first's tsValue
+        set height to second's tsValue
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "not an XBM the editor reads"
+        set cursor to second's tsNext
+        # Skip to the opening brace.
+        loop while (cursor < count) and ((the byte cursor in bytes) != 123):
+            set cursor to cursor + 1
+        set image to a new paint canvas width by height filled with (the paint color red 255 green 255 blue 255)
+        set rowBytes to (width + 7) / 8
+        loop index from 0 to (rowBytes * height):
+            set scanned to the number after cursor in bytes spanning count hexadecimal true
+            if scanned's tsValue < 0:
+                return a decoded image
+            set cursor to scanned's tsNext
+            set y to index / rowBytes
+            set x0 to (the remainder of index divided by rowBytes) * 8
+            loop bit from 0 to 8:
+                if (x0 + bit) < width:
+                    if (((scanned's tsValue) >> bit) & 1) = 1:
+                        store pixel 0 0 0 255 at (x0 + bit) y in image
+        return a decoded image
+
+# The quoted strings of the XPM, in order.
+local function the quoted strings in {pointer:bytes} spanning {integer:count}:
+    execute:
+        set found to an empty list of a string
+        set cursor to 0
+        loop while cursor < count:
+            if (the byte cursor in bytes) = 34:
+                set start to cursor + 1
+                set stop to start
+                loop while (stop < count) and ((the byte stop in bytes) != 34):
+                    set stop to stop + 1
+                set text to a new string buffer containing (stop - start) bytes
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, the data of text, (bytes as a pointer to a byte) + start, (stop - start) as a word sized integer)
+                append text to found
+                set cursor to stop + 1
+            else if ((the byte cursor in bytes) = 47) and (((cursor + 1) < count) and ((the byte (cursor + 1) in bytes) = 42)):
+                # A comment.
+                set cursor to cursor + 2
+                loop while ((cursor + 1) < count) and (((the byte cursor in bytes) != 42) or ((the byte (cursor + 1) in bytes) != 47)):
+                    set cursor to cursor + 1
+                set cursor to cursor + 2
+            else:
+                set cursor to cursor + 1
+        return found
+
+local function the xpm colour of {string:spec}:
+    execute:
+        # The "c" key's value: #rrggbb, None, or a name (black for unknown).
+        set cursor to 0
+        set value to the string form of ""
+        loop while cursor < spec's length:
+            set character to ((the character at cursor in spec) as an integer) & 255
+            if ((character = 99) and ((cursor = 0) or ((((the character at (cursor - 1) in spec) as an integer) & 255) = 32))) and (((cursor + 1) < (spec's length)) and ((((the character at (cursor + 1) in spec) as an integer) & 255) = 32)):
+                set start to cursor + 2
+                set stop to start
+                loop while (stop < spec's length) and ((((the character at stop in spec) as an integer) & 255) != 32):
+                    set stop to stop + 1
+                set value to the substring of spec from start spanning (stop - start) bytes
+                set cursor to spec's length
+            set cursor to cursor + 1
+        if (value = (the string form of "None")) or (value = (the string form of "none")):
+            return the transparent paint color
+        if (value's length = 7) and ((((the character at 0 in value) as an integer) & 255) = 35):
+            return the paint color from hex (the data of (the substring of value from 1 spanning 6 bytes))
+        if (value = (the string form of "white")) or (value = (the string form of "White")):
+            return the paint color red 255 green 255 blue 255
+        return the paint color red 0 green 0 blue 0
+
+function the paint xpm from {pointer:bytes} spanning {integer:count}:
+    execute:
+        set quoted to the quoted strings in bytes spanning count
+        if (the length of quoted) < 2:
+            free quoted
+            return no decoded image because "not an XPM the editor reads"
+        set header to the item at 0 in quoted
+        set headerBytes to (the data of header) as pointer
+        set first to the number after 0 in headerBytes spanning (header's length) hexadecimal false
+        set second to the number after (first's tsNext) in headerBytes spanning (header's length) hexadecimal false
+        set third to the number after (second's tsNext) in headerBytes spanning (header's length) hexadecimal false
+        set fourth to the number after (third's tsNext) in headerBytes spanning (header's length) hexadecimal false
+        set width to first's tsValue
+        set height to second's tsValue
+        set colours to third's tsValue
+        set perPixel to fourth's tsValue
+        if (((width < 1) or (height < 1)) or ((colours < 1) or (perPixel < 1))) or ((the length of quoted) < ((1 + colours) + height)):
+            free quoted
+            return no decoded image because "not an XPM the editor reads"
+        if (a paint canvas width by height fits) = false:
+            free quoted
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        set keys to an empty list of a string
+        set values to an empty list of a paint color
+        loop index from 0 to colours:
+            set spec to the item at (1 + index) in quoted
+            append (the substring of spec from 0 spanning perPixel bytes) to keys
+            append (the xpm colour of (the substring of spec from perPixel spanning ((spec's length) - perPixel) bytes)) to values
+        set image to a new paint canvas width by height filled with the transparent paint color
+        loop y from 0 to height:
+            set row to the item at ((1 + colours) + y) in quoted
+            loop x from 0 to width:
+                if ((x + 1) * perPixel) <= row's length:
+                    set key to the substring of row from (x * perPixel) spanning perPixel bytes
+                    loop index from 0 to colours:
+                        if (the item at index in keys) = key:
+                            set colour to the item at index in values
+                            store pixel (colour's red) (colour's green) (colour's blue) (colour's alpha) at x y in image
+        free keys
+        free values
+        free quoted
+        return a decoded image
+
+function the paint pnm from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 3) or ((the byte 0 in bytes) != 80):
+            return no decoded image because "not a PNM file"
+        set kind to (the byte 1 in bytes) - 48
+        if (kind < 1) or (kind > 6):
+            return no decoded image because "a PNM kind the editor does not read"
+        set first to the number after 2 in bytes spanning count hexadecimal false
+        set second to the number after (first's tsNext) in bytes spanning count hexadecimal false
+        set width to first's tsValue
+        set height to second's tsValue
+        set cursor to second's tsNext
+        set maximum to 1
+        if (kind != 1) and (kind != 4):
+            set third to the number after cursor in bytes spanning count hexadecimal false
+            set maximum to the maximum of 1 and (third's tsValue)
+            set cursor to third's tsNext
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "the PNM has a size the editor cannot use"
+        set image to an unfilled paint canvas width by height
+        set channels to 1
+        if (kind = 3) or (kind = 6):
+            set channels to 3
+        if kind <= 3:
+            # ASCII.
+            loop y from 0 to height:
+                loop x from 0 to width:
+                    set red to 0
+                    set green to 0
+                    set blue to 0
+                    if kind = 1:
+                        # Digits 0/1 run together; 1 is black.
+                        loop while (cursor < count) and (((the byte cursor in bytes) != 48) and ((the byte cursor in bytes) != 49)):
+                            if (the byte cursor in bytes) = 35:
+                                loop while (cursor < count) and ((the byte cursor in bytes) != 10):
+                                    set cursor to cursor + 1
+                            set cursor to cursor + 1
+                        set red to 255
+                        if (cursor < count) and ((the byte cursor in bytes) = 49):
+                            set red to 0
+                        set cursor to cursor + 1
+                        set green to red
+                        set blue to red
+                    else:
+                        set scanned to the number after cursor in bytes spanning count hexadecimal false
+                        set cursor to scanned's tsNext
+                        set red to ((the maximum of 0 and scanned's tsValue) * 255) / maximum
+                        set green to red
+                        set blue to red
+                        if kind = 3:
+                            set scanned to the number after cursor in bytes spanning count hexadecimal false
+                            set cursor to scanned's tsNext
+                            set green to ((the maximum of 0 and scanned's tsValue) * 255) / maximum
+                            set scanned to the number after cursor in bytes spanning count hexadecimal false
+                            set cursor to scanned's tsNext
+                            set blue to ((the maximum of 0 and scanned's tsValue) * 255) / maximum
+                    store pixel red green blue 255 at x y in image
+            return a decoded image
+        # Binary: one whitespace byte after the header.
+        set cursor to cursor + 1
+        if kind = 4:
+            set rowBytes to (width + 7) / 8
+            loop y from 0 to height:
+                loop x from 0 to width:
+                    set at to cursor + ((y * rowBytes) + (x / 8))
+                    set bit to 0
+                    if at < count:
+                        set bit to ((the byte at in bytes) >> (7 - (x & 7))) & 1
+                    set red to 255 - (bit * 255)
+                    store pixel red red red 255 at x y in image
+            return a decoded image
+        set step to 1
+        if maximum > 255:
+            set step to 2
+        loop y from 0 to height:
+            loop x from 0 to width:
+                set at to cursor + (((y * width) + x) * (channels * step))
+                set red to 0
+                set green to 0
+                set blue to 0
+                if (at + (channels * step)) <= count:
+                    if step = 1:
+                        set red to ((the byte at in bytes) * 255) / maximum
+                        set green to red
+                        set blue to red
+                        if channels = 3:
+                            set green to ((the byte (at + 1) in bytes) * 255) / maximum
+                            set blue to ((the byte (at + 2) in bytes) * 255) / maximum
+                    else:
+                        set red to ((the big-endian half at in bytes) * 255) / maximum
+                        set green to red
+                        set blue to red
+                        if channels = 3:
+                            set green to ((the big-endian half (at + 2) in bytes) * 255) / maximum
+                            set blue to ((the big-endian half (at + 4) in bytes) * 255) / maximum
+                store pixel red green blue 255 at x y in image
+        return a decoded image

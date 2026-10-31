@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Builds and tests the native DynLex edition of OpenAEC Paint Studio.
+# Builds and tests Open Paint Studio, the native DynLex edition of OpenAEC
+# Paint Studio.
 #
 #   dynlex/build.sh app            optimised editor (dynlex/build/open-paint-studio)
 #   dynlex/build.sh dev            unoptimised editor
 #   dynlex/build.sh test [NAME...] headless tests in dynlex/tests (all when no name)
 #   dynlex/build.sh run [IMAGE]    build and run the editor
+#   dynlex/build.sh bench          time the pixel work on a 1920 × 1080 canvas
+#   dynlex/build.sh install        build, and add Open Paint Studio with its icon
+#                                  to the desktop's applications (~/.local/share)
 #
 # The compiler is the DynLex checkout named by DYNLEX_ROOT (built in place at
 # build/dynlex). Everything compiles and runs from the repository root, where
@@ -39,5 +43,19 @@ case ${1:-app} in
             fi
         done
         exit $status ;;
-    *) sed -n 2,9p "$0"; exit 2 ;;
+    bench) "$dynlex" dynlex/bench/canvas.dl -O2 -o dynlex/build/bench-canvas && dynlex/build/bench-canvas ;;
+    install)
+        "$dynlex" dynlex/paint/main.dl -O2 -o dynlex/build/open-paint-studio
+        share=${XDG_DATA_HOME:-$HOME/.local/share}
+        mkdir -p "$share/applications" "$share/icons/hicolor/scalable/apps"
+        cp dynlex/assets/icon/open-paint-studio.svg "$share/icons/hicolor/scalable/apps/open-paint-studio.svg"
+        for size in 16 32 64 128 256 512; do
+            mkdir -p "$share/icons/hicolor/${size}x${size}/apps"
+            cp "dynlex/assets/icon/open-paint-studio-$size.png" "$share/icons/hicolor/${size}x${size}/apps/open-paint-studio.png"
+        done
+        command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t -f "$share/icons/hicolor" || true
+        sed "s|@EXEC@|$here/dynlex/build/open-paint-studio|" dynlex/assets/open-paint-studio.desktop > "$share/applications/open-paint-studio.desktop"
+        command -v update-desktop-database >/dev/null && update-desktop-database "$share/applications" || true
+        echo "Installed $share/applications/open-paint-studio.desktop" ;;
+    *) sed -n 2,12p "$0"; exit 2 ;;
 esac

@@ -4,7 +4,7 @@ true
 png 5x3 220 38 38 128
 bmp 5x3 237 146 146 255
 ppm 5x3 237 146 146 255
-missing failed: not a readable PNG
+missing failed: the file could not be read
 true
 255
 0

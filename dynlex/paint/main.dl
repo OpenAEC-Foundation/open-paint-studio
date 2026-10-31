@@ -1,30 +1,19 @@
-# OpenAEC Paint Studio, native DynLex edition.
+# Open Paint Studio, the native DynLex edition of OpenAEC Paint Studio.
 #
 #   dynlex/build/open-paint-studio [IMAGE]
 #
-# Opens IMAGE (PNG, BMP or PPM) or a new 1200 × 800 canvas. Mouse: left draws
-# with the current tool, middle drags to pan, the wheel zooms around the
-# cursor. Keys: B brush, E eraser, F fill, I picker, L line, R rectangle,
-# O ellipse, T text, C crop, G grid; Ctrl+Z / Ctrl+Y undo and redo, Ctrl+S
-# save, Ctrl+O open, Ctrl+N new canvas, +/- zoom, 0 fit.
-import dynlex/paint/ui.dl
+# Opens IMAGE (any format the file layer reads) or a new 1200 × 800 canvas.
+# The window shows the browser editor's interface, measured and redrawn by
+# paint/shell.dl. Mouse: left draws with the current tool, middle drags to
+# pan, the wheel zooms around the cursor. Keys: B brush, E eraser, F fill,
+# I picker, L line, R rectangle, O ellipse, T text, C crop, G grid; Ctrl+Z /
+# Ctrl+Y undo and redo, Ctrl+S save, Ctrl+O open, Ctrl+N new canvas, +/- zoom,
+# 0 fit.
+import dynlex/paint/shell.dl
+import dynlex/paint/window.dl
 
-# --- The mouse wheel arrives through a callback; it adds to this inbox. ---
-
-class:
-    patterns:
-        [a|] paint wheel inbox
-    members:
-        vertical as a 64 bit floating-point number
-
-function paint wheel of {pointer:graphics} by {a 64 bit floating-point number:horizontal} and {a 64 bit floating-point number:vertical}:
-    execute:
-        set inbox to (the application state of graphics) as a pointer to a paint wheel inbox
-        if inbox != 0 as a pointer to a paint wheel inbox:
-            set inbox's vertical to inbox's vertical + vertical
-        ignore horizontal
-
-# --- Keys: GLFW key codes, read as presses (down now, up last frame). ---
+# --- Keys: GLFW's key numbers (as the window numbers them), read as presses
+# (down now, up last frame). ---
 
 function paint shift key:
     replacement: 340
@@ -35,7 +24,7 @@ function paint enter key:
 function paint backspace key:
     replacement: 259
 
-function key {integer:code} was pressed in {pointer:window} after {pointer:previous}:
+function key {integer:code} was pressed in {a pointer to a paint window:window} after {pointer:previous}:
     execute:
         set down to key code is down in window
         set before to (the item at code in previous) != (0 as a byte)
@@ -45,65 +34,17 @@ function key {integer:code} was pressed in {pointer:window} after {pointer:previ
             store (0 as a byte) at (previous + code)
         return down and (before = false)
 
-function a modifier {integer:code} is held in {pointer:window}:
+# Whether any key is up or down other than this frame last read it.
+function a key changed in {a pointer to a paint window:window} after {pointer:previous}:
+    execute:
+        loop code from 32 to 349:
+            if (key code is down in window) != ((the item at code in previous) != (0 as a byte)):
+                return true
+        return false
+
+function a modifier {integer:code} is held in {a pointer to a paint window:window}:
     execute:
         return (key code is down in window) or (key (code + 4) is down in window)
-
-# The character a key types, or 0: letters, digits, space and the common
-# punctuation of a US layout.
-function the character of key {integer:code} shifted {boolean:shifted}:
-    execute:
-        if (code >= 65) and (code <= 90):
-            if shifted:
-                return code
-            return code + 32
-        if (code >= 48) and (code <= 57):
-            if shifted:
-                if code = 49:
-                    return 33
-                if code = 51:
-                    return 35
-                if code = 53:
-                    return 37
-                if code = 55:
-                    return 38
-                if code = 57:
-                    return 40
-                if code = 48:
-                    return 41
-                return code
-            return code
-        if code = 32:
-            return 32
-        if code = 45:
-            if shifted:
-                return 95
-            return 45
-        if code = 46:
-            if shifted:
-                return 62
-            return 46
-        if code = 44:
-            if shifted:
-                return 60
-            return 44
-        if code = 47:
-            if shifted:
-                return 63
-            return 47
-        if code = 59:
-            if shifted:
-                return 58
-            return 59
-        if code = 39:
-            if shifted:
-                return 34
-            return 39
-        if code = 61:
-            if shifted:
-                return 43
-            return 61
-        return 0
 
 # --- File dialogs through zenity; an empty string when cancelled. ---
 
@@ -124,7 +65,7 @@ function the path chosen by {C string:command}:
 
 function the path to open:
     execute:
-        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.bmp *.BMP *.ppm *.pnm' 2>/dev/null"
+        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.jpg *.JPG *.jpeg *.gif *.bmp *.BMP *.tif *.tiff *.tga *.ico *.qoi *.ppm *.pgm *.pbm *.pnm *.xbm *.xpm *.svg *.svgz' 2>/dev/null"
 
 function the path to save:
     execute:
@@ -152,25 +93,269 @@ function the first existing font path:
         free candidates
         return found
 
+# --- Assets: the fonts beside the executable (build/../assets) or in the
+# source tree when run from the repository root. ---
+
+function the asset folder:
+    execute:
+        set here to the string form of "dynlex/assets"
+        if @intrinsic("call", "libc", "access", an integer, the data of (here + (the string form of "/fonts/inter-latin-400-normal.woff2")), 4) = 0:
+            return here
+        set link to a new string buffer containing 4096 bytes
+        set length to @intrinsic("call", "libc", "readlink", a C long integer, "/proc/self/exe", the data of link, 4095 as a word sized integer) as an integer
+        set cut to 0
+        loop index from 0 to length:
+            if ((the character at index in link) as an integer) = 47:
+                set cut to index
+        return (the substring of link from 0 spanning cut bytes) + (the string form of "/../assets")
+
+# --- Colour choice through zenity; the current colour when cancelled. ---
+
+function the color chosen after {paint color:current}:
+    execute:
+        set answer to the path chosen by "zenity --color-selection --title='Kleur' 2>/dev/null"
+        if answer's length < 10:
+            return current
+        # zenity answers rgb(r,g,b) or rgba(r,g,b,a).
+        set values to an empty list of an integer
+        set value to -1
+        loop index from 0 to answer's length:
+            set character to (the character at index in answer) as an integer
+            if (character >= 48) and (character <= 57):
+                if value < 0:
+                    set value to 0
+                set value to (value * 10) + (character - 48)
+            else:
+                if value >= 0:
+                    append value to values
+                set value to -1
+        if (the length of values) < 3:
+            return current
+        return the paint color red ((the item at 0 in values) clamped between 0 and 255) green ((the item at 1 in values) clamped between 0 and 255) blue ((the item at 2 in values) clamped between 0 and 255)
+
+# --- The browser editor's actions as the editor's commands ---
+
+function the tool of key {string:name}:
+    execute:
+        if name = (the string form of "eraser"):
+            return paint eraser tool
+        if name = (the string form of "fill"):
+            return paint fill tool
+        if name = (the string form of "picker"):
+            return paint picker tool
+        if name = (the string form of "line"):
+            return paint line tool
+        if name = (the string form of "rectangle"):
+            return paint rectangle tool
+        if name = (the string form of "ellipse"):
+            return paint ellipse tool
+        if name = (the string form of "text"):
+            return paint text tool
+        if name = (the string form of "select"):
+            return paint select tool
+        return paint brush tool
+
+function the command of action {string:action}:
+    execute:
+        set name to action
+        if action's length > 4:
+            set name to the substring of action from 4 spanning (action's length - 4) bytes
+            if action has (the string form of "menu:") at offset 0:
+                set name to the substring of action from 5 spanning (action's length - 5) bytes
+        if (name = (the string form of "Save")) or (name = (the string form of "IFCX opslaan")):
+            return paint save command
+        if ((name = (the string form of "PNG")) or (name = (the string form of "JPEG"))) or ((name = (the string form of "WebP")) or (name = (the string form of "PNG exporteren"))):
+            return paint save as command
+        if name = (the string form of "Undo"):
+            return paint undo command
+        if name = (the string form of "Redo"):
+            return paint redo command
+        if (name = (the string form of "Openen")) or (name = (the string form of "IFCX openen")):
+            return paint open command
+        if name = (the string form of "Nieuw canvas"):
+            return paint new command
+        if name = (the string form of "90° draaien"):
+            return paint rotate right command
+        if name = (the string form of "Links draaien"):
+            return paint rotate left command
+        if name = (the string form of "Horizontaal spiegelen"):
+            return paint flip horizontal command
+        if name = (the string form of "Verticaal spiegelen"):
+            return paint flip vertical command
+        if name = (the string form of "Grijswaarden"):
+            return paint grayscale command
+        if name = (the string form of "Kleuren omkeren"):
+            return paint invert command
+        if name = (the string form of "Sepia"):
+            return paint sepia command
+        if name = (the string form of "Canvas wissen"):
+            return paint clear command
+        if name = (the string form of "Raster"):
+            return paint grid command
+        if (name = (the string form of "Ware grootte")) or (name = (the string form of "actual")):
+            return paint actual size command
+        if (name = (the string form of "Passend maken")):
+            return paint fit command
+        if name = (the string form of "Focusmodus"):
+            return paint focus command
+        if name = (the string form of "Bijsnijden"):
+            return paint crop tool
+        return paint no command
+
+# --- Dialogs and the File pages ---
+
+function paint dialog new:
+    replacement: 30
+function paint dialog resize:
+    replacement: 31
+function paint dialog adjust:
+    replacement: 32
+function paint dialog settings:
+    replacement: 33
+function paint dialog api:
+    replacement: 34
+
+# Opens the dialog with the values the browser editor starts it with.
+function open dialog {integer:number} for {paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        set shell's opened to number
+        set shell's focused to the string form of ""
+        if number = paint dialog new:
+            if (the field "new.name" in shell)'s length = 0:
+                set the field "new.name" to shell's documentName in shell
+            set the field "new.width" to (the string form of app's image's width) in shell
+            set the field "new.height" to (the string form of app's image's height) in shell
+            if (the field "new.background" in shell)'s length = 0:
+                set the field "new.background" to (the string form of "Wit") in shell
+        else if number = paint dialog resize:
+            set the field "resize.width" to (the string form of app's image's width) in shell
+            set the field "resize.height" to (the string form of app's image's height) in shell
+        else if number = paint dialog adjust:
+            set the field "adjust.brightness" to (the string form of "0") in shell
+            set the field "adjust.contrast" to (the string form of "0") in shell
+            set the field "adjust.saturation" to (the string form of "100") in shell
+        else if number = paint dialog settings:
+            if (the field "settings.theme" in shell)'s length = 0:
+                set the field "settings.theme" to (the string form of "Licht") in shell
+                set the field "settings.language" to (the string form of "Nederlands") in shell
+
+# A select steps to its next option on each click.
+function the option after {string:current} for field {string:name}:
+    execute:
+        set options to an empty list of a string
+        if name = (the string form of "new.background"):
+            append (the string form of "Wit") to options
+            append (the string form of "Transparant") to options
+        else if name = (the string form of "settings.theme"):
+            append (the string form of "Licht") to options
+            append (the string form of "Forge") to options
+            append (the string form of "OpenAEC") to options
+            append (the string form of "Blueprint") to options
+            append (the string form of "Hoog contrast") to options
+        else:
+            append (the string form of "Nederlands") to options
+            append (the string form of "English") to options
+        set following to the item at 0 in options
+        loop index from 0 to the length of options:
+            if ((the item at index in options) = current) and ((index + 1) < the length of options):
+                set following to the item at (index + 1) in options
+        free options
+        return following
+
+function {string:name} is a number field:
+    execute:
+        if ((name = (the string form of "color.red")) or (name = (the string form of "color.green"))) or (name = (the string form of "color.blue")):
+            return true
+        return (name has (the string form of "width") at offset (name's length - 5)) or (name has (the string form of "height") at offset (name's length - 6))
+
+# A typed colour field takes effect as soon as it holds a colour.
+function apply the colour field {string:name} to {a pointer to a paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        set text to the field named name in shell
+        set color to app's color
+        if name = (the string form of "color.hex"):
+            set digits to text
+            if (digits's length = 7) and (((the character at 0 in digits) as an integer) = 35):
+                set digits to the substring of digits from 1 spanning 6 bytes
+            if digits's length = 6:
+                set app's color to the paint color from hex (the data of digits)
+            return nothing
+        set value to (the integer in text) clamped between 0 and 255
+        if name = (the string form of "color.red"):
+            set app's color to the paint color red value green color's green blue color's blue
+        else if name = (the string form of "color.green"):
+            set app's color to the paint color red color's red green value blue color's blue
+        else:
+            set app's color to the paint color red color's red green color's green blue value
+
+# What the dialog's main button does: create the canvas, resize it or apply
+# the corrections. Returns whether the canvas changed size.
+function submit dialog {integer:number} for {a pointer to a paint app:app} in {a pointer to a paint shell:shell}:
+    execute:
+        if number = paint dialog new:
+            if (the length of app's steps) > 0:
+                # The browser editor asks first (window.confirm).
+                set answer to @intrinsic("call", "libc", "system", an integer, "zenity --question --title='Nieuw canvas' --text='Het huidige canvas vervangen? Sla eerst een bestand op om het te behouden.' 2>/dev/null")
+                if answer != 0:
+                    return false
+            set width to the number in field "new.width" or 1200 in shell
+            set height to the number in field "new.height" or 800 in shell
+            start a new canvas in app sized width by height transparent ((the field "new.background" in shell) = (the string form of "Transparant"))
+            set shell's documentName to the field "new.name" in shell
+            if shell's documentName's length = 0:
+                set shell's documentName to the string form of "Untitled"
+            set shell's opened to -1
+            return true
+        if number = paint dialog resize:
+            resize app to (the number in field "resize.width" or app's image's width in shell) by (the number in field "resize.height" or app's image's height in shell)
+            set shell's opened to -1
+            return true
+        if number = paint dialog adjust:
+            adjust app by paint adjustment adjust brightness (the number in field "adjust.brightness" or 0 in shell) contrast (the number in field "adjust.contrast" or 0 in shell) saturation (the number in field "adjust.saturation" or 100 in shell) named (label "Colour corrections" "Kleurcorrecties" for (the value at app))
+            set shell's opened to -1
+        return false
+
 # --- The program ---
 
-set window to a new window with width 1440 and height 900
-set the title of window to "OpenAEC Paint Studio"
-set fontPath to the first existing font path
-if fontPath's length = 0:
-    print "No usable font found (install DejaVu Sans)." as a line
-    close window
-    return 1
-set loading to the result of loading a font from (the data of fontPath) at size 13 for window
-set typeface to loading's typeface
-if loading failed:
-    print "Could not load the interface font." as a line
-    close window
-    return 1
+function the monotonic clock:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set seconds to ((the item at 0 in buffer) as a 64 bit floating-point number) + (((the item at 1 in buffer) as a 64 bit floating-point number) / 1000000000.0)
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return seconds
 
-set inbox to @intrinsic("construct", a paint wheel inbox, 0.0)
-set the application state of window to ((the address of inbox) as a pointer)
-register the graphics scroll callback named "paint wheel of $ by $ and $" for window
+# The keyboard's text as UTF-8: Latin-1 beyond ASCII takes two bytes.
+function the text of character {integer:character}:
+    execute:
+        if character < 128:
+            set letter to a new string buffer containing 1 byte
+            store (character as a byte) at (the data of letter)
+            return letter
+        set letters to a new string buffer containing 2 bytes
+        store ((192 | (character >> 6)) as a byte) at (the data of letters)
+        store ((128 | (character & 63)) as a byte) at ((the data of letters) + 1)
+        return letters
+
+# librsvg (the icons) would start a worker thread per core for its filters;
+# the one blurred shadow does not need them.
+ignore @intrinsic("call", "libc", "setenv", an integer, "RAYON_NUM_THREADS", "1", 0)
+set windowRecord to a new paint window 1440 by 940 titled "Open Paint Studio"
+set window to the address of windowRecord
+if (window is open) = false:
+    print "No X display: Open Paint Studio needs an X server (or XWayland)." as a line
+    return 1
+set shell to a new paint shell with fonts in ((the asset folder) + (the string form of "/fonts"))
+if ((shell's regular) is loaded) = false:
+    print "The interface fonts are missing (dynlex/assets/fonts)." as a line
+    close window
+    return 1
+# The text tool writes with the system's DejaVu Sans, the interface's fallback face.
+set typeface to the face numbered 5 in (the address of shell)
+set icon to the paint image opened from ((the asset folder) + (the string form of "/icon/open-paint-studio-64.png"))
+if icon's valid:
+    set the icon of window to icon's image
+free paint canvas icon's image
 
 set app to a new paint app 1200 by 800
 set state to the address of app
@@ -181,83 +366,336 @@ if arguments' length > 0:
     clear app's steps
 
 set keys to @intrinsic("call", "libc", "calloc", a pointer to a byte, 512 as a word sized integer, 1 as a word sized integer)
-set display to 0 as a pointer to a byte
-set texture to an empty graphics texture
-set shownWidth to 0
-set shownHeight to 0
 set fitted to false
 set previousLeft to false
 set previousMiddle to false
 set previousX to 0.0
 set previousY to 0.0
 set lastTitle to the string form of ""
+set canvasChanged to true
+set lastAreaW to 0
+set lastAreaH to 0
+set filePage to 0
+set lastTitleClick to 0.0
 
 loop while window remains open:
-    set width to the framebuffer width of window
-    set height to the framebuffer height of window
-    set cursor to the cursor position of window
-    set mx to cursor's x as a 64 bit floating-point number
-    set my to cursor's y as a 64 bit floating-point number
-    set top to the workspace top for app
-    set right to the workspace right of width for app
-    set bottom to height - paint status height
-    set workspaceWidth to (right as a 64 bit floating-point number)
-    set workspaceHeight to ((bottom - top) as a 64 bit floating-point number)
+    poll window
+    set width to window's width
+    set height to window's height
     if fitted = false:
-        fit state into workspaceWidth by workspaceHeight
+        fit state into the shell of width by height in (the address of shell)
         set fitted to true
-    set insideWorkspace to ((mx >= 0.0) and (mx < workspaceWidth)) and ((my >= (top as a 64 bit floating-point number)) and (my < (bottom as a 64 bit floating-point number)))
-    set canvasX to the canvas x of screen mx in workspace 0.0 for app
-    set canvasY to the canvas y of screen my in workspace (top as a 64 bit floating-point number) for app
+        set canvasChanged to true
+    set mx to window's mouseX
+    set my to window's mouseY
+    set stage to the paint stage of app in width by height in (the address of shell)
+    # The browser editor refits whenever its workspace changes size.
+    set area to the paint workspace of app in width by height in (the address of shell)
+    if (area's w != lastAreaW) or (area's h != lastAreaH):
+        set lastAreaW to area's w
+        set lastAreaH to area's h
+        fit state into the shell of width by height in (the address of shell)
+        set stage to the paint stage of app in width by height in (the address of shell)
+        set canvasChanged to true
+    set canvasX to (mx - stage's x) / stage's scale
+    set canvasY to (my - stage's y) / stage's scale
     set column to (the floor of canvasX) as an integer
     set row to (the floor of canvasY) as an integer
+    set insideArea to ((mx >= (stage's areaX as a 64 bit floating-point number)) and (mx < ((stage's areaX + stage's areaW) as a 64 bit floating-point number))) and ((my >= ((stage's areaY + 34) as a 64 bit floating-point number)) and (my < (((stage's areaY + stage's areaH) - 26) as a 64 bit floating-point number)))
+    set action to the shell action at (mx as an integer) (my as an integer) for app of width by height in (the address of shell)
+    set command to paint no command
+    # Nothing to redraw when the wake-up brought no input (only a timeout).
+    set keyChanged to window's keyEvent
 
     # Mouse
-    set left to the left mouse button is pressed in window
-    set middle to the middle mouse button is pressed in window
+    set left to window's left
+    set middle to window's middle
     set pressed to left and (previousLeft = false)
-    set chromeClick to pressed and (insideWorkspace = false)
-    if pressed and insideWorkspace:
-        set app's message to the string form of ""
-        press state at canvasX canvasY with typeface
+    set titleBar to ((my < 42.0) and (my >= 0.0)) and (action's length = 0)
+    if pressed and titleBar:
+        # The title bar moves the window; a double click maximises it.
+        set now to the monotonic clock
+        if (now - lastTitleClick) < 0.4:
+            toggle maximising window
+        else:
+            # The window manager takes the drag from here.
+            start moving window
+            set left to false
+        set lastTitleClick to now
+    else if pressed:
+        if action's length > 0:
+            set closing to true
+            if action has (the string form of "tab:") at offset 0:
+                set name to the substring of action from 4 spanning (action's length - 4) bytes
+                # The ribbon's tabs, in the order the skin measured them.
+                set shell's tab to 0
+                if name = (the string form of "Beeld"):
+                    set shell's tab to 1
+                if name = (the string form of "Automatisering"):
+                    set shell's tab to 2
+            else if action has (the string form of "toggle:") at offset 0:
+                set wanted to ((the character at 7 in action) as an integer) - 48
+                set closing to false
+                if shell's opened = wanted:
+                    set shell's opened to -1
+                else:
+                    set shell's opened to wanted
+            else if action = (the string form of "file"):
+                set closing to false
+                if (shell's opened >= 20) and (shell's opened < 30):
+                    set shell's opened to -1
+                else:
+                    set shell's opened to 20 + filePage
+            else if action has (the string form of "tool:") at offset 0:
+                choose tool (the tool of key (the substring of action from 5 spanning (action's length - 5) bytes)) for state
+            else if action has (the string form of "color:") at offset 0:
+                set digits to the substring of action from 7 spanning 6 bytes
+                set app's color to the paint color from hex (the data of digits)
+            else if action = (the string form of "pick"):
+                set app's color to the color chosen after (app's color)
+            else if action = (the string form of "size"):
+                # The spin buttons: the upper half steps up, the lower down.
+                set entries to shell's skin's entries
+                loop index from 0 to the length of entries:
+                    set entry to the item at index in entries
+                    if (entry's kind = paint skin hit) and (entry's action = action):
+                        set box to the box of entry in width by height within (the paint skin state of app in (the address of shell))
+                        if my < ((box's y as a 64 bit floating-point number) + ((box's h as a 64 bit floating-point number) / 2.0)):
+                            set app's size to (app's size + 1) clamped between 1 and 200
+                        else:
+                            set app's size to (app's size - 1) clamped between 1 and 200
+            else if (action = (the string form of "opacity")) or (action = (the string form of "zoomslider")):
+                set shell's dragging to action
+            else if ((action = (the string form of "cmd:Settings")) or (action = (the string form of "menu:Instellingen"))) or (action = (the string form of "file:Instellingen…")):
+                open dialog paint dialog settings for app in (the address of shell)
+                set closing to false
+            else if action = (the string form of "cmd:Formaat wijzigen"):
+                open dialog paint dialog resize for app in (the address of shell)
+                set closing to false
+            else if action = (the string form of "cmd:Kleurcorrecties"):
+                open dialog paint dialog adjust for app in (the address of shell)
+                set closing to false
+            else if ((action = (the string form of "cmd:Nieuw canvas")) or (action = (the string form of "menu:Nieuw canvas"))) or (action = (the string form of "tile:Nieuw canvas…")):
+                open dialog paint dialog new for app in (the address of shell)
+                set closing to false
+            else if ((action = (the string form of "cmd:API verbinden")) or (action = (the string form of "cmd:Naar API sturen"))) or (action = (the string form of "cmd:Van API laden")):
+                open dialog paint dialog api for app in (the address of shell)
+                set closing to false
+            else if action has (the string form of "page:") at offset 0:
+                set name to the substring of action from 5 spanning (action's length - 5) bytes
+                set filePage to 0
+                if name = (the string form of "Openen"):
+                    set filePage to 1
+                if name = (the string form of "Opslaan"):
+                    set filePage to 2
+                if name = (the string form of "Exporteren"):
+                    set filePage to 3
+                if name = (the string form of "Formaten"):
+                    set filePage to 4
+                if name = (the string form of "Over"):
+                    set filePage to 5
+                set shell's opened to 20 + filePage
+                set closing to false
+            else if action = (the string form of "file:Terug naar werkgebied"):
+                set shell's opened to -1
+            else if action = (the string form of "file:Afsluiten"):
+                request that window close
+            else if action has (the string form of "tile:") at offset 0:
+                set name to the substring of action from 5 spanning (action's length - 5) bytes
+                if name = (the string form of "Afbeelding…"):
+                    set command to paint open command
+                else if name = (the string form of "IFCX opslaan"):
+                    set command to paint save command
+                else if ((name = (the string form of "PNG")) or (name = (the string form of "JPEG"))) or (name = (the string form of "WebP")):
+                    set command to paint save as command
+                else:
+                    set shell's status to (name + (the string form of " hoort bij de browsereditie"))
+            else if action = (the string form of "dialog:close"):
+                set shell's opened to -1
+            else if action has (the string form of "focus:") at offset 0:
+                set shell's focused to the substring of action from 6 spanning (action's length - 6) bytes
+                if shell's focused has (the string form of "color.") at offset 0:
+                    set the field named (shell's focused) to (the hex of app's color) in (the address of shell)
+                    if shell's focused = (the string form of "color.red"):
+                        set the field named (shell's focused) to (the string form of app's color's red) in (the address of shell)
+                    if shell's focused = (the string form of "color.green"):
+                        set the field named (shell's focused) to (the string form of app's color's green) in (the address of shell)
+                    if shell's focused = (the string form of "color.blue"):
+                        set the field named (shell's focused) to (the string form of app's color's blue) in (the address of shell)
+                set closing to false
+            else if action has (the string form of "select:") at offset 0:
+                set name to the substring of action from 7 spanning (action's length - 7) bytes
+                set the field named name to (the option after (the field named name in (the address of shell)) for field name) in (the address of shell)
+                if name has (the string form of "settings.") at offset 0:
+                    set shell's status to the string form of "De native editie toont het lichte, Nederlandse thema"
+                set closing to false
+            else if action has (the string form of "drag:color.") at offset 0:
+                set shell's dragging to action
+                set shell's focused to the string form of ""
+                set closing to false
+            else if action has (the string form of "drag:") at offset 0:
+                set shell's dragging to action
+                set shell's focused to the substring of action from 5 spanning (action's length - 5) bytes
+                set closing to false
+            else if action has (the string form of "preset:") at offset 0:
+                set preset to the substring of action from 7 spanning (action's length - 7) bytes
+                set cross to 0
+                loop index from 0 to preset's length:
+                    if ((the character at index in preset) as an integer) = 120:
+                        set cross to index
+                set the field "new.width" to (the substring of preset from 0 spanning cross bytes) in (the address of shell)
+                set the field "new.height" to (the substring of preset from (cross + 1) spanning ((preset's length - cross) - 1) bytes) in (the address of shell)
+                set closing to false
+            else if action has (the string form of "dialog:api") at offset 0:
+                set shell's status to the string form of "De API-koppeling hoort bij de browsereditie"
+                set closing to false
+            else if action has (the string form of "dialog:") at offset 0:
+                if submit dialog shell's opened for state in (the address of shell):
+                    set fitted to false
+                set closing to false
+            else if action = (the string form of "vector"):
+                set shell's vectors to (shell's vectors = false)
+                if shell's vectors = false:
+                    flatten the history of state
+            else if action = (the string form of "menu:Eigenschappen"):
+                set shell's panelHidden to (shell's panelHidden = false)
+            else if action = (the string form of "cmd:Close window"):
+                request that window close
+            else if action = (the string form of "cmd:Minimize"):
+                iconify window
+            else if action = (the string form of "cmd:Maximize"):
+                toggle maximising window
+            else if ((action = (the string form of "cmd:Zoom in")) or (action = (the string form of "cmd:+"))) or ((action = (the string form of "menu:+")) or (action = (the string form of "cmd:Inzoomen"))):
+                # The status bar steps by 10 percent, the ribbon by 25.
+                set step to 25
+                if action = (the string form of "cmd:Zoom in"):
+                    set step to 10
+                zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) + step) percent around (stage's x + (((app's image's width as a 64 bit floating-point number) * stage's scale) / 2.0)) (stage's y + (((app's image's height as a 64 bit floating-point number) * stage's scale) / 2.0)) in width by height in (the address of shell)
+                set canvasChanged to true
+            else if ((action = (the string form of "cmd:Zoom out")) or (action = (the string form of "cmd:−"))) or ((action = (the string form of "menu:−")) or (action = (the string form of "cmd:Uitzoomen"))):
+                # The status bar steps by 10 percent, the ribbon by 25.
+                set step to 25
+                if action = (the string form of "cmd:Zoom out"):
+                    set step to 10
+                zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) - step) percent around (stage's x + (((app's image's width as a 64 bit floating-point number) * stage's scale) / 2.0)) (stage's y + (((app's image's height as a 64 bit floating-point number) * stage's scale) / 2.0)) in width by height in (the address of shell)
+                set canvasChanged to true
+            else:
+                set command to the command of action action
+            if closing:
+                set shell's opened to -1
+        else if (shell's opened >= 0) and (shell's opened < 20):
+            set shell's opened to -1
+        else if shell's opened >= 20:
+            set shell's focused to the string form of ""
+        else if insideArea:
+            set app's message to the string form of ""
+            press state at canvasX canvasY with typeface
     else if left and app's dragging:
         if (mx != previousX) or (my != previousY):
             drag state to canvasX canvasY
+    if left and (shell's dragging's length > 0):
+        # The sliders follow the mouse along their track.
+        set entries to shell's skin's entries
+        loop index from 0 to the length of entries:
+            set entry to the item at index in entries
+            if ((shell's dragging = (the string form of "drag:color.field")) or (shell's dragging = (the string form of "drag:color.hue"))) and (entry's kind = paint skin control):
+                if ((shell's dragging = (the string form of "drag:color.field")) and (entry's action = (the string form of "colorfield"))) or ((shell's dragging = (the string form of "drag:color.hue")) and (entry's action = (the string form of "colorhue"))):
+                    set box to the box of entry in width by height within (the paint skin state of app in (the address of shell))
+                    set across to ((mx - (box's x as a 64 bit floating-point number)) / (box's w as a 64 bit floating-point number)) clamped between 0.0 and 1.0
+                    set down to ((my - (box's y as a 64 bit floating-point number)) / (box's h as a 64 bit floating-point number)) clamped between 0.0 and 1.0
+                    set hue to the picker hue of app in (the address of shell)
+                    set current to the hsv of app's color keeping hue hue
+                    if entry's action = (the string form of "colorfield"):
+                        set app's color to the paint color of hue hue saturation across value (1.0 - down)
+                    else:
+                        set hue to across * 360.0
+                        set the field "color.h" to (the string form of ((the rounded value of hue) as an integer)) in (the address of shell)
+                        set app's color to the paint color of hue hue saturation current's saturation value current's brightness
+            if ((shell's dragging has (the string form of "drag:") at offset 0) and (entry's kind = paint skin control)) and (entry's action has (the string form of "range:") at offset 0):
+                set field to the segment 1 of (entry's action)
+                if ((the string form of "drag:") + field) = shell's dragging:
+                    set box to the box of entry in width by height within (the paint skin state of app in (the address of shell))
+                    set fraction to ((mx - ((box's x + 9) as a 64 bit floating-point number)) / ((box's w - 18) as a 64 bit floating-point number)) clamped between 0.0 and 1.0
+                    set minimum to the integer in (the segment 2 of (entry's action))
+                    set maximum to the integer in (the segment 3 of (entry's action))
+                    set value to minimum + ((the rounded value of (fraction * ((maximum - minimum) as a 64 bit floating-point number))) as an integer)
+                    set the field named field to (the string form of value) in (the address of shell)
+            if ((entry's kind = paint skin hit) and (entry's action = shell's dragging)) and ((shell's dragging = (the string form of "opacity")) or (shell's dragging = (the string form of "zoomslider"))):
+                set box to the box of entry in width by height within (the paint skin state of app in (the address of shell))
+                set fraction to ((mx - (box's x as a 64 bit floating-point number)) / (box's w as a 64 bit floating-point number)) clamped between 0.0 and 1.0
+                if shell's dragging = (the string form of "opacity"):
+                    set app's opacity to (1 + ((the rounded value of (fraction * 99.0)) as an integer))
+                else:
+                    zoom state to (10 + ((the rounded value of (fraction * 390.0)) as an integer)) percent around (stage's x + (((app's image's width as a 64 bit floating-point number) * stage's scale) / 2.0)) (stage's y + (((app's image's height as a 64 bit floating-point number) * stage's scale) / 2.0)) in width by height in (the address of shell)
+                    set canvasChanged to true
     if (left = false) and previousLeft:
         release state
+        set shell's dragging to the string form of ""
     if middle and previousMiddle:
         set app's panX to app's panX + (mx - previousX)
         set app's panY to app's panY + (my - previousY)
+        set canvasChanged to true
+    set quiet to ((mx = previousX) and (my = previousY)) and ((left = previousLeft) and (middle = previousMiddle))
     set previousLeft to left
     set previousMiddle to middle
     set previousX to mx
     set previousY to my
-    if inbox's vertical != 0.0:
-        set factor to 1.1
-        if inbox's vertical < 0.0:
-            set factor to 1.0 / 1.1
-        if insideWorkspace:
-            zoom state by factor around mx (my - (top as a 64 bit floating-point number))
-        else:
-            zoom state by factor around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
-        set inbox's vertical to 0.0
+    if window's wheel != 0.0:
+        set step to 10
+        if window's wheel < 0.0:
+            set step to -10
+        zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) + step) percent around mx my in width by height in (the address of shell)
+        set window's wheel to 0.0
+        set canvasChanged to true
 
     # Keyboard
-    set command to paint no command
     set control to a modifier paint control key is held in window
     set shifted to a modifier paint shift key is held in window
-    if app's typing:
-        loop code from 32 to 97:
-            if key code was pressed in window after keys:
-                set character to the character of key code shifted shifted
-                if (character != 0) and (control = false):
+    if ((shell's opened >= 30) or ((shell's opened >= 0) and (shell's focused has (the string form of "color.") at offset 0))) and (shell's focused's length > 0):
+        # Typing into the focused field of a dialog or of the colour picker.
+        set field to shell's focused
+        set numeric to field is a number field
+        set typedText to window's typed
+        loop index from 0 to typedText's length:
+            set character to ((the character at index in typedText) as an integer) & 255
+            if (control = false) and ((numeric = false) or ((character >= 48) and (character <= 57))):
+                set the field named field to ((the field named field in (the address of shell)) + (the text of character character)) in (the address of shell)
+                if field has (the string form of "color.") at offset 0:
+                    apply the colour field field to state in (the address of shell)
+        if key paint backspace key was pressed in window after keys:
+            set text to the field named field in (the address of shell)
+            if text's length > 0:
+                set the field named field to (the substring of text from 0 spanning (text's length - 1) bytes) in (the address of shell)
+        if key paint enter key was pressed in window after keys:
+            if submit dialog shell's opened for state in (the address of shell):
+                set fitted to false
+        if key 256 was pressed in window after keys:
+            set shell's opened to -1
+            set shell's focused to the string form of ""
+    else if shell's opened >= 30:
+        if key paint enter key was pressed in window after keys:
+            if submit dialog shell's opened for state in (the address of shell):
+                set fitted to false
+        if key 256 was pressed in window after keys:
+            cancel the current function of state
+            set shell's opened to -1
+    else if app's typing:
+        set typedText to window's typed
+        loop index from 0 to typedText's length:
+            set character to ((the character at index in typedText) as an integer) & 255
+            if control = false:
+                if character < 128:
                     enter character character into state with typeface
+                else:
+                    enter character (192 | (character >> 6)) into state with typeface
+                    enter character (128 | (character & 63)) into state with typeface
         if key paint backspace key was pressed in window after keys:
             erase the last letter of state with typeface
         if key paint enter key was pressed in window after keys:
             commit the text of state with typeface
         if key 256 was pressed in window after keys:
-            cancel the text of state
+            cancel the current function of state
+            set shell's opened to -1
         if control and (key 90 was pressed in window after keys):
             set command to paint undo command
     else:
@@ -285,6 +723,8 @@ loop while window remains open:
             set command to paint zoom out command
         if key 67 was pressed in window after keys:
             set command to paint crop tool
+        if key 86 was pressed in window after keys:
+            set command to paint select tool
         if key 79 was pressed in window after keys:
             set command to paint ellipse tool
             if control:
@@ -304,44 +744,19 @@ loop while window remains open:
                     set command to paint save as command
         if key 78 was pressed in window after keys:
             if control:
-                set command to paint new command
-        if key 261 was pressed in window after keys:
-            set command to paint clear command
-
-    # The canvas texture follows the image: recreated when its size changes,
-    # updated when its pixels did.
-    if (app's image's width != shownWidth) or (app's image's height != shownHeight):
-        if display != 0 as a pointer to a byte:
-            @intrinsic("call", "libc", "free", nothing, display)
-        release texture
-        set shownWidth to app's image's width
-        set shownHeight to app's image's height
-        set display to @intrinsic("call", "libc", "malloc", a pointer to a byte, ((shownWidth * shownHeight) * 4) as a word sized integer)
-        compose app's image into display display
-        set resource to @intrinsic("call", "dynlex_graphics", "dynlex_graphics_texture_create_rgba8", a pointer to a byte, window, shownWidth, shownHeight, display)
-        set texture to @intrinsic("construct", a graphics texture, resource, shownWidth, shownHeight)
-        set app's redrawn to false
-    else if app's redrawn:
-        compose app's image into display display
-        ignore @intrinsic("call", "dynlex_graphics", "dynlex_graphics_texture_update", an integer, texture's resource, shownWidth, shownHeight, display)
-        set app's redrawn to false
-
-    # Draw, and take the command of a clicked button.
-    set theme to the paint theme numbered app's theme
-    set frame to a new graphics frame in window with background red 0.98, green 0.98, blue 0.976 and alpha 1.0
-    use screen coordinates in frame
-    set ui to a paint ui in frame with typeface for app at (mx as an integer) (my as an integer) clicked chromeClick
-    draw app showing texture width height at column row inside (insideWorkspace and (column row lies on app's image)) in (the address of ui)
-    display frame
-    if ui's command != paint no command:
-        set command to ui's command
+                open dialog paint dialog new for app in (the address of shell)
+        if key 256 was pressed in window after keys:
+            cancel the current function of state
+            set shell's opened to -1
 
     # Commands that need the window: files, zoom and fitting.
+    set centerX to stage's x + (((app's image's width as a 64 bit floating-point number) * stage's scale) / 2.0)
+    set centerY to stage's y + (((app's image's height as a 64 bit floating-point number) * stage's scale) / 2.0)
     if command = paint open command:
         set chosen to the path to open
         if chosen's length > 0:
             if open chosen in state:
-                fit state into workspaceWidth by workspaceHeight
+                set fitted to false
     else if ((command = paint save command) and (app's path's length > 0)) and ((the paint format of app's path) != paint format unknown):
         ignore save state to app's path
     else if (command = paint save command) or (command = paint save as command):
@@ -349,34 +764,69 @@ loop while window remains open:
         if chosen's length > 0:
             ignore save state to chosen
     else if command = paint zoom in command:
-        zoom state by 1.25 around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+        zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) + 10) percent around centerX centerY in width by height in (the address of shell)
+        set canvasChanged to true
     else if command = paint zoom out command:
-        zoom state by 0.8 around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
+        zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) - 10) percent around centerX centerY in width by height in (the address of shell)
+        set canvasChanged to true
     else if command = paint fit command:
-        fit state into workspaceWidth by workspaceHeight
+        set fitted to false
     else if command = paint actual size command:
-        zoom state by (1.0 / app's zoom) around (workspaceWidth / 2.0) (workspaceHeight / 2.0)
-    else:
+        zoom state to 100 percent around centerX centerY in width by height in (the address of shell)
+        set canvasChanged to true
+    else if command != paint no command:
         set before to app's image's width
         set beforeHeight to app's image's height
         set focused to app's focus
         apply paint command command to state with typeface
         if ((before != app's image's width) or (beforeHeight != app's image's height)) or (focused != app's focus):
             set fitted to false
+    # The editor says what it touched; a change without a rectangle (undo,
+    # a new image) redraws the whole canvas.
+    if app's redrawn:
+        if the touched area of app is empty:
+            set canvasChanged to true
+        set app's redrawn to false
 
-    set title to the string form of "OpenAEC Paint Studio"
+    # The frame: composed on the processor where it changed, shown through
+    # the window's shared image.
+    if fitted = false:
+        fit state into the shell of width by height in (the address of shell)
+        set fitted to true
+        set canvasChanged to true
+    set shownX to (the maximum of 0 and column)
+    set shownY to (the maximum of 0 and row)
+    set changedLeft to 0
+    set changedTop to 0
+    set changedRight to 0
+    set changedBottom to 0
+    if canvasChanged:
+        set changedRight to app's image's width
+        set changedBottom to app's image's height
+    else if (the touched area of app is empty) = false:
+        set changedLeft to app's touchedLeft
+        set changedTop to app's touchedTop
+        set changedRight to app's touchedRight
+        set changedBottom to app's touchedBottom
+    clear the touched area of state
+    set canvasChanged to false
+    set dirty to draw the shell of app app sized width by height at shownX shownY redrawing the canvas within changedLeft changedTop changedRight changedBottom in (the address of shell)
+    if window's exposed or window's resized:
+        set dirty to @intrinsic("construct", a paint skin box, 0, 0, width, height, 0.0, 0.0)
+    if (dirty's w > 0) and (dirty's h > 0):
+        present (shell's composed) within (dirty's x) (dirty's y) (dirty's w) (dirty's h) on window
+
+    set title to the string form of "Open Paint Studio"
     if app's path's length > 0:
         set title to (app's path + (the string form of " — ")) + title
     if app's changed:
         set title to (the string form of "• ") + title
     if (title = lastTitle) = false:
-        set the title of window to (the data of title)
+        set the title of window to title
         set lastTitle to title
-    sleep for 8 milliseconds
 
-release texture
-if display != 0 as a pointer to a byte:
-    @intrinsic("call", "libc", "free", nothing, display)
-set releasing to the result of releasing (the address of typeface)
-ignore releasing
+    # Everything shown follows from input: sleep until the next event.
+    if window remains open:
+        wait for an event in window
+
 close window

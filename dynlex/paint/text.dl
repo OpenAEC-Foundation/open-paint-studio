@@ -1,20 +1,11 @@
-# Text: the interface's labels through the graphics library's FreeType font,
-# and the text tool, which renders glyph coverage into the canvas pixels.
-import dynlex/paint/canvas.dl
-import lib/font.dl
+# The text tool: renders FreeType glyph coverage into the canvas pixels. The
+# face is one of the typesetter's (paint/typeset.dl), which also sets the
+# interface's own text.
+import dynlex/paint/typeset.dl
 
-# FreeType load flags: FT_LOAD_DEFAULT keeps metrics only, FT_LOAD_RENDER
-# also rasterises the glyph's eight-bit coverage bitmap.
-local function freetype metrics only:
-    replacement: 0
+# FT_LOAD_RENDER: rasterises the glyph's eight-bit coverage bitmap.
 local function freetype render:
     replacement: 4
-
-function use {font:typeface} at {integer:height} pixel size:
-    execute:
-        set sizing to the result of setting typeface's pixel size to height
-        if sizing failed:
-            print sizing's operation as a line
 
 class:
     patterns:
@@ -44,47 +35,12 @@ function the code point at {integer:index} in {string:message}:
                 set value to (value << 6) + (((the character at (index + step) in message) as an integer) & 63)
         return @intrinsic("construct", a paint code point, value, count)
 
-# The advance width of the text in pixels at the font's current size.
-function the width of {string:message} in {font:typeface}:
-    execute:
-        set total to 0
-        set index to 0
-        loop while index < message's length:
-            set point to the code point at index in message
-            set error to @intrinsic("call", "freetype", "FT_Load_Char", an integer, typeface's face, point's value as a C long integer, freetype metrics only)
-            if error = 0:
-                set slot to (the glyph of (typeface's face as a pointer to an FT face)) as a pointer to an FT glyph slot
-                set total to total + (((the advance x of slot) / 64) as an integer)
-            set index to index + point's size
-        return total
-
-function the width of {C string:message} in {font:typeface}:
-    execute:
-        return the width of (the string form of message) in typeface
-
-# Draws the label with its baseline at y.
-function write {string:message} at {a number:x} {a number:y} in red {integer:red} green {integer:green} blue {integer:blue} with {font:typeface} in {graphics frame:frame}:
-    execute:
-        set color to a font color from red, green and blue
-        set pen to x as an integer
-        set index to 0
-        loop while index < message's length:
-            set point to the code point at index in message
-            render point's value at x pen and y y using typeface in color in frame
-            set rendering to it
-            set pen to rendering's horizontal position
-            set index to index + point's size
-
-function write {C string:message} at {a number:x} {a number:y} in red {integer:red} green {integer:green} blue {integer:blue} with {font:typeface} in {graphics frame:frame}:
-    execute:
-        write (the string form of message) at x y in red red green green blue blue with typeface in frame
-
 # Renders the text into the canvas with its baseline at (x, y), each pixel
 # composited from base at the glyph's coverage times the opacity, so a live
 # preview can be redrawn on every keystroke. Returns the advance in pixels.
-function render {string:message} into {paint canvas:image} from {paint canvas:base} at {integer:x} {integer:y} sized {integer:size} in {paint color:color} at opacity {integer:opacity} with {font:typeface}:
+function render {string:message} into {paint canvas:image} from {paint canvas:base} at {integer:x} {integer:y} sized {integer:size} in {paint color:color} at opacity {integer:opacity} with {a pointer to a paint face:typeface}:
     execute:
-        use typeface at size pixel size
+        use typeface at size pixels
         set pen to x
         set index to 0
         loop while index < message's length:

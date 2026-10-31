@@ -1,0 +1,1286 @@
+# SVG to pixels, by the editor itself: the shell's icons, the canvas shadow
+# and SVG files. A small SVG: paths (all commands), rects, circles, ellipses,
+# lines, polylines and polygons; fills by either rule, strokes with their
+# caps and joins, opacity, transforms, viewBox, clip paths and the Gaussian
+# blur filter. Shapes are flattened to polygons and rasterised by scanline
+# with four sub-rows a pixel and exact horizontal coverage, then blended in
+# sRGB with straight alpha, as the browser draws them. Text is not drawn.
+import dynlex/paint/typeset.dl
+import lib/list.dl
+import lib/string.dl
+
+# --- libm ---
+
+local function the angle of {a 64 bit floating-point number:y} over {a 64 bit floating-point number:x}:
+    execute:
+        return @intrinsic("call", ":libm.so.6", "atan2", a 64 bit floating-point number, y, x)
+
+local function e to the {a 64 bit floating-point number:power}:
+    execute:
+        return @intrinsic("call", ":libm.so.6", "exp", a 64 bit floating-point number, power)
+
+# --- Numbers in text ---
+
+class:
+    patterns:
+        [a|] paint scan
+    members:
+        svValue as a 64 bit floating-point number
+        svNext as an integer
+        svFound as a boolean
+
+local function {integer:character} is a digit:
+    execute:
+        return (character >= 48) and (character <= 57)
+
+local function {integer:character} separates:
+    execute:
+        return ((character = 32) or (character = 44)) or (((character = 10) or (character = 13)) or (character = 9))
+
+# The number that starts at cursor (separators skipped), or none.
+local function the number from {integer:cursor} in {string:text}:
+    execute:
+        set here to cursor
+        set stop to text's length
+        loop while (here < stop) and (((the character at here in text) as an integer) & 255) separates:
+            set here to here + 1
+        set sign to 1.0
+        if (here < stop) and ((((the character at here in text) as an integer) & 255) = 45):
+            set sign to -1.0
+            set here to here + 1
+        else if (here < stop) and ((((the character at here in text) as an integer) & 255) = 43):
+            set here to here + 1
+        set start to here
+        set value to 0.0
+        loop while (here < stop) and ((((the character at here in text) as an integer) & 255) is a digit):
+            set value to (value * 10.0) + (((((the character at here in text) as an integer) & 255) - 48) as a 64 bit floating-point number)
+            set here to here + 1
+        if (here < stop) and ((((the character at here in text) as an integer) & 255) = 46):
+            set here to here + 1
+            set place to 0.1
+            loop while (here < stop) and ((((the character at here in text) as an integer) & 255) is a digit):
+                set value to value + (place * (((((the character at here in text) as an integer) & 255) - 48) as a 64 bit floating-point number))
+                set place to place / 10.0
+                set here to here + 1
+        if here = start:
+            return @intrinsic("construct", a paint scan, 0.0, cursor, false)
+        if (here < stop) and (((((the character at here in text) as an integer) & 255) = 101) or ((((the character at here in text) as an integer) & 255) = 69)):
+            set exponentSign to 1
+            set exponent to 0
+            set here to here + 1
+            if (here < stop) and ((((the character at here in text) as an integer) & 255) = 45):
+                set exponentSign to -1
+                set here to here + 1
+            else if (here < stop) and ((((the character at here in text) as an integer) & 255) = 43):
+                set here to here + 1
+            loop while (here < stop) and ((((the character at here in text) as an integer) & 255) is a digit):
+                set exponent to (exponent * 10) + ((((the character at here in text) as an integer) & 255) - 48)
+                set here to here + 1
+            loop step from 0 to exponent:
+                if exponentSign > 0:
+                    set value to value * 10.0
+                else:
+                    set value to value / 10.0
+        # A "px" unit or a percent sign is skipped; any other letter is the
+        # next path command.
+        if ((here + 1) < stop) and (((((the character at here in text) as an integer) & 255) = 112) and ((((the character at (here + 1) in text) as an integer) & 255) = 120)):
+            set here to here + 2
+        if (here < stop) and ((((the character at here in text) as an integer) & 255) = 37):
+            set here to here + 1
+        return @intrinsic("construct", a paint scan, sign * value, here, true)
+
+local function the first number in {string:text} or {a 64 bit floating-point number:fallback}:
+    execute:
+        set scanned to the number from 0 in text
+        if scanned's svFound:
+            return scanned's svValue
+        return fallback
+
+# --- Colours ---
+
+class:
+    patterns:
+        [a|] paint svg paint
+    members:
+        svOn as a boolean
+        svColor as a paint color
+
+local function the hex value of {integer:character}:
+    execute:
+        if (character >= 48) and (character <= 57):
+            return character - 48
+        if (character >= 97) and (character <= 102):
+            return character - 87
+        if (character >= 65) and (character <= 70):
+            return character - 55
+        return 0
+
+local function the svg paint named {string:text} inheriting {paint svg paint:inherited}:
+    execute:
+        set trimmed to text
+        if trimmed's length = 0:
+            return inherited
+        set first to ((the character at 0 in trimmed) as an integer) & 255
+        if trimmed = (the string form of "none"):
+            return @intrinsic("construct", a paint svg paint, false, the transparent paint color)
+        if trimmed = (the string form of "transparent"):
+            return @intrinsic("construct", a paint svg paint, false, the transparent paint color)
+        if trimmed = (the string form of "white"):
+            return @intrinsic("construct", a paint svg paint, true, the paint color red 255 green 255 blue 255)
+        if first = 35:
+            set digits to trimmed's length - 1
+            if digits = 3:
+                set red to (the hex value of (((the character at 1 in trimmed) as an integer) & 255)) * 17
+                set green to (the hex value of (((the character at 2 in trimmed) as an integer) & 255)) * 17
+                set blue to (the hex value of (((the character at 3 in trimmed) as an integer) & 255)) * 17
+                return @intrinsic("construct", a paint svg paint, true, the paint color red red green green blue blue)
+            if digits >= 6:
+                set red to ((the hex value of (((the character at 1 in trimmed) as an integer) & 255)) * 16) + (the hex value of (((the character at 2 in trimmed) as an integer) & 255))
+                set green to ((the hex value of (((the character at 3 in trimmed) as an integer) & 255)) * 16) + (the hex value of (((the character at 4 in trimmed) as an integer) & 255))
+                set blue to ((the hex value of (((the character at 5 in trimmed) as an integer) & 255)) * 16) + (the hex value of (((the character at 6 in trimmed) as an integer) & 255))
+                set alpha to 255
+                if digits >= 8:
+                    set alpha to ((the hex value of (((the character at 7 in trimmed) as an integer) & 255)) * 16) + (the hex value of (((the character at 8 in trimmed) as an integer) & 255))
+                return @intrinsic("construct", a paint svg paint, true, the paint color red red green green blue blue alpha alpha)
+        if trimmed has (the string form of "rgb") at offset 0:
+            set open to 3
+            if (trimmed's length > 3) and ((((the character at 3 in trimmed) as an integer) & 255) = 97):
+                set open to 4
+            set scanned to the number from (open + 1) in trimmed
+            set red to (the rounded value of scanned's svValue) as an integer
+            set scanned to the number from (scanned's svNext) in trimmed
+            set green to (the rounded value of scanned's svValue) as an integer
+            set scanned to the number from (scanned's svNext) in trimmed
+            set blue to (the rounded value of scanned's svValue) as an integer
+            set alpha to 255
+            set scanned to the number from (scanned's svNext) in trimmed
+            if scanned's svFound:
+                set alpha to (the rounded value of (scanned's svValue * 255.0)) as an integer
+            return @intrinsic("construct", a paint svg paint, true, the paint color red (red clamped between 0 and 255) green (green clamped between 0 and 255) blue (blue clamped between 0 and 255) alpha (alpha clamped between 0 and 255))
+        # Any other name: black, as the browser shows an unknown colour.
+        return @intrinsic("construct", a paint svg paint, true, the paint color red 0 green 0 blue 0)
+
+# --- Transforms: x' = a x + c y + e, y' = b x + d y + f ---
+
+class:
+    patterns:
+        [a|] paint matrix
+    members:
+        svA as a 64 bit floating-point number
+        svB as a 64 bit floating-point number
+        svC as a 64 bit floating-point number
+        svD as a 64 bit floating-point number
+        svE as a 64 bit floating-point number
+        svF as a 64 bit floating-point number
+
+local function the identity paint matrix:
+    execute:
+        return @intrinsic("construct", a paint matrix, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+local function {paint matrix:outer} times {paint matrix:inner}:
+    execute:
+        return @intrinsic("construct", a paint matrix, (outer's svA * inner's svA) + (outer's svC * inner's svB), (outer's svB * inner's svA) + (outer's svD * inner's svB), (outer's svA * inner's svC) + (outer's svC * inner's svD), (outer's svB * inner's svC) + (outer's svD * inner's svD), ((outer's svA * inner's svE) + (outer's svC * inner's svF)) + outer's svE, ((outer's svB * inner's svE) + (outer's svD * inner's svF)) + outer's svF)
+
+local function the scale of {paint matrix:matrix}:
+    execute:
+        return the square root of (the absolute value of ((matrix's svA * matrix's svD) - (matrix's svB * matrix's svC)))
+
+# transform="translate(..) scale(..) rotate(..) matrix(..)", left to right.
+local function {paint matrix:matrix} with transform {string:text}:
+    execute:
+        set result to matrix
+        set cursor to 0
+        loop while cursor < text's length:
+            set open to -1
+            loop while (cursor < text's length) and (open < 0):
+                if (((the character at cursor in text) as an integer) & 255) = 40:
+                    set open to cursor
+                else:
+                    set cursor to cursor + 1
+            if open < 0:
+                return result
+            set nameStart to open
+            loop while (nameStart > 0) and (((((the character at (nameStart - 1) in text) as an integer) & 255) >= 97) and ((((the character at (nameStart - 1) in text) as an integer) & 255) <= 122)):
+                set nameStart to nameStart - 1
+            set name to the substring of text from nameStart spanning (open - nameStart) bytes
+            set first to the number from (open + 1) in text
+            set second to the number from (first's svNext) in text
+            set third to the number from (second's svNext) in text
+            set fourth to the number from (third's svNext) in text
+            set fifth to the number from (fourth's svNext) in text
+            set sixth to the number from (fifth's svNext) in text
+            set step to the identity paint matrix
+            if name = (the string form of "translate"):
+                set ty to 0.0
+                if second's svFound:
+                    set ty to second's svValue
+                set step to @intrinsic("construct", a paint matrix, 1.0, 0.0, 0.0, 1.0, first's svValue, ty)
+            else if name = (the string form of "scale"):
+                set sy to first's svValue
+                if second's svFound:
+                    set sy to second's svValue
+                set step to @intrinsic("construct", a paint matrix, first's svValue, 0.0, 0.0, sy, 0.0, 0.0)
+            else if name = (the string form of "rotate"):
+                set angle to (first's svValue * 3.14159265358979) / 180.0
+                set step to @intrinsic("construct", a paint matrix, the cosine of angle, the sine of angle, 0.0 - (the sine of angle), the cosine of angle, 0.0, 0.0)
+                if second's svFound and third's svFound:
+                    set toOrigin to @intrinsic("construct", a paint matrix, 1.0, 0.0, 0.0, 1.0, second's svValue, third's svValue)
+                    set back to @intrinsic("construct", a paint matrix, 1.0, 0.0, 0.0, 1.0, 0.0 - second's svValue, 0.0 - third's svValue)
+                    set step to (toOrigin times step) times back
+            else if name = (the string form of "matrix"):
+                set step to @intrinsic("construct", a paint matrix, first's svValue, second's svValue, third's svValue, fourth's svValue, fifth's svValue, sixth's svValue)
+            set result to result times step
+            set cursor to open + 1
+            loop while (cursor < text's length) and ((((the character at cursor in text) as an integer) & 255) != 41):
+                set cursor to cursor + 1
+            set cursor to cursor + 1
+        return result
+
+# --- Geometry: subpaths of device-space points ---
+
+class:
+    patterns:
+        [a|] paint outline
+    members:
+        svPoints as a pointer to a list
+        svStarts as a pointer to a list
+        svClosed as a pointer to a list
+
+local function a new paint outline:
+    execute:
+        return @intrinsic("construct", a paint outline, an empty list of a 64 bit floating-point number, an empty list of an integer, an empty list of a boolean)
+
+local function free {paint outline:outline}:
+    execute:
+        free outline's svPoints
+        free outline's svStarts
+        free outline's svClosed
+
+local function begin a subpath in {a pointer to a paint outline:outline}:
+    execute:
+        append ((the length of outline's svPoints) / 2) to outline's svStarts
+        append false to outline's svClosed
+
+local function add point {a 64 bit floating-point number:x} {a 64 bit floating-point number:y} to {a pointer to a paint outline:outline} through {paint matrix:matrix}:
+    execute:
+        if (the length of outline's svStarts) = 0:
+            begin a subpath in outline
+        append (((matrix's svA * x) + (matrix's svC * y)) + matrix's svE) to outline's svPoints
+        append (((matrix's svB * x) + (matrix's svD * y)) + matrix's svF) to outline's svPoints
+
+local function close the subpath in {a pointer to a paint outline:outline}:
+    execute:
+        set count to the length of outline's svClosed
+        if count > 0:
+            replace item at index (count - 1) in outline's svClosed with true
+
+local function the subpath count of {paint outline:outline}:
+    execute:
+        return the length of outline's svStarts
+
+local function subpath {integer:index} of {paint outline:outline} starts at:
+    execute:
+        return the item at index in outline's svStarts
+
+local function subpath {integer:index} of {paint outline:outline} ends at:
+    execute:
+        if (index + 1) < (the length of outline's svStarts):
+            return the item at (index + 1) in outline's svStarts
+        return (the length of outline's svPoints) / 2
+
+local function point x {integer:index} of {paint outline:outline}:
+    execute:
+        return the item at (index * 2) in outline's svPoints
+
+local function point y {integer:index} of {paint outline:outline}:
+    execute:
+        return the item at ((index * 2) + 1) in outline's svPoints
+
+# Cubic Bézier from the current point, flattened by its device length.
+local function curve from {a 64 bit floating-point number:x0} {a 64 bit floating-point number:y0} by {a 64 bit floating-point number:x1} {a 64 bit floating-point number:y1} {a 64 bit floating-point number:x2} {a 64 bit floating-point number:y2} to {a 64 bit floating-point number:x3} {a 64 bit floating-point number:y3} in {a pointer to a paint outline:outline} through {paint matrix:matrix}:
+    execute:
+        set reach to ((the absolute value of (x1 - x0)) + (the absolute value of (y1 - y0))) + (((the absolute value of (x2 - x1)) + (the absolute value of (y2 - y1))) + ((the absolute value of (x3 - x2)) + (the absolute value of (y3 - y2))))
+        set segments to ((the ceiling of ((reach * (the scale of matrix)) / 3.0)) as an integer) clamped between 4 and 64
+        loop step from 1 to (segments + 1):
+            set t to (step as a 64 bit floating-point number) / (segments as a 64 bit floating-point number)
+            set u to 1.0 - t
+            set x to ((((u * u) * u) * x0) + (((3.0 * u) * u) * (t * x1))) + ((((3.0 * u) * t) * (t * x2)) + (((t * t) * t) * x3))
+            set y to ((((u * u) * u) * y0) + (((3.0 * u) * u) * (t * y1))) + ((((3.0 * u) * t) * (t * y2)) + (((t * t) * t) * y3))
+            add point x y to outline through matrix
+
+# An elliptical arc as SVG gives it (endpoint form), flattened.
+local function arc from {a 64 bit floating-point number:x0} {a 64 bit floating-point number:y0} radii {a 64 bit floating-point number:rxIn} {a 64 bit floating-point number:ryIn} turned {a 64 bit floating-point number:rotation} flags {boolean:large} {boolean:sweep} to {a 64 bit floating-point number:x1} {a 64 bit floating-point number:y1} in {a pointer to a paint outline:outline} through {paint matrix:matrix}:
+    execute:
+        set rx to the absolute value of rxIn
+        set ry to the absolute value of ryIn
+        if ((rx = 0.0) or (ry = 0.0)) or ((x0 = x1) and (y0 = y1)):
+            add point x1 y1 to outline through matrix
+            return nothing
+        set phi to (rotation * 3.14159265358979) / 180.0
+        set cosPhi to the cosine of phi
+        set sinPhi to the sine of phi
+        set dx to (x0 - x1) / 2.0
+        set dy to (y0 - y1) / 2.0
+        set x1p to (cosPhi * dx) + (sinPhi * dy)
+        set y1p to (0.0 - (sinPhi * dx)) + (cosPhi * dy)
+        set lambda to ((x1p * x1p) / (rx * rx)) + ((y1p * y1p) / (ry * ry))
+        if lambda > 1.0:
+            set rx to rx * (the square root of lambda)
+            set ry to ry * (the square root of lambda)
+        set numerator to (((rx * rx) * (ry * ry)) - ((rx * rx) * (y1p * y1p))) - ((ry * ry) * (x1p * x1p))
+        set denominator to ((rx * rx) * (y1p * y1p)) + ((ry * ry) * (x1p * x1p))
+        set factor to 0.0
+        if (numerator > 0.0) and (denominator > 0.0):
+            set factor to the square root of (numerator / denominator)
+        if large = sweep:
+            set factor to 0.0 - factor
+        set cxp to factor * ((rx * y1p) / ry)
+        set cyp to factor * (0.0 - ((ry * x1p) / rx))
+        set cx to ((cosPhi * cxp) - (sinPhi * cyp)) + ((x0 + x1) / 2.0)
+        set cy to ((sinPhi * cxp) + (cosPhi * cyp)) + ((y0 + y1) / 2.0)
+        set startAngle to the angle of ((y1p - cyp) / ry) over ((x1p - cxp) / rx)
+        set endAngle to the angle of (((0.0 - y1p) - cyp) / ry) over (((0.0 - x1p) - cxp) / rx)
+        set delta to endAngle - startAngle
+        if sweep and (delta < 0.0):
+            set delta to delta + 6.28318530717959
+        if (sweep = false) and (delta > 0.0):
+            set delta to delta - 6.28318530717959
+        set radiusDevice to (the maximum of rx and ry) * (the scale of matrix)
+        set segments to ((the ceiling of (((the absolute value of delta) * (the maximum of 1.0 and (the square root of radiusDevice))) / 0.35)) as an integer) clamped between 2 and 96
+        loop step from 1 to (segments + 1):
+            set angle to startAngle + ((delta * (step as a 64 bit floating-point number)) / (segments as a 64 bit floating-point number))
+            set ex to rx * (the cosine of angle)
+            set ey to ry * (the sine of angle)
+            add point (((cosPhi * ex) - (sinPhi * ey)) + cx) (((sinPhi * ex) + (cosPhi * ey)) + cy) to outline through matrix
+
+# Path data, every command, into the outline through the matrix.
+local function trace path {string:data} into {a pointer to a paint outline:outline} through {paint matrix:matrix}:
+    execute:
+        set cursor to 0
+        set command to 0
+        set currentX to 0.0
+        set currentY to 0.0
+        set startX to 0.0
+        set startY to 0.0
+        set lastControlX to 0.0
+        set lastControlY to 0.0
+        set lastWasCurve to false
+        set lastWasQuadratic to false
+        loop while cursor < data's length:
+            set character to ((the character at cursor in data) as an integer) & 255
+            if character separates:
+                set cursor to cursor + 1
+            else if ((character >= 65) and (character <= 90)) or ((character >= 97) and (character <= 122)):
+                set command to character
+                set cursor to cursor + 1
+                if (command = 90) or (command = 122):
+                    close the subpath in outline
+                    set currentX to startX
+                    set currentY to startY
+                    set lastWasCurve to false
+                    set lastWasQuadratic to false
+            else:
+                set relative to command >= 97
+                set upper to command
+                if relative:
+                    set upper to command - 32
+                set baseX to 0.0
+                set baseY to 0.0
+                if relative:
+                    set baseX to currentX
+                    set baseY to currentY
+                set wasCurve to false
+                set wasQuadratic to false
+                if upper = 77:
+                    set first to the number from cursor in data
+                    set second to the number from (first's svNext) in data
+                    set cursor to second's svNext
+                    set currentX to baseX + first's svValue
+                    set currentY to baseY + second's svValue
+                    begin a subpath in outline
+                    add point currentX currentY to outline through matrix
+                    set startX to currentX
+                    set startY to currentY
+                    # Further pairs are lines (L follows M in the alphabet).
+                    set command to command - 1
+                else if upper = 76:
+                    set first to the number from cursor in data
+                    set second to the number from (first's svNext) in data
+                    set cursor to second's svNext
+                    set currentX to baseX + first's svValue
+                    set currentY to baseY + second's svValue
+                    add point currentX currentY to outline through matrix
+                else if upper = 72:
+                    set first to the number from cursor in data
+                    set cursor to first's svNext
+                    set currentX to baseX + first's svValue
+                    add point currentX currentY to outline through matrix
+                else if upper = 86:
+                    set first to the number from cursor in data
+                    set cursor to first's svNext
+                    set currentY to baseY + first's svValue
+                    add point currentX currentY to outline through matrix
+                else if (upper = 67) or (upper = 83):
+                    set c1x to currentX
+                    set c1y to currentY
+                    if upper = 67:
+                        set first to the number from cursor in data
+                        set second to the number from (first's svNext) in data
+                        set cursor to second's svNext
+                        set c1x to baseX + first's svValue
+                        set c1y to baseY + second's svValue
+                    else if lastWasCurve:
+                        set c1x to (2.0 * currentX) - lastControlX
+                        set c1y to (2.0 * currentY) - lastControlY
+                    set third to the number from cursor in data
+                    set fourth to the number from (third's svNext) in data
+                    set fifth to the number from (fourth's svNext) in data
+                    set sixth to the number from (fifth's svNext) in data
+                    set cursor to sixth's svNext
+                    set c2x to baseX + third's svValue
+                    set c2y to baseY + fourth's svValue
+                    set endX to baseX + fifth's svValue
+                    set endY to baseY + sixth's svValue
+                    curve from currentX currentY by c1x c1y c2x c2y to endX endY in outline through matrix
+                    set lastControlX to c2x
+                    set lastControlY to c2y
+                    set currentX to endX
+                    set currentY to endY
+                    set wasCurve to true
+                else if (upper = 81) or (upper = 84):
+                    set qx to currentX
+                    set qy to currentY
+                    if upper = 81:
+                        set first to the number from cursor in data
+                        set second to the number from (first's svNext) in data
+                        set cursor to second's svNext
+                        set qx to baseX + first's svValue
+                        set qy to baseY + second's svValue
+                    else if lastWasQuadratic:
+                        set qx to (2.0 * currentX) - lastControlX
+                        set qy to (2.0 * currentY) - lastControlY
+                    set third to the number from cursor in data
+                    set fourth to the number from (third's svNext) in data
+                    set cursor to fourth's svNext
+                    set endX to baseX + third's svValue
+                    set endY to baseY + fourth's svValue
+                    curve from currentX currentY by (currentX + ((2.0 * (qx - currentX)) / 3.0)) (currentY + ((2.0 * (qy - currentY)) / 3.0)) (endX + ((2.0 * (qx - endX)) / 3.0)) (endY + ((2.0 * (qy - endY)) / 3.0)) to endX endY in outline through matrix
+                    set lastControlX to qx
+                    set lastControlY to qy
+                    set currentX to endX
+                    set currentY to endY
+                    set wasQuadratic to true
+                else if upper = 65:
+                    set first to the number from cursor in data
+                    set second to the number from (first's svNext) in data
+                    set third to the number from (second's svNext) in data
+                    # The two flags are single digits, possibly run together.
+                    set cursor to third's svNext
+                    loop while (cursor < data's length) and ((((the character at cursor in data) as an integer) & 255) separates):
+                        set cursor to cursor + 1
+                    set large to (((the character at cursor in data) as an integer) & 255) = 49
+                    set cursor to cursor + 1
+                    loop while (cursor < data's length) and ((((the character at cursor in data) as an integer) & 255) separates):
+                        set cursor to cursor + 1
+                    set sweep to (((the character at cursor in data) as an integer) & 255) = 49
+                    set cursor to cursor + 1
+                    set fifth to the number from cursor in data
+                    set sixth to the number from (fifth's svNext) in data
+                    set cursor to sixth's svNext
+                    set endX to baseX + fifth's svValue
+                    set endY to baseY + sixth's svValue
+                    arc from currentX currentY radii (first's svValue) (second's svValue) turned (third's svValue) flags large sweep to endX endY in outline through matrix
+                    set currentX to endX
+                    set currentY to endY
+                else:
+                    # Unknown command: skip the number.
+                    set first to the number from cursor in data
+                    if first's svFound = false:
+                        return nothing
+                    set cursor to first's svNext
+                set lastWasCurve to wasCurve
+                set lastWasQuadratic to wasQuadratic
+
+# --- Rasterising: coverage per pixel from the outline's edges ---
+
+class:
+    patterns:
+        [a|] paint coverage
+    members:
+        svCells as a pointer to a 64 bit floating-point number
+        svWidth as an integer
+        svHeight as an integer
+        svTop as an integer
+        svBottom as an integer
+
+local function a new paint coverage {integer:width} by {integer:height}:
+    execute:
+        return @intrinsic("construct", a paint coverage, @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (width * height) as a word sized integer, 8 as a word sized integer), width, height, height, 0)
+
+local function free {paint coverage:coverage}:
+    execute:
+        @intrinsic("call", "libc", "free", nothing, coverage's svCells)
+
+local function clear {a pointer to a paint coverage:coverage}:
+    execute:
+        if coverage's svBottom > coverage's svTop:
+            ignore @intrinsic("call", "libc", "memset", a pointer, (coverage's svCells) + ((coverage's svTop) * (coverage's svWidth)), 0, (((coverage's svBottom - coverage's svTop) * coverage's svWidth) * 8) as a word sized integer)
+        set coverage's svTop to coverage's svHeight
+        set coverage's svBottom to 0
+
+# Adds the span (a, b) of one sub-row (weight 0.25) to the row's cells.
+local function cover from {a 64 bit floating-point number:a} to {a 64 bit floating-point number:b} into cells {pointer:cells} of {integer:width}:
+    execute:
+        set left to the maximum of a and 0.0
+        set right to the minimum of b and (width as a 64 bit floating-point number)
+        if right <= left:
+            return nothing
+        set row to cells as a pointer to a 64 bit floating-point number
+        set firstCell to (the floor of left) as an integer
+        set lastCell to (the floor of right) as an integer
+        if firstCell = lastCell:
+            store ((the item at firstCell in row) + ((right - left) * 0.25)) at (row + firstCell)
+            return nothing
+        store ((the item at firstCell in row) + ((((firstCell + 1) as a 64 bit floating-point number) - left) * 0.25)) at (row + firstCell)
+        loop cell from (firstCell + 1) to lastCell:
+            store ((the item at cell in row) + 0.25) at (row + cell)
+        if lastCell < width:
+            store ((the item at lastCell in row) + ((right - (lastCell as a 64 bit floating-point number)) * 0.25)) at (row + lastCell)
+
+# Rasterises the outline's subpaths (closed for filling) into the coverage,
+# by the nonzero rule or the even-odd rule.
+local function rasterise {paint outline:outline} evenodd {boolean:alternate} into {a pointer to a paint coverage:coverage}:
+    execute:
+        set total to (the length of outline's svPoints) / 2
+        if total < 2:
+            return nothing
+        # Edges, with the subpaths closed.
+        set edges to an empty list of a 64 bit floating-point number
+        set minY to 1000000000.0
+        set maxY to -1000000000.0
+        set subpaths to the subpath count of outline
+        loop index from 0 to subpaths:
+            set first to subpath index of outline starts at
+            set last to subpath index of outline ends at
+            if (last - first) >= 2:
+                loop point from first to last:
+                    set following to point + 1
+                    if following = last:
+                        set following to first
+                    set x0 to point x point of outline
+                    set y0 to point y point of outline
+                    set x1 to point x following of outline
+                    set y1 to point y following of outline
+                    if y0 != y1:
+                        append x0 to edges
+                        append y0 to edges
+                        append x1 to edges
+                        append y1 to edges
+                        set minY to the minimum of minY and (the minimum of y0 and y1)
+                        set maxY to the maximum of maxY and (the maximum of y0 and y1)
+        set edgeCount to (the length of edges) / 4
+        if edgeCount = 0:
+            free edges
+            return nothing
+        set width to coverage's svWidth
+        set height to coverage's svHeight
+        set firstRow to ((the floor of minY) as an integer) clamped between 0 and height
+        set lastRow to (((the ceiling of maxY) as an integer) + 1) clamped between 0 and height
+        set coverage's svTop to the minimum of coverage's svTop and firstRow
+        set coverage's svBottom to the maximum of coverage's svBottom and lastRow
+        set crossings to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (edgeCount + 1) as a word sized integer, 8 as a word sized integer)
+        set directions to @intrinsic("call", "libc", "calloc", a pointer to an integer, (edgeCount + 1) as a word sized integer, 4 as a word sized integer)
+        loop row from firstRow to lastRow:
+            set cells to ((coverage's svCells) + (row * width)) as pointer
+            loop sub from 0 to 4:
+                set sampleY to (row as a 64 bit floating-point number) + (((sub as a 64 bit floating-point number) + 0.5) / 4.0)
+                set found to 0
+                loop edge from 0 to edgeCount:
+                    set x0 to the item at (edge * 4) in edges
+                    set y0 to the item at ((edge * 4) + 1) in edges
+                    set x1 to the item at ((edge * 4) + 2) in edges
+                    set y1 to the item at ((edge * 4) + 3) in edges
+                    set lower to the minimum of y0 and y1
+                    set upper to the maximum of y0 and y1
+                    if (sampleY >= lower) and (sampleY < upper):
+                        set crossing to x0 + (((sampleY - y0) * (x1 - x0)) / (y1 - y0))
+                        set direction to 1
+                        if y1 < y0:
+                            set direction to -1
+                        # Insertion into order.
+                        set slot to found
+                        loop while (slot > 0) and ((the item at (slot - 1) in crossings) > crossing):
+                            store (the item at (slot - 1) in crossings) at (crossings + slot)
+                            store (the item at (slot - 1) in directions) at (directions + slot)
+                            set slot to slot - 1
+                        store crossing at (crossings + slot)
+                        store direction at (directions + slot)
+                        set found to found + 1
+                set winding to 0
+                set spanStart to 0.0
+                loop index from 0 to found:
+                    set before to winding
+                    set winding to winding + (the item at index in directions)
+                    set insideBefore to before != 0
+                    set insideAfter to winding != 0
+                    if alternate:
+                        set insideBefore to (before & 1) != 0
+                        set insideAfter to (winding & 1) != 0
+                    if (insideBefore = false) and insideAfter:
+                        set spanStart to the item at index in crossings
+                    else if insideBefore and (insideAfter = false):
+                        cover from spanStart to (the item at index in crossings) into cells cells of width
+        @intrinsic("call", "libc", "free", nothing, crossings)
+        @intrinsic("call", "libc", "free", nothing, directions)
+        free edges
+
+# Blends the colour where the coverage is, at the opacity, through the clip
+# mask when there is one (null otherwise).
+local function paint {paint color:color} at opacity {a 64 bit floating-point number:strength} through {a pointer to a paint coverage:coverage} clipped by {pointer:mask} onto {paint canvas:target}:
+    execute:
+        set width to coverage's svWidth
+        set cells to coverage's svCells
+        set clip to mask as a pointer to a 64 bit floating-point number
+        set pixels to target's pixels
+        loop row from (coverage's svTop) to (coverage's svBottom):
+            loop column from 0 to width:
+                set amount to the item at ((row * width) + column) in cells
+                if amount > 0.0005:
+                    set amount to (the minimum of amount and 1.0) * strength
+                    if mask != (0 as pointer):
+                        set amount to amount * (the item at ((row * width) + column) in clip)
+                    set coverageByte to (the rounded value of (amount * 255.0)) as an integer
+                    if coverageByte > 0:
+                        blend color at (((row * target's width) + column) * 4) in pixels by coverageByte
+
+# --- Strokes as polygons: one quad a segment, joins and caps as their own
+# shapes, all wound the same way so a nonzero fill is their union. ---
+
+local function enclose {a pointer to a list:ring} in {a pointer to a paint outline:outline}:
+    execute:
+        set count to (the length of ring) / 2
+        set area to 0.0
+        loop index from 0 to count:
+            set following to index + 1
+            if following = count:
+                set following to 0
+            set area to area + (((the item at (index * 2) in ring) * (the item at ((following * 2) + 1) in ring)) - ((the item at (following * 2) in ring) * (the item at ((index * 2) + 1) in ring)))
+        begin a subpath in outline
+        close the subpath in outline
+        if area >= 0.0:
+            loop index from 0 to count:
+                append (the item at (index * 2) in ring) to outline's svPoints
+                append (the item at ((index * 2) + 1) in ring) to outline's svPoints
+        else:
+            loop index from 0 to count:
+                set from to (count - 1) - index
+                append (the item at (from * 2) in ring) to outline's svPoints
+                append (the item at ((from * 2) + 1) in ring) to outline's svPoints
+
+local function append disc at {a 64 bit floating-point number:cx} {a 64 bit floating-point number:cy} sized {a 64 bit floating-point number:radius} to {a pointer to a paint outline:outline}:
+    execute:
+        set polygon to an empty list of a 64 bit floating-point number
+        set segments to ((the ceiling of (radius * 2.5)) as an integer) clamped between 8 and 64
+        loop step from 0 to segments:
+            set angle to (6.28318530717959 * (step as a 64 bit floating-point number)) / (segments as a 64 bit floating-point number)
+            append (cx + (radius * (the cosine of angle))) to polygon
+            append (cy + (radius * (the sine of angle))) to polygon
+        enclose polygon in outline
+        free polygon
+
+# The stroke of the (device-space) outline as a filled outline.
+local function the stroke of {paint outline:outline} thick {a 64 bit floating-point number:thickness} round caps {boolean:roundCap} square caps {boolean:squareCap} round joins {boolean:roundJoin} bevel joins {boolean:bevelJoin}:
+    execute:
+        set result to a new paint outline
+        set half to thickness / 2.0
+        set subpaths to the subpath count of outline
+        loop index from 0 to subpaths:
+            set first to subpath index of outline starts at
+            set last to subpath index of outline ends at
+            set closed to the item at index in outline's svClosed
+            set count to last - first
+            if count = 1:
+                if roundCap:
+                    append disc at (point x first of outline) (point y first of outline) sized half to (the address of result)
+            if count >= 2:
+                set segments to count - 1
+                if closed:
+                    set segments to count
+                loop segment from 0 to segments:
+                    set a to first + segment
+                    set b to a + 1
+                    if b >= last:
+                        set b to first
+                    set ax to point x a of outline
+                    set ay to point y a of outline
+                    set bx to point x b of outline
+                    set by to point y b of outline
+                    set dx to bx - ax
+                    set dy to by - ay
+                    set span to the square root of ((dx * dx) + (dy * dy))
+                    if span > 0.000001:
+                        set ux to dx / span
+                        set uy to dy / span
+                        if squareCap and (closed = false):
+                            if segment = 0:
+                                set ax to ax - (ux * half)
+                                set ay to ay - (uy * half)
+                            if segment = (segments - 1):
+                                set bx to bx + (ux * half)
+                                set by to by + (uy * half)
+                        set nx to (0.0 - uy) * half
+                        set ny to ux * half
+                        set quad to an empty list of a 64 bit floating-point number
+                        append (ax + nx) to quad
+                        append (ay + ny) to quad
+                        append (bx + nx) to quad
+                        append (by + ny) to quad
+                        append (bx - nx) to quad
+                        append (by - ny) to quad
+                        append (ax - nx) to quad
+                        append (ay - ny) to quad
+                        enclose quad in (the address of result)
+                        free quad
+                # Joins at the inner vertices (all vertices when closed).
+                set firstJoin to first + 1
+                set lastJoin to last - 1
+                if closed:
+                    set firstJoin to first
+                    set lastJoin to last
+                loop vertex from firstJoin to lastJoin:
+                    set vx to point x vertex of outline
+                    set vy to point y vertex of outline
+                    if roundJoin:
+                        append disc at vx vy sized half to (the address of result)
+                    else:
+                        set previous to vertex - 1
+                        if previous < first:
+                            set previous to last - 1
+                        set following to vertex + 1
+                        if following >= last:
+                            set following to first
+                        set inX to vx - (point x previous of outline)
+                        set inY to vy - (point y previous of outline)
+                        set outX to (point x following of outline) - vx
+                        set outY to (point y following of outline) - vy
+                        set inSpan to the square root of ((inX * inX) + (inY * inY))
+                        set outSpan to the square root of ((outX * outX) + (outY * outY))
+                        if (inSpan > 0.000001) and (outSpan > 0.000001):
+                            set cross to ((inX * outY) - (inY * outX)) / (inSpan * outSpan)
+                            set side to 1.0
+                            if cross > 0.0:
+                                set side to -1.0
+                            set n1x to ((0.0 - inY) / inSpan) * (half * side)
+                            set n1y to (inX / inSpan) * (half * side)
+                            set n2x to ((0.0 - outY) / outSpan) * (half * side)
+                            set n2y to (outX / outSpan) * (half * side)
+                            set join to an empty list of a 64 bit floating-point number
+                            append vx to join
+                            append vy to join
+                            append (vx + n1x) to join
+                            append (vy + n1y) to join
+                            if bevelJoin = false:
+                                # Miter within the limit of 4.
+                                set cosTheta to ((inX * outX) + (inY * outY)) / (inSpan * outSpan)
+                                set halfAngle to (the square root of (the maximum of 0.0 and ((1.0 + cosTheta) / 2.0)))
+                                if halfAngle > 0.25:
+                                    set mx to (n1x + n2x) / 2.0
+                                    set my to (n1y + n2y) / 2.0
+                                    set mSpan to the square root of ((mx * mx) + (my * my))
+                                    if mSpan > 0.000001:
+                                        set miter to (half * half) / mSpan
+                                        append (vx + ((mx / mSpan) * miter)) to join
+                                        append (vy + ((my / mSpan) * miter)) to join
+                            append (vx + n2x) to join
+                            append (vy + n2y) to join
+                            enclose join in (the address of result)
+                            free join
+                if roundCap and (closed = false):
+                    append disc at (point x first of outline) (point y first of outline) sized half to (the address of result)
+                    append disc at (point x (last - 1) of outline) (point y (last - 1) of outline) sized half to (the address of result)
+        return result
+
+# --- Gaussian blur of a straight-alpha RGBA canvas, in place ---
+
+local function blur {paint canvas:image} by {a 64 bit floating-point number:sigma}:
+    execute:
+        if sigma <= 0.0:
+            return nothing
+        set radius to ((the ceiling of (sigma * 3.0)) as an integer) clamped between 1 and 200
+        set width to image's width
+        set height to image's height
+        set kernel to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, ((radius * 2) + 1) as a word sized integer, 8 as a word sized integer)
+        set total to 0.0
+        loop index from 0 to ((radius * 2) + 1):
+            set distance to (index - radius) as a 64 bit floating-point number
+            set weight to e to the (0.0 - ((distance * distance) / ((2.0 * sigma) * sigma)))
+            store weight at (kernel + index)
+            set total to total + weight
+        loop index from 0 to ((radius * 2) + 1):
+            store ((the item at index in kernel) / total) at (kernel + index)
+        # Premultiplied planes.
+        set count to width * height
+        set planes to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (count * 4) as a word sized integer, 8 as a word sized integer)
+        set scratch to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (count * 4) as a word sized integer, 8 as a word sized integer)
+        set pixels to image's pixels
+        loop index from 0 to count:
+            set alpha to (((the item at ((index * 4) + 3) in pixels) as an integer) & 255) as a 64 bit floating-point number
+            loop channel from 0 to 3:
+                store (((((the item at ((index * 4) + channel) in pixels) as an integer) & 255) as a 64 bit floating-point number) * (alpha / 255.0)) at (planes + ((channel * count) + index))
+            store alpha at (planes + ((3 * count) + index))
+        # Rows, then columns.
+        loop channel from 0 to 4:
+            set plane to planes + (channel * count)
+            set target to scratch + (channel * count)
+            loop row from 0 to height:
+                loop column from 0 to width:
+                    set sum to 0.0
+                    loop tap from 0 to ((radius * 2) + 1):
+                        set source to (column + tap) - radius
+                        if (source >= 0) and (source < width):
+                            set sum to sum + ((the item at tap in kernel) * (the item at ((row * width) + source) in plane))
+                    store sum at (target + ((row * width) + column))
+            loop row from 0 to height:
+                loop column from 0 to width:
+                    set sum to 0.0
+                    loop tap from 0 to ((radius * 2) + 1):
+                        set source to (row + tap) - radius
+                        if (source >= 0) and (source < height):
+                            set sum to sum + ((the item at tap in kernel) * (the item at ((source * width) + column) in target))
+                    store sum at (plane + ((row * width) + column))
+        loop index from 0 to count:
+            set alpha to the item at ((3 * count) + index) in planes
+            set alphaByte to ((the rounded value of alpha) as an integer) clamped between 0 and 255
+            loop channel from 0 to 3:
+                set value to 0
+                if alpha > 0.001:
+                    set value to ((the rounded value of (((the item at ((channel * count) + index) in planes) * 255.0) / alpha)) as an integer) clamped between 0 and 255
+                store (value as a byte) at (pixels + ((index * 4) + channel))
+            store (alphaByte as a byte) at (pixels + ((index * 4) + 3))
+        @intrinsic("call", "libc", "free", nothing, kernel)
+        @intrinsic("call", "libc", "free", nothing, planes)
+        @intrinsic("call", "libc", "free", nothing, scratch)
+
+# Composites the straight-alpha layer onto the target.
+local function composite {paint canvas:layer} onto {paint canvas:target}:
+    execute:
+        set count to layer's width * layer's height
+        set source to layer's pixels
+        set pixels to target's pixels
+        loop index from 0 to count:
+            set alpha to ((the item at ((index * 4) + 3) in source) as an integer) & 255
+            if alpha > 0:
+                set color to the paint color red (((the item at (index * 4) in source) as an integer) & 255) green (((the item at ((index * 4) + 1) in source) as an integer) & 255) blue (((the item at ((index * 4) + 2) in source) as an integer) & 255) alpha alpha
+                blend color at (index * 4) in pixels by 255
+
+# --- The document ---
+
+class:
+    patterns:
+        [a|] paint svg style
+    members:
+        svFill as a paint svg paint
+        svStroke as a paint svg paint
+        svStrokeWidth as a 64 bit floating-point number
+        svOpacity as a 64 bit floating-point number
+        svFillOpacity as a 64 bit floating-point number
+        svStrokeOpacity as a 64 bit floating-point number
+        svRoundCap as a boolean
+        svSquareCap as a boolean
+        svRoundJoin as a boolean
+        svBevelJoin as a boolean
+        svEvenOdd as a boolean
+        svMatrix as a paint matrix
+        svBlur as a 64 bit floating-point number
+        svClip as a string
+
+local function the root paint svg style through {paint matrix:matrix}:
+    execute:
+        return @intrinsic("construct", a paint svg style, @intrinsic("construct", a paint svg paint, true, the paint color red 0 green 0 blue 0), @intrinsic("construct", a paint svg paint, false, the transparent paint color), 1.0, 1.0, 1.0, 1.0, false, false, false, false, false, matrix, 0.0, the string form of "")
+
+# One element's attributes.
+class:
+    patterns:
+        [a|] paint svg element
+    members:
+        svName as a string
+        svKeys as a pointer to a list
+        svValues as a pointer to a list
+        svSelfClosing as boolean
+        svClosing as boolean
+        svEnd as an integer
+
+local function the attribute {C string:key} of {paint svg element:element}:
+    execute:
+        set wanted to the string form of key
+        loop index from 0 to the length of element's svKeys:
+            if (the item at index in element's svKeys) = wanted:
+                return the item at index in element's svValues
+        return the string form of ""
+
+local function the numeric attribute {C string:key} of {paint svg element:element} or {a 64 bit floating-point number:fallback}:
+    execute:
+        return the first number in (the attribute key of element) or fallback
+
+# Parses the tag that starts at cursor (which points at "<").
+local function the tag at {integer:cursor} in {string:markup}:
+    execute:
+        set keys to an empty list of a string
+        set values to an empty list of a string
+        set stop to markup's length
+        set here to cursor + 1
+        set closing to false
+        if (here < stop) and ((((the character at here in markup) as an integer) & 255) = 47):
+            set closing to true
+            set here to here + 1
+        set nameStart to here
+        loop while (here < stop) and (((((the character at here in markup) as an integer) & 255) != 62) and (((((the character at here in markup) as an integer) & 255) != 47) and (((((the character at here in markup) as an integer) & 255) != 32) and (((((the character at here in markup) as an integer) & 255) != 10) and ((((the character at here in markup) as an integer) & 255) != 9))))):
+            set here to here + 1
+        set name to the substring of markup from nameStart spanning (here - nameStart) bytes
+        set selfClosing to false
+        loop while here < stop:
+            set character to ((the character at here in markup) as an integer) & 255
+            if character = 62:
+                return @intrinsic("construct", a paint svg element, name, keys, values, selfClosing, closing, here + 1)
+            if character = 47:
+                set selfClosing to true
+                set here to here + 1
+            else if (character = 32) or ((character = 10) or ((character = 13) or (character = 9))):
+                set here to here + 1
+            else:
+                set keyStart to here
+                loop while (here < stop) and (((((the character at here in markup) as an integer) & 255) != 61) and ((((the character at here in markup) as an integer) & 255) != 62)):
+                    set here to here + 1
+                set key to the substring of markup from keyStart spanning (here - keyStart) bytes
+                if (here < stop) and ((((the character at here in markup) as an integer) & 255) = 61):
+                    set here to here + 1
+                    set quote to ((the character at here in markup) as an integer) & 255
+                    set here to here + 1
+                    set valueStart to here
+                    loop while (here < stop) and ((((the character at here in markup) as an integer) & 255) != quote):
+                        set here to here + 1
+                    append key to keys
+                    append (the substring of markup from valueStart spanning (here - valueStart) bytes) to values
+                    set here to here + 1
+        return @intrinsic("construct", a paint svg element, name, keys, values, selfClosing, closing, here)
+
+local function free {paint svg element:element}:
+    execute:
+        free element's svKeys
+        free element's svValues
+
+# The style of an element: its parent's, then its own attributes.
+local function the styling of {paint svg element:element} within {paint svg style:parent}:
+    execute:
+        set result to parent
+        set result's svFill to the svg paint named (the attribute "fill" of element) inheriting parent's svFill
+        set result's svStroke to the svg paint named (the attribute "stroke" of element) inheriting parent's svStroke
+        set result's svStrokeWidth to the numeric attribute "stroke-width" of element or parent's svStrokeWidth
+        set result's svOpacity to parent's svOpacity * (the numeric attribute "opacity" of element or 1.0)
+        set result's svFillOpacity to the numeric attribute "fill-opacity" of element or parent's svFillOpacity
+        set result's svStrokeOpacity to the numeric attribute "stroke-opacity" of element or parent's svStrokeOpacity
+        set cap to the attribute "stroke-linecap" of element
+        if cap's length > 0:
+            set result's svRoundCap to cap = (the string form of "round")
+            set result's svSquareCap to cap = (the string form of "square")
+        set join to the attribute "stroke-linejoin" of element
+        if join's length > 0:
+            set result's svRoundJoin to join = (the string form of "round")
+            set result's svBevelJoin to join = (the string form of "bevel")
+        set rule to the attribute "fill-rule" of element
+        if rule's length > 0:
+            set result's svEvenOdd to rule = (the string form of "evenodd")
+        set transform to the attribute "transform" of element
+        if transform's length > 0:
+            set result's svMatrix to parent's svMatrix with transform transform
+        set clip to the attribute "clip-path" of element
+        if clip's length > 5:
+            set result's svClip to the substring of clip from 5 spanning ((clip's length - 6)) bytes
+        # Inline style, the common properties only.
+        set inline to the attribute "style" of element
+        if inline's length > 0:
+            set cursor to 0
+            loop while cursor < inline's length:
+                set colon to cursor
+                loop while (colon < inline's length) and ((((the character at colon in inline) as an integer) & 255) != 58):
+                    set colon to colon + 1
+                set semicolon to colon
+                loop while (semicolon < inline's length) and ((((the character at semicolon in inline) as an integer) & 255) != 59):
+                    set semicolon to semicolon + 1
+                if colon < inline's length:
+                    set property to the substring of inline from cursor spanning (colon - cursor) bytes
+                    set setting to the substring of inline from (colon + 1) spanning ((semicolon - colon) - 1) bytes
+                    if property = (the string form of "fill"):
+                        set result's svFill to the svg paint named setting inheriting result's svFill
+                    if property = (the string form of "stroke"):
+                        set result's svStroke to the svg paint named setting inheriting result's svStroke
+                    if property = (the string form of "stroke-width"):
+                        set result's svStrokeWidth to the first number in setting or result's svStrokeWidth
+                    if property = (the string form of "opacity"):
+                        set result's svOpacity to result's svOpacity * (the first number in setting or 1.0)
+                set cursor to semicolon + 1
+        return result
+
+# The element's own geometry, in device space.
+local function the geometry of {paint svg element:element} through {paint matrix:matrix}:
+    execute:
+        set outline to a new paint outline
+        set name to element's svName
+        if name = (the string form of "path"):
+            trace path (the attribute "d" of element) into (the address of outline) through matrix
+        else if name = (the string form of "rect"):
+            set x to the numeric attribute "x" of element or 0.0
+            set y to the numeric attribute "y" of element or 0.0
+            set w to the numeric attribute "width" of element or 0.0
+            set h to the numeric attribute "height" of element or 0.0
+            set rx to the numeric attribute "rx" of element or -1.0
+            set ry to the numeric attribute "ry" of element or -1.0
+            if (rx < 0.0) and (ry >= 0.0):
+                set rx to ry
+            if (ry < 0.0) and (rx >= 0.0):
+                set ry to rx
+            set rx to (the maximum of rx and 0.0)
+            set ry to (the maximum of ry and 0.0)
+            set rx to the minimum of rx and (w / 2.0)
+            set ry to the minimum of ry and (h / 2.0)
+            begin a subpath in (the address of outline)
+            if (rx <= 0.0) or (ry <= 0.0):
+                add point x y to (the address of outline) through matrix
+                add point (x + w) y to (the address of outline) through matrix
+                add point (x + w) (y + h) to (the address of outline) through matrix
+                add point x (y + h) to (the address of outline) through matrix
+            else:
+                add point (x + rx) y to (the address of outline) through matrix
+                add point ((x + w) - rx) y to (the address of outline) through matrix
+                arc from ((x + w) - rx) y radii rx ry turned 0.0 flags false true to (x + w) (y + ry) in (the address of outline) through matrix
+                add point (x + w) ((y + h) - ry) to (the address of outline) through matrix
+                arc from (x + w) ((y + h) - ry) radii rx ry turned 0.0 flags false true to ((x + w) - rx) (y + h) in (the address of outline) through matrix
+                add point (x + rx) (y + h) to (the address of outline) through matrix
+                arc from (x + rx) (y + h) radii rx ry turned 0.0 flags false true to x ((y + h) - ry) in (the address of outline) through matrix
+                add point x (y + ry) to (the address of outline) through matrix
+                arc from x (y + ry) radii rx ry turned 0.0 flags false true to (x + rx) y in (the address of outline) through matrix
+            close the subpath in (the address of outline)
+        else if (name = (the string form of "circle")) or (name = (the string form of "ellipse")):
+            set cx to the numeric attribute "cx" of element or 0.0
+            set cy to the numeric attribute "cy" of element or 0.0
+            set rx to the numeric attribute "r" of element or 0.0
+            set ry to rx
+            if name = (the string form of "ellipse"):
+                set rx to the numeric attribute "rx" of element or 0.0
+                set ry to the numeric attribute "ry" of element or 0.0
+            begin a subpath in (the address of outline)
+            add point (cx + rx) cy to (the address of outline) through matrix
+            arc from (cx + rx) cy radii rx ry turned 0.0 flags false true to (cx - rx) cy in (the address of outline) through matrix
+            arc from (cx - rx) cy radii rx ry turned 0.0 flags false true to (cx + rx) cy in (the address of outline) through matrix
+            close the subpath in (the address of outline)
+        else if name = (the string form of "line"):
+            begin a subpath in (the address of outline)
+            add point (the numeric attribute "x1" of element or 0.0) (the numeric attribute "y1" of element or 0.0) to (the address of outline) through matrix
+            add point (the numeric attribute "x2" of element or 0.0) (the numeric attribute "y2" of element or 0.0) to (the address of outline) through matrix
+        else if (name = (the string form of "polyline")) or (name = (the string form of "polygon")):
+            set points to the attribute "points" of element
+            begin a subpath in (the address of outline)
+            set cursor to 0
+            loop while cursor < points' length:
+                set first to the number from cursor in points
+                set second to the number from (first's svNext) in points
+                if second's svFound = false:
+                    set cursor to points' length
+                else:
+                    add point (first's svValue) (second's svValue) to (the address of outline) through matrix
+                    set cursor to second's svNext
+            if name = (the string form of "polygon"):
+                close the subpath in (the address of outline)
+        return outline
+
+local function {string:name} is a shape:
+    execute:
+        return (((name = (the string form of "path")) or (name = (the string form of "rect"))) or ((name = (the string form of "circle")) or (name = (the string form of "ellipse")))) or (((name = (the string form of "line")) or (name = (the string form of "polyline"))) or (name = (the string form of "polygon")))
+
+# Draws one shape with its style onto the target; mask is the clip coverage
+# or null.
+local function draw {paint svg element:element} with {paint svg style:style} onto {paint canvas:target} clipped by {pointer:mask} using {a pointer to a paint coverage:coverage}:
+    execute:
+        set outline to the geometry of element through (style's svMatrix)
+        if (style's svFill's svOn) and ((style's svFill's svColor's alpha) > 0):
+            clear coverage
+            rasterise outline evenodd (style's svEvenOdd) into coverage
+            paint (style's svFill's svColor) at opacity ((style's svOpacity * style's svFillOpacity) * (((style's svFill's svColor's alpha) as a 64 bit floating-point number) / 255.0)) through coverage clipped by mask onto target
+        if (style's svStroke's svOn) and (((style's svStroke's svColor's alpha) > 0) and (style's svStrokeWidth > 0.0)):
+            set stroked to the stroke of outline thick ((style's svStrokeWidth) * (the scale of (style's svMatrix))) round caps (style's svRoundCap) square caps (style's svSquareCap) round joins (style's svRoundJoin) bevel joins (style's svBevelJoin)
+            clear coverage
+            rasterise stroked evenodd false into coverage
+            paint (style's svStroke's svColor) at opacity ((style's svOpacity * style's svStrokeOpacity) * (((style's svStroke's svColor's alpha) as a 64 bit floating-point number) / 255.0)) through coverage clipped by mask onto target
+            free stroked
+        free outline
+
+class:
+    patterns:
+        [a|] paint svg definition
+    members:
+        svId as a string
+        svKind as a string
+        svMarkupStart as an integer
+        svMarkupEnd as an integer
+        svBlur as a 64 bit floating-point number
+
+class:
+    patterns:
+        [a|] paint skin size
+    members:
+        w as an integer
+        h as an integer
+
+# The width and height the SVG asks for, from its attributes or viewBox.
+function the natural size of svg {string:markup}:
+    execute:
+        set cursor to 0
+        loop while cursor < markup's length:
+            if (((the character at cursor in markup) as an integer) & 255) = 60:
+                set element to the tag at cursor in markup
+                if element's svName = (the string form of "svg"):
+                    set width to the numeric attribute "width" of element or 0.0
+                    set height to the numeric attribute "height" of element or 0.0
+                    set viewBox to the attribute "viewBox" of element
+                    if (width <= 0.0) or (height <= 0.0):
+                        set first to the number from 0 in viewBox
+                        set second to the number from (first's svNext) in viewBox
+                        set third to the number from (second's svNext) in viewBox
+                        set fourth to the number from (third's svNext) in viewBox
+                        if width <= 0.0:
+                            set width to third's svValue
+                        if height <= 0.0:
+                            set height to fourth's svValue
+                    free element
+                    return @intrinsic("construct", a paint skin size, (the rounded value of width) as an integer, (the rounded value of height) as an integer)
+                set cursor to element's svEnd
+                free element
+            else:
+                set cursor to cursor + 1
+        return @intrinsic("construct", a paint skin size, 0, 0)
+
+# Renders the SVG into a transparent canvas of the size, its viewBox (or its
+# own size) stretched to fit.
+function the paint canvas of svg {string:markup} sized {integer:width} by {integer:height}:
+    execute:
+        set image to a new paint canvas width by height filled with the transparent paint color
+        set coverage to a new paint coverage image's width by image's height
+        set styles to an empty list of a paint svg style
+        set definitions to an empty list of a paint svg definition
+        set definitionDepth to 0
+        set skipDepth to 0
+        set depth to 0
+        set matrix to the identity paint matrix
+        append (the root paint svg style through matrix) to styles
+        set cursor to 0
+        loop while cursor < markup's length:
+            set character to ((the character at cursor in markup) as an integer) & 255
+            if character != 60:
+                set cursor to cursor + 1
+            else if ((cursor + 1) < markup's length) and (((((the character at (cursor + 1) in markup) as an integer) & 255) = 33) or ((((the character at (cursor + 1) in markup) as an integer) & 255) = 63)):
+                # Comments, doctype, processing instructions.
+                set stop to cursor + 1
+                set comment to ((cursor + 3) < markup's length) and (((((the character at (cursor + 2) in markup) as an integer) & 255) = 45) and ((((the character at (cursor + 3) in markup) as an integer) & 255) = 45))
+                loop while stop < markup's length:
+                    if (((the character at stop in markup) as an integer) & 255) = 62:
+                        if (comment = false) or ((((the character at (stop - 1) in markup) as an integer) & 255) = 45):
+                            set cursor to stop + 1
+                            set stop to markup's length
+                    set stop to stop + 1
+                if stop = markup's length:
+                    set cursor to markup's length
+            else:
+                set tagStart to cursor
+                set element to the tag at cursor in markup
+                set cursor to element's svEnd
+                set name to element's svName
+                if element's svClosing:
+                    if depth > 0:
+                        set depth to depth - 1
+                        if (the length of styles) > 1:
+                            remove item ((the length of styles) - 1) from styles
+                    if (definitionDepth > 0) and (depth < definitionDepth):
+                        set definitionDepth to 0
+                    if (skipDepth > 0) and (depth < skipDepth):
+                        set skipDepth to 0
+                else:
+                    set parent to the last item of styles
+                    set style to the styling of element within parent
+                    if name = (the string form of "svg"):
+                        # The viewBox maps onto the canvas.
+                        set viewBox to the attribute "viewBox" of element
+                        set boxX to 0.0
+                        set boxY to 0.0
+                        set boxW to the numeric attribute "width" of element or (width as a 64 bit floating-point number)
+                        set boxH to the numeric attribute "height" of element or (height as a 64 bit floating-point number)
+                        if viewBox's length > 0:
+                            set first to the number from 0 in viewBox
+                            set second to the number from (first's svNext) in viewBox
+                            set third to the number from (second's svNext) in viewBox
+                            set fourth to the number from (third's svNext) in viewBox
+                            set boxX to first's svValue
+                            set boxY to second's svValue
+                            set boxW to third's svValue
+                            set boxH to fourth's svValue
+                        if (boxW > 0.0) and (boxH > 0.0):
+                            set scaleX to (width as a 64 bit floating-point number) / boxW
+                            set scaleY to (height as a 64 bit floating-point number) / boxH
+                            set style's svMatrix to @intrinsic("construct", a paint matrix, scaleX, 0.0, 0.0, scaleY, 0.0 - (boxX * scaleX), 0.0 - (boxY * scaleY))
+                    if (name = (the string form of "defs")) or ((name = (the string form of "clipPath")) or (name = (the string form of "filter"))):
+                        if definitionDepth = 0:
+                            set definitionDepth to depth + 1
+                        if (name = (the string form of "clipPath")) or (name = (the string form of "filter")):
+                            append @intrinsic("construct", a paint svg definition, the attribute "id" of element, name, cursor, cursor, 0.0) to definitions
+                    if (definitionDepth > 0) and (name is a shape):
+                        # A clip path's shape: remembered by its markup.
+                        set count to the length of definitions
+                        if count > 0:
+                            set definition to the item at (count - 1) in definitions
+                            if definition's svKind = (the string form of "clipPath"):
+                                set definition's svMarkupStart to tagStart
+                                replace item at index (count - 1) in definitions with definition
+                    if name = (the string form of "feGaussianBlur"):
+                        set count to the length of definitions
+                        if count > 0:
+                            set definition to the item at (count - 1) in definitions
+                            set definition's svBlur to the numeric attribute "stdDeviation" of element or 0.0
+                            replace item at index (count - 1) in definitions with definition
+                    if (name = (the string form of "title")) or ((name = (the string form of "desc")) or ((name = (the string form of "text")) or (name = (the string form of "metadata")))):
+                        if (element's svSelfClosing = false) and (skipDepth = 0):
+                            set skipDepth to depth + 1
+                    if ((definitionDepth = 0) and (skipDepth = 0)) and (name is a shape):
+                        # The clip mask and the blur filter, when referenced.
+                        set mask to 0 as pointer
+                        set blurSigma to 0.0
+                        set filterName to the attribute "filter" of element
+                        loop index from 0 to the length of definitions:
+                            set definition to the item at index in definitions
+                            if (definition's svKind = (the string form of "filter")) and (filterName's length > 5):
+                                if definition's svId = (the substring of filterName from 5 spanning (filterName's length - 6) bytes):
+                                    set blurSigma to definition's svBlur
+                            if (definition's svKind = (the string form of "clipPath")) and (definition's svId = style's svClip):
+                                set clipElement to the tag at (definition's svMarkupStart) in markup
+                                set clipOutline to the geometry of clipElement through (style's svMatrix)
+                                set clipCoverage to a new paint coverage image's width by image's height
+                                rasterise clipOutline evenodd false into (the address of clipCoverage)
+                                set mask to clipCoverage's svCells as pointer
+                                free clipOutline
+                                free clipElement
+                        if blurSigma > 0.0:
+                            set layer to a new paint canvas image's width by image's height filled with the transparent paint color
+                            draw element with style onto layer clipped by mask using (the address of coverage)
+                            blur layer by (blurSigma * (the scale of (style's svMatrix)))
+                            composite layer onto image
+                            free paint canvas layer
+                        else:
+                            draw element with style onto image clipped by mask using (the address of coverage)
+                        if mask != (0 as pointer):
+                            @intrinsic("call", "libc", "free", nothing, mask)
+                    if element's svSelfClosing = false:
+                        set depth to depth + 1
+                        append style to styles
+                free element
+        free styles
+        free definitions
+        free coverage
+        return image

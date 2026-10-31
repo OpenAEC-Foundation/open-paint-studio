@@ -1,9 +1,22 @@
-# Undo and redo over whole canvas snapshots, the 40 most recent states, as
-# the browser editor keeps them. A snapshot is taken before every change.
+# Undo and redo over the 40 most recent states, as the browser editor keeps
+# them. A change that keeps the canvas's size is remembered as the rectangle
+# it touched, cut from the copy the editor paints from (the image as it was
+# before the change), so a brush stroke costs its own size instead of the
+# whole canvas and nothing is copied twice. A change of size keeps the whole
+# previous canvas, handed over rather than copied.
 import dynlex/paint/canvas.dl
 
 function paint history limit:
     replacement: 40
+
+class:
+    patterns:
+        [a|] paint snapshot
+    members:
+        image as a paint canvas
+        x as an integer
+        y as an integer
+        whole as a boolean
 
 class:
     patterns:
@@ -14,22 +27,48 @@ class:
 
 function a new paint history:
     execute:
-        return @intrinsic("construct", a paint history, an empty list of a paint canvas, an empty list of a paint canvas)
+        return @intrinsic("construct", a paint history, an empty list of a paint snapshot, an empty list of a paint snapshot)
 
-local function free the paint canvases in {a pointer to a list:snapshots}:
+local function free the paint snapshots in {a pointer to a list:snapshots}:
     execute:
         loop index from 0 to the length of snapshots:
-            free paint canvas (the item at index in snapshots)
+            free paint canvas (the item at index in snapshots)'s image
         clear snapshots
 
-# Records image as the state to return to; a new change discards redo.
+local function push {paint snapshot:snapshot} onto {a pointer to a paint history:history}:
+    execute:
+        append snapshot to history's undo
+        if (the length of history's undo) > paint history limit:
+            free paint canvas (the item at 0 in history's undo)'s image
+            remove item 0 from history's undo
+        free the paint snapshots in history's redo
+
+# Takes the canvas itself as the whole state to return to; the caller gives
+# it up. A new change discards redo.
+function keep {paint canvas:image} as the state before in {a pointer to a paint history:history}:
+    execute:
+        push @intrinsic("construct", a paint snapshot, image, 0, 0, true) onto history
+
+# Records a copy of image as the whole state to return to.
 function remember {paint canvas:image} in {a pointer to a paint history:history}:
     execute:
-        append (the paint copy of image) to history's undo
-        if (the length of history's undo) > paint history limit:
-            free paint canvas (the item at 0 in history's undo)
-            remove item 0 from history's undo
-        free the paint canvases in history's redo
+        keep (the paint copy of image) as the state before in history
+
+# Records the rectangle (left, top) to (right, bottom), exclusive, of before
+# — the canvas as it was before a change that kept its size — as the state to
+# return to; the rectangle is clipped to the canvas.
+function remember the rectangle {integer:left} {integer:top} {integer:right} {integer:bottom} of {paint canvas:before} in {a pointer to a paint history:history}:
+    execute:
+        set x1 to left clamped between 0 and before's width
+        set y1 to top clamped between 0 and before's height
+        set x2 to right clamped between x1 and before's width
+        set y2 to bottom clamped between y1 and before's height
+        if (x2 <= x1) or (y2 <= y1):
+            return nothing
+        if ((x1 = 0) and (y1 = 0)) and ((x2 = before's width) and (y2 = before's height)):
+            remember before in history
+            return nothing
+        push @intrinsic("construct", a paint snapshot, the paint canvas before cropped to x1 y1 x2 y2, x1, y1, false) onto history
 
 function {paint history:history} can undo:
     execute:
@@ -39,35 +78,41 @@ function {paint history:history} can redo:
     execute:
         return (the length of history's redo) > 0
 
-# Each returns the canvas to show; the current one moves to the other stack.
+# Takes the last snapshot of from back into current, recording in onto how
+# to return; gives the canvas to show (current itself for a rectangle).
+local function restore {paint canvas:current} from {a pointer to a list:from} onto {a pointer to a list:onto}:
+    execute:
+        if (the length of from) = 0:
+            return current
+        set entry to the last item of from
+        remove item ((the length of from) - 1) from from
+        if entry's whole:
+            append @intrinsic("construct", a paint snapshot, current, 0, 0, true) to onto
+            return entry's image
+        set patch to entry's image
+        append @intrinsic("construct", a paint snapshot, the paint canvas current cropped to entry's x entry's y (entry's x + patch's width) (entry's y + patch's height), entry's x, entry's y, false) to onto
+        paste paint canvas patch into current at entry's x entry's y
+        free paint canvas patch
+        return current
+
+# Each returns the canvas to show; the current state moves to the other stack.
 function undo {paint canvas:current} in {a pointer to a paint history:history}:
     execute:
-        if (the length of history's undo) = 0:
-            return current
-        set previous to the last item of history's undo
-        remove item ((the length of history's undo) - 1) from history's undo
-        append current to history's redo
-        return previous
+        return restore current from history's undo onto history's redo
 
 function redo {paint canvas:current} in {a pointer to a paint history:history}:
     execute:
-        if (the length of history's redo) = 0:
-            return current
-        set following to the last item of history's redo
-        remove item ((the length of history's redo) - 1) from history's redo
-        append current to history's undo
-        return following
+        return restore current from history's redo onto history's undo
 
-# Drops the most recent undo state, for a change that came to nothing.
-function forget the last state in {a pointer to a paint history:history}:
+# The rectangle the most recent undo state covers, for redrawing after undo
+# or redo: the whole canvas for a whole state.
+function the last state of {paint history:history} covers {paint canvas:current}:
     execute:
-        if (the length of history's undo) > 0:
-            free paint canvas (the last item of history's undo)
-            remove item ((the length of history's undo) - 1) from history's undo
+        return ((the length of history's redo) = 0) or (the last item of history's redo)'s whole
 
 function free {a pointer to a paint history:history}:
     execute:
-        free the paint canvases in history's undo
-        free the paint canvases in history's redo
+        free the paint snapshots in history's undo
+        free the paint snapshots in history's redo
         free history's undo
         free history's redo

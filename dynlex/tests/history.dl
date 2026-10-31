@@ -1,0 +1,54 @@
+import dynlex/paint/history.dl
+import lib/string.dl
+
+function print {C string:name} {integer:value}:
+    execute:
+        print (the string form of name)
+        print (the string form of " ")
+        print (the string form of value) as a line
+
+set white to the paint color red 255 green 255 blue 255
+set red to the paint color from hex "dc2626"
+set picture to a new paint canvas 30 by 20 filled with white
+set history to a new paint history
+set stroke to a paint stroke of red at opacity 255 sized 1 erasing false
+
+# A change is remembered as the rectangle it touched, cut from the base.
+set base to the paint copy of picture
+draw paint rectangle with stroke from 5 4 to 9 7 filled true on picture from base
+remember the rectangle 5 4 10 8 of base in (the address of history)
+set entry to the last item of history's undo
+print "patch x" entry's x
+print "patch y" entry's y
+print "patch width" entry's image's width
+print "patch height" entry's image's height
+print "patch whole" (entry's whole as an integer)
+
+# Undo restores it in place and redo paints it again.
+set picture to undo picture in (the address of history)
+print "after undo green at 6 5" (the paint color at 6 5 in picture)'s green
+print "can redo" ((history can redo) as an integer)
+set picture to redo picture in (the address of history)
+print "after redo green at 6 5" (the paint color at 6 5 in picture)'s green
+print "outside stays white" (the paint color at 12 5 in picture)'s green
+
+# A change of size keeps the whole canvas and undoes to the old size.
+keep picture as the state before in (the address of history)
+set turned to the paint canvas picture turned clockwise true
+set picture to turned
+print "turned width" picture's width
+set picture to undo picture in (the address of history)
+print "undone width" picture's width
+print "undone green at 6 5" (the paint color at 6 5 in picture)'s green
+set picture to undo picture in (the address of history)
+print "first undo green at 6 5" (the paint color at 6 5 in picture)'s green
+set picture to redo picture in (the address of history)
+set picture to redo picture in (the address of history)
+print "redone width" picture's width
+
+# A change that altered nothing still records a state.
+remember picture in (the address of history)
+print "unchanged states" (the length of history's undo)
+free (the address of history)
+free paint canvas picture
+free paint canvas base

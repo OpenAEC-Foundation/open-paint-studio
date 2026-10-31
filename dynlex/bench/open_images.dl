@@ -1,0 +1,42 @@
+# Opens every image named on the command line through the editor's own file
+# layer, reports size and wall-clock time, and saves what it decoded as PNG
+# into the directory given first, for dynlex/tests/images/compare.py.
+#
+#   open-images OUT_DIR IMAGE...
+import dynlex/paint/files.dl
+
+function the wall microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to (((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)) as an integer
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+function the file name of {string:path}:
+    execute:
+        set start to 0
+        loop index from 0 to path's length:
+            if ((the character at index in path) as an integer) = 47:
+                set start to index + 1
+        return the substring of path from start spanning (path's length - start) bytes
+
+set arguments to the command line arguments
+set folder to the argument at 0 in arguments
+loop index from 1 to (arguments' length):
+    set path to the argument at index in arguments
+    set began to the wall microseconds
+    set opened to the paint image opened from path
+    set took to (the wall microseconds) - began
+    set name to the file name of path
+    print name
+    if opened's valid:
+        print (((the string form of "\tok\t") + (the string form of opened's image's width)) + (the string form of "x")) + (the string form of opened's image's height)
+        print (the string form of "\t") + (the string form of took)
+        print (the string form of " us") as a line
+        ignore save opened's image to ((folder + (the string form of "/")) + (name + (the string form of ".png")))
+    else:
+        print (the string form of "\tfailed\t") + opened's message
+        print (the string form of "\t") + (the string form of took)
+        print (the string form of " us") as a line
+    free paint canvas opened's image

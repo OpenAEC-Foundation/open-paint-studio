@@ -1,0 +1,373 @@
+# PNG, read and written by the editor itself: chunks, the five filters, every
+# bit depth and colour type, palettes with transparency, Adam7 interlacing;
+# written as eight-bit RGBA with the deflater in paint/inflate.dl.
+import dynlex/paint/decoded.dl
+import dynlex/paint/inflate.dl
+
+local function paint png pass start x {integer:pass}:
+    execute:
+        if (pass = 0) or ((pass = 2) or ((pass = 4) or (pass = 6))):
+            return 0
+        if pass = 1:
+            return 4
+        if pass = 3:
+            return 2
+        return 1
+
+local function paint png pass start y {integer:pass}:
+    execute:
+        if (pass = 0) or ((pass = 1) or (pass = 3)):
+            return 0
+        if pass = 2:
+            return 4
+        if pass = 4:
+            return 2
+        return 1
+
+local function paint png pass step x {integer:pass}:
+    execute:
+        if pass <= 1:
+            return 8
+        if pass <= 3:
+            return 4
+        if pass <= 5:
+            return 2
+        return 1
+
+local function paint png pass step y {integer:pass}:
+    execute:
+        if pass <= 2:
+            return 8
+        if pass <= 4:
+            return 4
+        if pass = 5:
+            return 2
+        return 1
+
+local function the paeth of {integer:a} {integer:b} {integer:c}:
+    execute:
+        set p to (a + b) - c
+        set pa to the absolute value of (p - a)
+        set pb to the absolute value of (p - b)
+        set pc to the absolute value of (p - c)
+        if (pa <= pb) and (pa <= pc):
+            return a
+        if pb <= pc:
+            return b
+        return c
+
+# Undoes the row's filter in place; previous is the row above (or null).
+local function unfilter {pointer:row} of {integer:size} by {integer:step} after {pointer:previous}:
+    execute:
+        set kind to (the byte 0 in row)
+        set data to (row as a pointer to a byte) + 1
+        if kind = 0:
+            return nothing
+        loop index from 0 to size:
+            set left to 0
+            if index >= step:
+                set left to the byte (index - step) in data
+            set up to 0
+            set upLeft to 0
+            if previous != (0 as pointer):
+                set up to the byte index in previous
+                if index >= step:
+                    set upLeft to the byte (index - step) in previous
+            set value to the byte index in data
+            if kind = 1:
+                set value to value + left
+            else if kind = 2:
+                set value to value + up
+            else if kind = 3:
+                set value to value + ((left + up) / 2)
+            else if kind = 4:
+                set value to value + (the paeth of left up upLeft)
+            store ((value & 255) as a byte) at (data + index)
+
+# The sample numbered index (depth bits each) in the row, scaled to 8 bits
+# when scale is set (grey levels), raw otherwise (palette indices).
+local function sample {integer:index} of {integer:depth} in {pointer:row} scaled {boolean:scale}:
+    execute:
+        if depth = 8:
+            return the byte index in row
+        if depth = 16:
+            return the byte (index * 2) in row
+        set bit to index * depth
+        set value to ((the byte (bit / 8) in row) >> ((8 - depth) - (bit & 7))) & ((1 << depth) - 1)
+        if scale = false:
+            return value
+        if depth = 1:
+            return value * 255
+        if depth = 2:
+            return value * 85
+        return value * 17
+
+class:
+    patterns:
+        [a|] paint png header
+    members:
+        width as an integer
+        height as an integer
+        depth as an integer
+        colour as an integer
+        interlaced as a boolean
+        channels as an integer
+
+# Writes the pixels of one unfiltered row into the image at the pass's
+# positions.
+local function place row {pointer:samples} of {integer:columns} as {paint png header:header} into {paint canvas:image} placing {integer:y} starting {integer:x0} stepping {integer:step} with palette {pointer:palette} of {integer:colours} transparency {pointer:alphas} of {integer:alphaCount} key {integer:keyRed} {integer:keyGreen} {integer:keyBlue} keyed {boolean:keyed}:
+    execute:
+        set target to image's pixels
+        set depth to header's depth
+        set channels to header's channels
+        loop column from 0 to columns:
+            set red to 0
+            set green to 0
+            set blue to 0
+            set alpha to 255
+            if (header's colour) = 0:
+                set red to sample column of depth in samples scaled true
+                set green to red
+                set blue to red
+                if keyed and ((sample column of depth in samples scaled false) = keyRed):
+                    set alpha to 0
+            else if (header's colour) = 2:
+                set red to sample (column * 3) of depth in samples scaled true
+                set green to sample ((column * 3) + 1) of depth in samples scaled true
+                set blue to sample ((column * 3) + 2) of depth in samples scaled true
+                if keyed and (((sample (column * 3) of depth in samples scaled false) = keyRed) and (((sample ((column * 3) + 1) of depth in samples scaled false) = keyGreen) and ((sample ((column * 3) + 2) of depth in samples scaled false) = keyBlue))):
+                    set alpha to 0
+            else if (header's colour) = 3:
+                set index to sample column of depth in samples scaled false
+                if index < colours:
+                    set red to the byte (index * 3) in palette
+                    set green to the byte ((index * 3) + 1) in palette
+                    set blue to the byte ((index * 3) + 2) in palette
+                if index < alphaCount:
+                    set alpha to the byte index in alphas
+            else if (header's colour) = 4:
+                set red to sample (column * 2) of depth in samples scaled true
+                set green to red
+                set blue to red
+                set alpha to sample ((column * 2) + 1) of depth in samples scaled true
+            else:
+                set red to sample (column * 4) of depth in samples scaled true
+                set green to sample ((column * 4) + 1) of depth in samples scaled true
+                set blue to sample ((column * 4) + 2) of depth in samples scaled true
+                set alpha to sample ((column * 4) + 3) of depth in samples scaled true
+            set offset to ((y * image's width) + (x0 + (column * step))) * 4
+            store (red as a byte) at (target + offset)
+            store (green as a byte) at (target + (offset + 1))
+            store (blue as a byte) at (target + (offset + 2))
+            store (alpha as a byte) at (target + (offset + 3))
+            ignore channels
+
+function the paint png from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 33) or (((the byte 0 in bytes) != 137) or (((the byte 1 in bytes) != 80) or (((the byte 2 in bytes) != 78) or ((the byte 3 in bytes) != 71)))):
+            return no decoded image because "not a PNG file"
+        # First pass over the chunks: the header, the palette, and how much
+        # image data there is.
+        set width to 0
+        set height to 0
+        set depth to 0
+        set colour to 0
+        set interlaced to false
+        set palette to 0 as pointer
+        set colours to 0
+        set alphas to 0 as pointer
+        set alphaCount to 0
+        set keyed to false
+        set keyRed to 0
+        set keyGreen to 0
+        set keyBlue to 0
+        set dataSize to 0
+        set at to 8
+        loop while (at + 8) <= count:
+            set size to the big-endian word at in bytes
+            if ((at + 12) + size) > count:
+                return no decoded image because "the PNG is cut short"
+            set body to (bytes as a pointer to a byte) + (at + 8)
+            if the bytes (at + 4) in bytes spell "IHDR":
+                set width to the big-endian word 0 in body
+                set height to the big-endian word 4 in body
+                set depth to the byte 8 in body
+                set colour to the byte 9 in body
+                set interlaced to (the byte 12 in body) = 1
+            else if the bytes (at + 4) in bytes spell "PLTE":
+                set palette to body as pointer
+                set colours to size / 3
+            else if the bytes (at + 4) in bytes spell "tRNS":
+                if colour = 3:
+                    set alphas to body as pointer
+                    set alphaCount to size
+                else if (colour = 0) and (size >= 2):
+                    set keyed to true
+                    set keyRed to the big-endian half 0 in body
+                else if (colour = 2) and (size >= 6):
+                    set keyed to true
+                    set keyRed to the big-endian half 0 in body
+                    set keyGreen to the big-endian half 2 in body
+                    set keyBlue to the big-endian half 4 in body
+            else if the bytes (at + 4) in bytes spell "IDAT":
+                set dataSize to dataSize + size
+            set at to (at + 12) + size
+        if (width < 1) or (height < 1):
+            return no decoded image because "the PNG has no size"
+        if (a paint canvas width by height fits) = false:
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        set channels to 1
+        if colour = 2:
+            set channels to 3
+        if colour = 4:
+            set channels to 2
+        if colour = 6:
+            set channels to 4
+        if ((depth != 1) and ((depth != 2) and ((depth != 4) and ((depth != 8) and (depth != 16))))) or ((colour != 0) and ((colour != 2) and ((colour != 3) and ((colour != 4) and (colour != 6))))):
+            return no decoded image because "the PNG uses an unknown bit depth or colour type"
+        # A sample key at depth below 8 keeps its raw value.
+        if (colour = 0) and (depth = 16):
+            set keyRed to keyRed >> 8
+        if (colour = 2) and (depth = 16):
+            set keyRed to keyRed >> 8
+            set keyGreen to keyGreen >> 8
+            set keyBlue to keyBlue >> 8
+        # Second pass: the image data, joined.
+        set joined to @intrinsic("call", "libc", "malloc", a pointer to a byte, (the maximum of dataSize and 1) as a word sized integer)
+        set filled to 0
+        set at to 8
+        loop while (at + 8) <= count:
+            set size to the big-endian word at in bytes
+            if the bytes (at + 4) in bytes spell "IDAT":
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, joined + filled, (bytes as a pointer to a byte) + (at + 8), size as a word sized integer)
+                set filled to filled + size
+            set at to (at + 12) + size
+        set bitsPerPixel to channels * depth
+        set step to the maximum of 1 and (bitsPerPixel / 8)
+        # The unfiltered size: every pass's rows, a filter byte each.
+        set expected to 0
+        set passes to 1
+        if interlaced:
+            set passes to 7
+        loop pass from 0 to passes:
+            set columns to width
+            set rows to height
+            if interlaced:
+                set columns to ((width - (paint png pass start x pass)) + ((paint png pass step x pass) - 1)) / (paint png pass step x pass)
+                set rows to ((height - (paint png pass start y pass)) + ((paint png pass step y pass) - 1)) / (paint png pass step y pass)
+            if (columns > 0) and (rows > 0):
+                set expected to expected + (rows * (1 + (((columns * bitsPerPixel) + 7) / 8)))
+        set raw to the zlib inflation of joined spanning filled expecting expected
+        @intrinsic("call", "libc", "free", nothing, joined)
+        if (raw's valid = false) or (raw's count < expected):
+            if raw's valid:
+                @intrinsic("call", "libc", "free", nothing, raw's bytes)
+            return no decoded image because "the PNG's image data is damaged"
+        set header to @intrinsic("construct", a paint png header, width, height, depth, colour, interlaced, channels)
+        set image to an unfilled paint canvas width by height
+        set at to 0
+        loop pass from 0 to passes:
+            set columns to width
+            set rows to height
+            set x0 to 0
+            set y0 to 0
+            set stepX to 1
+            set stepY to 1
+            if interlaced:
+                set x0 to paint png pass start x pass
+                set y0 to paint png pass start y pass
+                set stepX to paint png pass step x pass
+                set stepY to paint png pass step y pass
+                set columns to ((width - x0) + (stepX - 1)) / stepX
+                set rows to ((height - y0) + (stepY - 1)) / stepY
+            if (columns > 0) and (rows > 0):
+                set rowBytes to ((columns * bitsPerPixel) + 7) / 8
+                set previous to 0 as pointer
+                loop lineIndex from 0 to rows:
+                    set rowStart to (raw's bytes) + at
+                    unfilter (rowStart as pointer) of rowBytes by step after previous
+                    place row ((rowStart + 1) as pointer) of columns as header into image placing (y0 + (lineIndex * stepY)) starting x0 stepping stepX with palette palette of colours transparency alphas of alphaCount key keyRed keyGreen keyBlue keyed keyed
+                    set previous to (rowStart + 1) as pointer
+                    set at to at + (1 + rowBytes)
+        @intrinsic("call", "libc", "free", nothing, raw's bytes)
+        return a decoded image
+
+# --- Writing ---
+
+local function the crc32 table:
+    execute:
+        set entries to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 256 as a word sized integer, 8 as a word sized integer)
+        loop index from 0 to 256:
+            set value to index as a C long integer
+            loop bit from 0 to 8:
+                if (value & (1 as a C long integer)) = (1 as a C long integer):
+                    set value to (value >> 1) ^ (3988292384 as a C long integer)
+                else:
+                    set value to value >> 1
+            store value at (entries + index)
+        return entries
+
+local function the crc32 of {pointer:bytes} spanning {integer:count} with {a pointer to a C long integer:table}:
+    execute:
+        set crc to 4294967295 as a C long integer
+        loop index from 0 to count:
+            set crc to (the item at (((crc ^ ((the byte index in bytes) as a C long integer)) & (255 as a C long integer)) as an integer) in table) ^ (crc >> 8)
+        return crc ^ (4294967295 as a C long integer)
+
+local function append chunk {C string:kind} with {pointer:body} of {integer:size} to {pointer:out} from {integer:cursor} using {a pointer to a C long integer:table}:
+    execute:
+        set target to out as a pointer to a byte
+        store (((size >> 24) & 255) as a byte) at (target + cursor)
+        store (((size >> 16) & 255) as a byte) at (target + (cursor + 1))
+        store (((size >> 8) & 255) as a byte) at (target + (cursor + 2))
+        store ((size & 255) as a byte) at (target + (cursor + 3))
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, target + (cursor + 4), kind as a pointer to a byte, 4 as a word sized integer)
+        if size > 0:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, target + (cursor + 8), body, size as a word sized integer)
+        set crc to the crc32 of ((target + (cursor + 4)) as pointer) spanning (size + 4) with table
+        store (((crc >> 24) & (255 as a C long integer)) as a byte) at (target + ((cursor + 8) + size))
+        store (((crc >> 16) & (255 as a C long integer)) as a byte) at (target + ((cursor + 9) + size))
+        store (((crc >> 8) & (255 as a C long integer)) as a byte) at (target + ((cursor + 10) + size))
+        store ((crc & (255 as a C long integer)) as a byte) at (target + ((cursor + 11) + size))
+        return (cursor + 12) + size
+
+# The image as a PNG file: eight-bit RGBA, rows unfiltered.
+function the png bytes of {paint canvas:image}:
+    execute:
+        set width to image's width
+        set height to image's height
+        set rowBytes to (width * 4) + 1
+        set raw to @intrinsic("call", "libc", "malloc", a pointer to a byte, (rowBytes * height) as a word sized integer)
+        loop row from 0 to height:
+            store (0 as a byte) at (raw + (row * rowBytes))
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, raw + ((row * rowBytes) + 1), image's pixels + ((row * width) * 4), (width * 4) as a word sized integer)
+        set packed to the zlib deflation of (raw as pointer) spanning (rowBytes * height)
+        @intrinsic("call", "libc", "free", nothing, raw)
+        set table to the crc32 table
+        set out to @intrinsic("call", "libc", "malloc", a pointer to a byte, (packed's count + 60) as a word sized integer)
+        store (137 as a byte) at out
+        store (80 as a byte) at (out + 1)
+        store (78 as a byte) at (out + 2)
+        store (71 as a byte) at (out + 3)
+        store (13 as a byte) at (out + 4)
+        store (10 as a byte) at (out + 5)
+        store (26 as a byte) at (out + 6)
+        store (10 as a byte) at (out + 7)
+        set header to @intrinsic("call", "libc", "calloc", a pointer to a byte, 13 as a word sized integer, 1 as a word sized integer)
+        store (((width >> 24) & 255) as a byte) at header
+        store (((width >> 16) & 255) as a byte) at (header + 1)
+        store (((width >> 8) & 255) as a byte) at (header + 2)
+        store ((width & 255) as a byte) at (header + 3)
+        store (((height >> 24) & 255) as a byte) at (header + 4)
+        store (((height >> 16) & 255) as a byte) at (header + 5)
+        store (((height >> 8) & 255) as a byte) at (header + 6)
+        store ((height & 255) as a byte) at (header + 7)
+        store (8 as a byte) at (header + 8)
+        store (6 as a byte) at (header + 9)
+        set at to append chunk "IHDR" with (header as pointer) of 13 to (out as pointer) from 8 using table
+        set at to append chunk "IDAT" with (packed's bytes as pointer) of (packed's count) to (out as pointer) from at using table
+        set at to append chunk "IEND" with (header as pointer) of 0 to (out as pointer) from at using table
+        @intrinsic("call", "libc", "free", nothing, header)
+        @intrinsic("call", "libc", "free", nothing, packed's bytes)
+        @intrinsic("call", "libc", "free", nothing, table)
+        return a paint byte stream of out spanning at

@@ -1,0 +1,227 @@
+# Text as the browser editor sets it: the same font files (Inter, Space
+# Grotesk), shaped by HarfBuzz so kerning and ligatures match, rasterised by
+# FreeType with full hinting and blended into a canvas in sRGB, the way the
+# desktop build's WebKitGTK composites. Glyph coverage is cached per face, size and glyph.
+import dynlex/paint/canvas.dl
+import lib/font.dl
+
+# FT_LOAD_RENDER with the normal target: full hinting, stems on whole
+# pixels, as the desktop build's WebKitGTK renders its text.
+local function freetype hinted rendering:
+    replacement: 4
+
+class:
+    patterns:
+        [a|] paint face
+    members:
+        library as a pointer
+        face as a pointer
+        font as a pointer
+        size as an integer
+        glyphs as a pointer to a list
+        slots as a pointer to a list
+        coverage as a pointer to a byte
+        used as an integer
+        capacity as an integer
+
+class:
+    patterns:
+        [a|] paint glyph image
+    members:
+        key as an integer
+        left as an integer
+        top as an integer
+        width as an integer
+        height as an integer
+        offset as an integer
+
+local function paint face slots:
+    replacement: 8192
+
+# The face of the font file, or one whose face pointer is null when the file
+# cannot be read.
+function a paint face from {string:path}:
+    execute:
+        set cell to @intrinsic("call", "libc", "calloc", a pointer to a pointer to a byte, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "freetype", "FT_Init_FreeType", an integer, cell)
+        set library to the item at 0 in cell
+        set opened to @intrinsic("call", "freetype", "FT_New_Face", an integer, library, the data of path, 0 as a C long integer, cell + 1)
+        set handle to the item at 1 in cell
+        @intrinsic("call", "libc", "free", nothing, cell)
+        set shaper to 0 as a pointer to a byte
+        if opened = 0:
+            ignore @intrinsic("call", "freetype", "FT_Set_Pixel_Sizes", an integer, handle, 0, 12)
+            set shaper to @intrinsic("call", ":libharfbuzz.so.0", "hb_ft_font_create_referenced", a pointer to a byte, handle)
+            # Hinted advances, whole pixels, as the browser lays its text out.
+            @intrinsic("call", ":libharfbuzz.so.0", "hb_ft_font_set_load_flags", nothing, shaper, 0)
+        else:
+            set handle to 0 as a pointer to a byte
+        set slots to an empty list of an integer
+        loop index from 0 to paint face slots:
+            append 0 to slots
+        set capacity to 65536
+        set coverage to @intrinsic("call", "libc", "malloc", a pointer to a byte, capacity as a word sized integer)
+        return @intrinsic("construct", a paint face, library, handle, shaper, 12, an empty list of a paint glyph image, slots, coverage, 0, capacity)
+
+function {paint face:typeface} is loaded:
+    execute:
+        return typeface's face != 0 as a pointer to a byte
+
+function use {a pointer to a paint face:typeface} at {integer:size} pixels:
+    execute:
+        if typeface's size != size:
+            ignore @intrinsic("call", "freetype", "FT_Set_Pixel_Sizes", an integer, typeface's face, 0, size)
+            @intrinsic("call", ":libharfbuzz.so.0", "hb_ft_font_changed", nothing, typeface's font)
+            set typeface's size to size
+
+# The distance from the top of a line box to the baseline, in whole pixels, as
+# the browser rounds the font's ascent.
+function the ascent of {a pointer to a paint face:typeface} at {integer:size} pixels:
+    execute:
+        set record to typeface's face as a pointer to an FT face
+        set units to (the units per EM of record) as an integer
+        set rise to (the ascender of record) as an integer
+        return (((rise * size) * 2) + units) / (units * 2)
+
+function the descent of {a pointer to a paint face:typeface} at {integer:size} pixels:
+    execute:
+        set record to typeface's face as a pointer to an FT face
+        set units to (the units per EM of record) as an integer
+        set fall to 0 - ((the descender of record) as an integer)
+        return (((fall * size) * 2) + units) / (units * 2)
+
+# --- Shaping ---
+
+class:
+    patterns:
+        [a|] paint shaped text
+    members:
+        buffer as a pointer
+        count as an integer
+        infos as a pointer to an integer
+        positions as a pointer to an integer
+        width as an integer
+
+# Shapes the UTF-8 text at the size; positions are in 1/64 pixel.
+function the shaping of {string:message} with {a pointer to a paint face:typeface} at {integer:size} pixels:
+    execute:
+        use typeface at size pixels
+        set buffer to @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_create", a pointer to a byte)
+        @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_add_utf8", nothing, buffer, the data of message, message's length, 0, message's length)
+        @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_guess_segment_properties", nothing, buffer)
+        @intrinsic("call", ":libharfbuzz.so.0", "hb_shape", nothing, typeface's font, buffer, 0 as a pointer to a byte, 0)
+        set cell to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set infos to @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_get_glyph_infos", a pointer to an integer, buffer, cell)
+        set positions to @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_get_glyph_positions", a pointer to an integer, buffer, cell)
+        set count to the item at 0 in cell
+        @intrinsic("call", "libc", "free", nothing, cell)
+        set width to 0
+        loop index from 0 to count:
+            set width to width + (the item at (index * 5) in positions)
+        return @intrinsic("construct", a paint shaped text, buffer, count, infos, positions, width)
+
+function free {paint shaped text:shaped}:
+    execute:
+        @intrinsic("call", ":libharfbuzz.so.0", "hb_buffer_destroy", nothing, shaped's buffer)
+
+# The advance width of the text in 1/64 pixel, letter spacing (in 1/64 pixel
+# per glyph) included.
+function the width of {string:message} with {a pointer to a paint face:typeface} at {integer:size} pixels spaced {integer:spacing}:
+    execute:
+        set shaped to the shaping of message with typeface at size pixels
+        set total to shaped's width + (spacing * shaped's count)
+        free shaped
+        return total
+
+# --- Glyph coverage ---
+
+local function the glyph image of {integer:glyph} in {a pointer to a paint face:typeface}:
+    execute:
+        set key to (typeface's size * 65536) + glyph
+        set index to ((glyph * 31) + (typeface's size * 977)) & (paint face slots - 1)
+        loop while true:
+            set entry to the item at index in (typeface's slots)
+            if entry = 0:
+                set rendered to render glyph glyph with key key in typeface
+                append rendered to (typeface's glyphs)
+                replace item at index index in (typeface's slots) with (the length of (typeface's glyphs))
+                return rendered
+            set known to the item at (entry - 1) in (typeface's glyphs)
+            if known's key = key:
+                return known
+            set index to (index + 1) & (paint face slots - 1)
+
+local function render glyph {integer:glyph} with key {integer:key} in {a pointer to a paint face:typeface}:
+    execute:
+        set error to @intrinsic("call", "freetype", "FT_Load_Glyph", an integer, typeface's face, glyph, freetype hinted rendering)
+        if error != 0:
+            return @intrinsic("construct", a paint glyph image, key, 0, 0, 0, 0, 0)
+        set slot to (the glyph of (typeface's face as a pointer to an FT face)) as a pointer to an FT glyph slot
+        set rows to the bitmap rows of slot
+        set columns to the bitmap width of slot
+        set pitch to the bitmap pitch of slot
+        set source to the bitmap buffer of slot
+        set size to rows * columns
+        if (typeface's used + size) > typeface's capacity:
+            set typeface's capacity to (typeface's capacity * 2) + size
+            set typeface's coverage to @intrinsic("call", "libc", "realloc", a pointer to a byte, typeface's coverage, typeface's capacity as a word sized integer)
+        set offset to typeface's used
+        loop row from 0 to rows:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, typeface's coverage + (offset + (row * columns)), source + (row * pitch), columns as a word sized integer)
+        set typeface's used to offset + size
+        return @intrinsic("construct", a paint glyph image, key, the bitmap left of slot, the bitmap top of slot, columns, rows, offset)
+
+# --- Drawing ---
+
+# Composites the colour (straight alpha) on the pixel at the byte offset with
+# coverage 0..255, in sRGB as the browser does.
+function blend {paint color:color} at {integer:offset} in {pointer:pixels} by {integer:coverage}:
+    execute:
+        set amount to ((coverage * color's alpha) + 127) / 255
+        if amount <= 0:
+            return nothing
+        set kept to 255 - amount
+        set red to ((the item at offset in pixels) as an integer) & 255
+        set green to ((the item at (offset + 1) in pixels) as an integer) & 255
+        set blue to ((the item at (offset + 2) in pixels) as an integer) & 255
+        set under to ((the item at (offset + 3) in pixels) as an integer) & 255
+        if under = 255:
+            store (((((color's red * amount) + (red * kept)) + 127) / 255) as a byte) at (pixels + offset)
+            store (((((color's green * amount) + (green * kept)) + 127) / 255) as a byte) at (pixels + (offset + 1))
+            store (((((color's blue * amount) + (blue * kept)) + 127) / 255) as a byte) at (pixels + (offset + 2))
+            return nothing
+        set weight to ((under * kept) + 127) / 255
+        set alpha to amount + weight
+        set half to alpha / 2
+        store (((((color's red * amount) + (red * weight)) + half) / alpha) as a byte) at (pixels + offset)
+        store (((((color's green * amount) + (green * weight)) + half) / alpha) as a byte) at (pixels + (offset + 1))
+        store (((((color's blue * amount) + (blue * weight)) + half) / alpha) as a byte) at (pixels + (offset + 2))
+        store (alpha as a byte) at (pixels + (offset + 3))
+
+# Draws the text with its pen starting at x (1/64 pixel) on the baseline y,
+# clipped to the canvas; returns the advance in 1/64 pixel.
+function draw {string:message} at {integer:x} {integer:baseline} with {a pointer to a paint face:typeface} at {integer:size} pixels spaced {integer:spacing} in {paint color:color} on {paint canvas:image}:
+    execute:
+        set shaped to the shaping of message with typeface at size pixels
+        set pen to x
+        set bytes to image's pixels
+        loop index from 0 to shaped's count:
+            set glyph to the item at (index * 5) in (shaped's infos)
+            set advance to the item at (index * 5) in (shaped's positions)
+            set shiftX to the item at ((index * 5) + 2) in (shaped's positions)
+            set shiftY to the item at ((index * 5) + 3) in (shaped's positions)
+            set drawn to the glyph image of glyph in typeface
+            set left to (((pen + shiftX) + 32) / 64) + drawn's left
+            set top to (baseline - ((shiftY + 32) / 64)) - drawn's top
+            loop row from 0 to drawn's height:
+                set y to top + row
+                if (y >= 0) and (y < image's height):
+                    loop column from 0 to drawn's width:
+                        set px to left + column
+                        if (px >= 0) and (px < image's width):
+                            set amount to ((the item at ((drawn's offset + (row * drawn's width)) + column) in (typeface's coverage)) as an integer) & 255
+                            if amount > 0:
+                                blend color at (((y * image's width) + px) * 4) in bytes by amount
+            set pen to (pen + advance) + spacing
+        free shaped
+        return pen - x

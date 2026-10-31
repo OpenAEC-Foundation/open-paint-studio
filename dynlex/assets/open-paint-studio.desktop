@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Open Paint Studio
+GenericName=Raster editor
+Comment=Drawing tools in the OpenAEC style, native DynLex edition
+Exec=@EXEC@ %f
+Icon=open-paint-studio
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;
+MimeType=image/png;image/jpeg;image/webp;image/gif;image/bmp;image/tiff;image/avif;image/heic;image/jxl;image/svg+xml;image/x-portable-pixmap;
+StartupWMClass=Open Paint Studio
