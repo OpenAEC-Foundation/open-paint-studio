@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type PointerEvent, type ComponentType, type CSSProperties } from 'react';
-import { Paintbrush, Eraser, PaintBucket, Pipette, Minus, Square, Circle, Type, FilePlus2, FolderOpen, Download, Save, Grid2X2, Scan, ZoomIn, ZoomOut, Trash2, Plug, Upload, ArrowDownToLine, ChevronRight, Check, Image as ImageIcon, Clock3, Crop, RotateCw, FlipHorizontal2, Scaling, RotateCcw, FlipVertical2, MousePointer2, SlidersHorizontal, Contrast, Blend, PanelRight, Maximize2, CheckCheck } from 'lucide-react';
+import { Paintbrush, Eraser, PaintBucket, Pipette, Minus, Square, Circle, Type, FilePlus2, FolderOpen, Download, Save, Grid2X2, Scan, ZoomIn, ZoomOut, Trash2, Plug, Upload, ArrowDownToLine, ChevronRight, Check, Image as ImageIcon, Clock3, Crop, RotateCw, FlipHorizontal2, Scaling, RotateCcw, FlipVertical2, MousePointer2, SlidersHorizontal, Contrast, PanelRight, Maximize2, CheckCheck } from 'lucide-react';
 import TitleBar from './components/TitleBar';
 import { releaseVersion } from './version';
 import { rasterIfcx, encodeRasterIfcx, readRasterIfcx } from '../shared/ifcx';
@@ -10,6 +10,8 @@ import RibbonMenu from './components/ribbon/RibbonMenu';
 import { documentSchema, newDocument, drawOperation, type PaintDocument, type Operation, type Point } from '../shared/document';
 import { renderDocument } from './render';
 import { draftStore, saveFile, isDesktop } from './storage';
+import { Backstage, BackstageTiles, type BackstagePage } from './components/Backstage';
+import { ColorMenu } from './components/ColorPicker';
 import { labels, type Label } from './labels';
 import { operationBounds, transformedOperation, type Matrix, type Bounds } from '../shared/geometry';
 import { documentSvg } from '../shared/svg';
@@ -36,7 +38,7 @@ export default function App() {
   const [language, setLanguage] = useState<'en' | 'nl'>(() => localStorage.getItem('paint-language') === 'en' ? 'en' : 'nl');
   const [theme, setTheme] = useState(() => localStorage.getItem('paint-theme') || 'light');
   const t = useCallback((key: Label) => labels[language][key], [language]);
-  const [tab, setTab] = useState('home'), [fileOpen, setFileOpen] = useState(false), [modal, setModal] = useState('');
+  const [tab, setTab] = useState('home'), [fileOpen, setFileOpen] = useState(false), [filePage, setFilePage] = useState<BackstagePage>('new'), [modal, setModal] = useState('');
   const [zoom, setZoom] = useState(75), [grid, setGrid] = useState(false), [position, setPosition] = useState<Point>({ x: 0, y: 0 });
   const [draftStatus, setDraftStatus] = useState<Label>('saving'), [loaded, setLoaded] = useState(false), [toast, setToast] = useState('');
   const [text, setText] = useState('OpenAEC'), [newWidth, setNewWidth] = useState(1200), [newHeight, setNewHeight] = useState(800), [newName, setNewName] = useState('Untitled'), [newBackground, setNewBackground] = useState('#ffffff');
@@ -210,6 +212,7 @@ export default function App() {
         gesture.current = null; objectDrag.current = null;
         preview.current?.getContext('2d')?.clearRect(0, 0, doc.width, doc.height);
         setTextBox(null); setTransient(null); setFileOpen(false); setModal('');
+        document.querySelectorAll('details[open]').forEach(menu => (menu as HTMLDetailsElement).open = false);
         setTool('select');
         if ((e.target as HTMLElement).matches('input, textarea, select')) (e.target as HTMLElement).blur();
         return;
@@ -364,7 +367,6 @@ export default function App() {
     if(enabled){commit({...doc,retainVectors:true});return;}
     setBusy(true);try{const image=await renderDocument({...doc,background:'transparent'});commit({...doc,retainVectors:false,operations:doc.operations.length?[{type:'image',data:image.toDataURL('image/png'),sourceSize:{width:doc.width,height:doc.height}}]:[]});setSelection(null);}catch(error){fail(error);}finally{setBusy(false);}
   }
-  async function showFormats(){setModal('formats');if(formats.length)return;setBusy(true);try{setFormats((await supportedFormats()).formats);}catch(error){fail(error);}finally{setBusy(false);}}
   async function openFile(file?: File) {
     if (!file) return;
     setBusy(true);
@@ -413,13 +415,13 @@ export default function App() {
   const safeZoom = (value: number) => setZoom(Math.max(10, Math.min(400, value)));
   const selectedOperation=typeof selection==='number'?(transient??doc).operations[selection]:undefined;
   const selectedBounds=tool==='select'?(selection==='all'?allBounds(transient??doc):selectedOperation?boundsFor(selectedOperation):null):null;
-  return <div className={`studio ${focus?'focus-mode':''}`} aria-busy={busy}>
+  return <div className={`studio ${focus?'focus-mode':''} ${fileOpen?'file-open':''}`} aria-busy={busy}>
     <TitleBar name={doc.name} save={() => void save()} undo={undo} redo={redo} settings={() => setModal('settings')} canUndo={past.length > 0} canRedo={future.length > 0}/>
     <input ref={input} type="file" accept={imageFileAccept} hidden onChange={e => void openFile(e.target.files?.[0])}/>
     <input ref={projectInput} type="file" accept=".ifcx,.ifcxb" hidden onChange={e => void openFile(e.target.files?.[0])}/>
     <nav className="ribbon-tabs" aria-label="Ribbon">
       <RibbonTab label={t('file')} isFileTab onClick={() => setFileOpen(!fileOpen)}/>
-      {(['home', 'image', 'view', 'automation'] as const).map(id => <RibbonTab key={id} label={t(id)} isActive={tab === id} onClick={() => { setTab(id); setFileOpen(false); }}/>) }
+      {(['home'] as const).map(id => <RibbonTab key={id} label={t(id)} isActive={tab === id} onClick={() => { setTab(id); setFileOpen(false); }}/>) }
       <span className="ribbon-hint">{t('about')}</span>
     </nav>
     <section className={`paint-ribbon ${tab==='home'?'home-ribbon':''}`} aria-label={t(tab as 'home' | 'image' | 'view' | 'automation')}>
@@ -441,7 +443,7 @@ export default function App() {
           {tool==='text'&&<div className="text-settings"><select aria-label="Font" value={textFont} onChange={e=>setTextFont(e.target.value as typeof textFont)}><option value="sans-serif">Sans serif</option><option value="serif">Serif</option><option value="monospace">Monospace</option></select><label><input type="checkbox" checked={textBold} onChange={e=>setTextBold(e.target.checked)}/>{language==='nl'?'Vet':'Bold'}</label></div>}
           {tool==='select'&&typeof selection==='number'&&<RibbonMenu icon={MousePointer2} label="Object">          {selectedOperation?.type==='text'&&<div className="text-settings"><select aria-label="Font" value={textFont} onChange={e=>setTextFont(e.target.value as typeof textFont)}><option value="sans-serif">Sans serif</option><option value="serif">Serif</option><option value="monospace">Monospace</option></select><label><input type="checkbox" checked={textBold} onChange={e=>setTextBold(e.target.checked)}/>{language==='nl'?'Vet':'Bold'}</label></div>}{selectedOperation&&'filled' in selectedOperation&&<label><input type="checkbox" checked={filled} onChange={e=>setFilled(e.target.checked)}/>{t('filled')}</label>}          {tool==='select'&&selection!==null&&selectedOperation&&<div className="object-actions"><button className="ribbon-small-button" disabled={!('color' in selectedOperation)} onClick={()=>{if(!('color' in selectedOperation))return;const op={...selectedOperation,color,...('size' in selectedOperation?{size,opacity:opacity/100}:{}),...(selectedOperation.type==='text'?{fontFamily:textFont,bold:textBold}:{}),...('filled' in selectedOperation?{filled}: {})};commit({...doc,operations:doc.operations.map((item,i)=>i===selection?op:item)});}}>{t('objectApply')}</button><button className="ribbon-small-button" onClick={()=>{commit({...doc,operations:doc.operations.filter((_,i)=>i!==selection)});setSelection(null);}}><Trash2 size={13}/>{t('deleteObject')}</button></div>}</RibbonMenu>}
         </div></RibbonGroup>
-        <RibbonGroup label={t('colors')}><div className="color-control"><label className="current-color" style={{ background: color }} title={t('color')}><input type="color" aria-label={t('color')} value={color} onChange={e => setColor(e.target.value)}/></label><div className="palette">{palette.map(c => <button key={c} style={{ background: c }} className={c === color ? 'color-active' : ''} title={c} aria-label={c} onClick={() => setColor(c)}/>)}</div></div></RibbonGroup>
+        <RibbonGroup label={t('colors')}><div className="color-control"><ColorMenu color={color} onChange={setColor} title={t('color')}/><div className="palette">{palette.map(c => <button key={c} style={{ background: c }} className={c === color ? 'color-active' : ''} title={c} aria-label={c} onClick={() => setColor(c)}/>)}</div></div></RibbonGroup>
         <RibbonGroup label={t('image')}><div className="image-commands">
           <button onClick={()=>{setTool('crop');notify(t('cropHint'));}}><Crop size={16}/>{t('crop')}</button>
           <button onClick={()=>{setNewWidth(doc.width);setNewHeight(doc.height);setModal('resize');}}><Scaling size={16}/>{t('resize')}</button>
@@ -457,13 +459,43 @@ export default function App() {
         <RibbonGroup label={t('view')}><div className="view-commands"><button onClick={fit}><Scan size={16}/>{t('fit')}</button>
           <RibbonMenu icon={Grid2X2} label={t('view')}><button onClick={()=>setGrid(!grid)} aria-pressed={grid}><Grid2X2 size={16}/>{t('grid')}{grid&&<Check size={14}/>}</button><button onClick={()=>setZoom(100)}>{t('actual')}</button><button onClick={()=>safeZoom(zoom-25)}><ZoomOut size={16}/>−</button><button onClick={()=>safeZoom(zoom+25)}><ZoomIn size={16}/>+</button><hr/><button onClick={()=>setInspectorOpen(!inspectorOpen)}><PanelRight size={16}/>{t('properties')}</button><button onClick={()=>setFocus(!focus)}><Maximize2 size={16}/>{t('fullscreen')}</button><button onClick={()=>setModal('settings')}>{t('settings')}</button></RibbonMenu>
           <button onClick={()=>setFocus(!focus)}><Maximize2 size={16}/>{t('fullscreen')}</button>
+        </div><div className="icon-commands">
+          <button onClick={()=>safeZoom(zoom-25)} title={t('zoomOut')} aria-label={t('zoomOut')}><ZoomOut size={16}/></button>
+          <button onClick={()=>safeZoom(zoom+25)} title={t('zoomIn')} aria-label={t('zoomIn')}><ZoomIn size={16}/></button>
+          <button onClick={()=>setZoom(100)} title={t('actual')} aria-label={t('actual')}><ImageIcon size={16}/></button>
+        </div></RibbonGroup>
+        <RibbonGroup label="API"><div className="icon-commands">
+          <button onClick={()=>setModal('api')} title={t('connect')} aria-label={t('connect')}><Plug size={16}/></button>
+          <button onClick={()=>token ? void apiAction('push') : setModal('api')} disabled={apiBusy} title={t('push')} aria-label={t('push')}><Upload size={16}/></button>
+          <button onClick={()=>setModal('api')} title={t('pull')} aria-label={t('pull')}><ArrowDownToLine size={16}/></button>
         </div></RibbonGroup>
       </>}
-      {tab === 'image' && <RibbonGroup label={t('image')}><Action icon={Crop} label={t('crop')} onClick={() => { setTool('crop'); notify(t('cropHint')); }} active={tool === 'crop'}/><Action icon={Scaling} label={t('resize')} onClick={() => { setNewWidth(doc.width); setNewHeight(doc.height); setModal('resize'); }}/><Action icon={RotateCw} label={t('rotate')} onClick={() => void transform('rotate')}/><Action icon={FlipHorizontal2} label={t('flip')} onClick={() => void transform('flip')}/><Action icon={FlipVertical2} label={t('flipVertical')} onClick={() => void transform('flipVertical')}/><Action icon={RotateCcw} label={t('rotateLeft')} onClick={() => void transform('rotateLeft')}/><Action icon={Contrast} label={t('grayscale')} onClick={()=>void filterImage('grayscale')}/><Action icon={Blend} label={t('invert')} onClick={()=>void filterImage('invert')}/><Action icon={SlidersHorizontal} label={t('adjustments')} onClick={()=>{setCorrections({brightness:0,contrast:0,saturation:100});setModal('adjust');}}/></RibbonGroup>}
-      {tab === 'view' && <><RibbonGroup label={t('zoom')}><Action icon={ZoomOut} label="−" onClick={() => safeZoom(zoom - 25)}/><Action icon={ZoomIn} label="+" onClick={() => safeZoom(zoom + 25)}/><Action icon={Scan} label={t('fit')} onClick={fit}/><Action icon={ImageIcon} label={t('actual')} onClick={() => setZoom(100)}/></RibbonGroup><RibbonGroup label={t('canvas')}><Action icon={Grid2X2} label={t('grid')} onClick={() => setGrid(!grid)} active={grid}/></RibbonGroup></>}
-      {tab === 'automation' && <><RibbonGroup label="API · MCP"><Action icon={Plug} label={t('connect')} onClick={() => setModal('api')}/><Action icon={Upload} label={t('push')} onClick={() => token ? void apiAction('push') : setModal('api')} disabled={apiBusy}/><Action icon={ArrowDownToLine} label={t('pull')} onClick={() => setModal('api')}/></RibbonGroup><p className="automation-hint">REST API · 127.0.0.1:47831<br/>MCP · stdio · <code>pnpm mcp</code></p></>}
     </section>
-    {fileOpen && <div className="backstage"><header><img src="/brand/openaec-symbol-transparent.svg" alt=""/><h2>Paint Studio</h2><button onClick={() => setFileOpen(false)} aria-label="Close">×</button></header><div className="file-actions"><Action icon={FilePlus2} label={t('new')} onClick={actionNew}/><Action icon={FolderOpen} label={t('open')} onClick={chooseFile}/><Action icon={FolderOpen} label={language==='nl'?'IFCX openen':'Open IFCX'} onClick={()=>{projectInput.current?.click();setFileOpen(false);}}/><Action icon={Save} label={t('save')} onClick={() => { void save(); setFileOpen(false); }}/><Action icon={Download} label={t('export')} onClick={() => { void exportPng(); setFileOpen(false); }}/><Action icon={Download} label={t('exportSvg')} onClick={()=>void exportOther('svg')}/><Action icon={Download} label="IFCX (raster)" onClick={()=>void exportOther('ifcx')}/><Action icon={Download} label="IFCXB (raster)" onClick={()=>void exportOther('ifcxb')}/><Action icon={Download} label="JPEG" onClick={()=>void exportOther('jpeg')}/><Action icon={Download} label="WebP" onClick={()=>void exportOther('webp')}/></div><button className="wide-button" onClick={()=>void showFormats()}>{t('formats')}</button><p>IFCX · IFCXB · PNG · JPEG · TIFF · HEIC · PSD · SVG · …</p><small>{t('about')}</small></div>}
+    {fileOpen && (() => {
+      const close = () => setFileOpen(false);
+      const then = (action: () => void) => () => { close(); action(); };
+      const titles: Record<BackstagePage, string> = { new: t('fileNew'), open: t('open'), save: t('fileSave'), export: t('fileExport'), formats: t('fileFormats'), about: t('fileAbout') };
+      const leads: Record<BackstagePage, string> = { new: t('newLead'), open: t('openLead'), save: t('saveLead'), export: t('exportLead'), formats: t('formatsLead'), about: t('aboutLead') };
+      return <Backstage page={filePage} onPage={page => { setFilePage(page); if (page === 'formats' && !formats.length) void supportedFormats().then(list => setFormats(list.formats)).catch(fail); }}
+        pages={{ task: [['new', titles.new], ['open', titles.open], ['save', titles.save], ['export', titles.export]], other: [['formats', titles.formats], ['about', titles.about]] }}
+        heading={titles[filePage]} lead={leads[filePage]}
+        settings={[t('fileSettings'), then(() => setModal('settings'))]} back={[t('fileBack'), close]}
+        exit={isDesktop() ? [t('fileExit'), () => void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close()).catch(fail)] : null}>
+        {filePage === 'new' && <BackstageTiles tiles={[{ title: t('new') + '…', detail: t('newCanvasDetail'), onClick: actionNew }]}/>}
+        {filePage === 'open' && <BackstageTiles tiles={[{ title: t('openImage'), detail: t('openImageDetail'), onClick: chooseFile }, { title: t('openProject'), detail: t('openProjectDetail'), onClick: then(() => projectInput.current?.click()) }]}/>}
+        {filePage === 'save' && <BackstageTiles tiles={[{ title: t('save'), detail: t('saveDetail'), onClick: then(() => void save()) }]}/>}
+        {filePage === 'export' && <BackstageTiles tiles={[
+          { title: 'PNG', detail: t('exportPngDetail'), onClick: then(() => void exportPng()) },
+          { title: 'JPEG', detail: t('exportJpegDetail'), onClick: then(() => void exportOther('jpeg')) },
+          { title: 'WebP', detail: t('exportWebpDetail'), onClick: then(() => void exportOther('webp')) },
+          { title: 'SVG', detail: t('exportSvgDetail'), onClick: then(() => void exportOther('svg')) },
+          { title: 'IFCX (raster)', detail: t('exportRasterDetail'), onClick: then(() => void exportOther('ifcx')) },
+          { title: 'IFCXB (raster)', detail: t('exportRasterDetail'), onClick: then(() => void exportOther('ifcxb')) },
+        ]}/>}
+        {filePage === 'formats' && <div className="format-list backstage-formats">{formats.map(item => <span key={item.format} title={item.description}>{item.format}</span>)}</div>}
+        {filePage === 'about' && <div className="backstage-about"><strong>OpenAEC Paint Studio · {releaseVersion}</strong><p>{t('about')}</p><a href="https://github.com/OpenAEC-Foundation/OpenAEC-style-book" target="_blank" rel="noreferrer">OpenAEC style book · CC BY-SA 4.0</a></div>}
+      </Backstage>;
+    })()}
     <div className="document-bar"><div className="document-tab"><ImageIcon size={14}/><span>{doc.name}.ifcx</span><span className="tab-dot" title={t(draftStatus)}/></div><button onClick={actionNew} title={t('new')} aria-label={t('new')}>+</button><span className="workspace-label">{t('local')}</span></div>
     <div className="work-area">
 
@@ -491,7 +523,6 @@ export default function App() {
     <Dialog title={t('new')} open={modal === 'new'} close={() => setModal('')}><form onSubmit={e => { e.preventDefault(); try { if (doc.operations.length && !window.confirm(t('replaceConfirm'))) return; commit({ ...newDocument(newWidth, newHeight, newName), background: newBackground }); setRemote(null); setModal(''); } catch (error) { fail(error); } }}><label>{t('name')}<input required maxLength={120} value={newName} onChange={e => setNewName(e.target.value)}/></label><div className="form-row"><label>{t('width')}<input required type="number" min="1" max="4096" value={newWidth} onChange={e => setNewWidth(+e.target.value)}/></label><label>{t('height')}<input required type="number" min="1" max="4096" value={newHeight} onChange={e => setNewHeight(+e.target.value)}/></label></div><div className="presets">{[[1200, 800], [1920, 1080], [1024, 1024], [800, 600]].map(([w, h]) => <button type="button" key={w} onClick={() => { setNewWidth(w); setNewHeight(h); }}>{w} × {h}</button>)}</div><label>{t('background')}<select value={newBackground} onChange={e => setNewBackground(e.target.value)}><option value="#ffffff">{t('white')}</option><option value="transparent">{t('transparent')}</option></select></label><button className="primary" type="submit">{t('create')}</button></form></Dialog>
     <Dialog title={t('resize')} open={modal === 'resize'} close={() => setModal('')}><form onSubmit={e => { e.preventDefault(); void transform('resize'); }}><div className="form-row"><label>{t('width')}<input required type="number" min="1" max="4096" value={newWidth} onChange={e => setNewWidth(+e.target.value)}/></label><label>{t('height')}<input required type="number" min="1" max="4096" value={newHeight} onChange={e => setNewHeight(+e.target.value)}/></label></div><button className="primary" type="submit">{t('apply')}</button></form></Dialog>
     <Dialog title={t('adjustments')} open={modal==='adjust'} close={()=>setModal('')}><p>{t('vectorHint')}</p>{(['brightness','contrast','saturation'] as const).map(key=><label key={key}>{t(key==='contrast'?'contrastValue':key)} <span>{corrections[key]}</span><input type="range" min={key==='saturation'?0:-100} max={key==='saturation'?200:100} value={corrections[key]} onChange={e=>setCorrections(value=>({...value,[key]:+e.target.value}))}/></label>)}<button className="primary" onClick={()=>void filterImage('adjust')}>{t('apply')}</button></Dialog>
-    <Dialog title={t('formats')} open={modal==='formats'} close={()=>setModal('')}><p>PNG · JPEG · GIF · WebP · BMP · TIFF · HEIC / HEIF · AVIF · PSD · SVG · ICO · TGA · JPEG XL · JPEG 2000 · EXR · RAW</p><p>{language==='nl'?'Bij animaties en bestanden met meerdere pagina’s wordt het eerste beeld geopend. Grote afbeeldingen worden passend gemaakt.':'Animations and multipage files open as a single first frame. Large images are scaled to fit.'}</p><div className="format-list">{formats.map(item=><span key={item.format} title={item.description}>{item.format}</span>)}</div></Dialog>
     <Dialog title={t('settings')} open={modal === 'settings'} close={() => setModal('')}><label>{t('theme')}<select aria-label={t('theme')} value={theme} onChange={e => setTheme(e.target.value)}>{(['light', 'forge', 'openaec', 'blueprint', 'contrast'] as const).map(id => <option key={id} value={id}>{t(id)}</option>)}</select></label><label>{t('language')}<select aria-label={t('language')} value={language} onChange={e => setLanguage(e.target.value as 'en' | 'nl')}><option value="nl">Nederlands</option><option value="en">English</option></select></label><h3>{t('shortcuts')}</h3><p>{t('help')}</p><p>Ctrl+S · Ctrl+O · Ctrl+Z · Ctrl+Shift+Z<br/>Shift: 45° / 1:1 · [ / ]: {t('size')}</p><div className="about-note"><strong>OpenAEC Paint Studio · {releaseVersion}</strong><p>{t('about')}</p><a href="https://github.com/OpenAEC-Foundation/OpenAEC-style-book" target="_blank" rel="noreferrer">OpenAEC style book · CC BY-SA 4.0</a></div></Dialog>
     <Dialog title="API · MCP" open={modal === 'api'} close={() => setModal('')}><p>{t('apiHint')}</p><code>{apiBase}</code><label>{t('token')}<input type="password" autoComplete="off" value={token} onChange={e => { setToken(e.target.value); setRemote(null); }}/></label><div className="form-row"><button className="wide-button" disabled={apiBusy || !token} onClick={() => void apiAction('list')}>{t('connect')}</button><button className="primary" disabled={apiBusy || !token} onClick={() => void apiAction('push')}>{t('push')}</button></div><label>{t('documentId')}<input value={remoteId} onChange={e => setRemoteId(e.target.value)}/></label>{remoteList.length > 0 && <select aria-label={t('project')} onChange={e => setRemoteId(e.target.value)} value={remoteId}><option value="">—</option>{remoteList.map(item => <option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select>}<button className="wide-button" disabled={apiBusy || !token || !remoteId} onClick={() => void apiAction('pull')}>{t('pull')}</button>{remote && <small>{remote.id} · revision {remote.revision}</small>}</Dialog>
   </div>;
