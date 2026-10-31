@@ -17,7 +17,8 @@ use open_paint_studio::window::{keys, Event, Window};
 use std::process::Command as Process;
 use std::time::Instant;
 
-static ICON: &[u8] = include_bytes!("../assets/icon/open-paint-studio-64.png");
+/// The 64-pixel icon as width, height (little-endian) and RGBA, from build.rs.
+static ICON: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
 
 // --- Dialogs through zenity, as the DynLex edition; "" when cancelled. ---
 
@@ -34,7 +35,7 @@ fn path_to_open() -> String {
     zenity(&[
         "--file-selection",
         "--title=Open image",
-        "--file-filter=Images | *.png *.PNG *.jpg *.jpeg *.JPG *.gif *.bmp *.webp *.tif *.tiff *.ico *.tga *.qoi *.ppm *.pnm *.pgm *.pbm *.hdr *.exr *.dds *.ff *.svg",
+        "--file-filter=Images | *.png *.PNG *.jpg *.jpeg *.JPG *.gif *.bmp *.webp *.avif *.heic *.jxl *.tif *.tiff *.ico *.tga *.qoi *.ppm *.pnm *.svg",
         "--file-filter=All files | *",
     ])
 }
@@ -399,10 +400,8 @@ fn main() {
         .iter()
         .find_map(|path| Face::from_file(&library, path))
         .expect("No usable font found (install DejaVu Sans).");
-    let icon = image::load_from_memory(ICON).ok().map(|i| {
-        let rgba = i.to_rgba8();
-        (rgba.width(), rgba.height(), rgba.into_raw())
-    });
+    let side = |at: usize| u32::from_le_bytes(ICON[at..at + 4].try_into().unwrap());
+    let icon = Some((side(0), side(4), ICON[8..].to_vec()));
     let window = Window::open(1440, 940, "Open Paint Studio", icon).unwrap_or_else(|message| {
         eprintln!("{message}");
         std::process::exit(1)

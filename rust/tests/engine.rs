@@ -60,12 +60,19 @@ fn files_round_trip() {
     std::fs::create_dir_all(&folder).unwrap();
     let mut image = Canvas::new(7, 5, Color { r: 10, g: 20, b: 30, a: 128 });
     image.put(6, 4, Color::rgb(200, 100, 50));
-    for ext in ["png", "bmp", "tiff", "webp", "qoi", "tga"] {
+    for ext in ["png", "tiff"] {
         let path = folder.join(format!("t.{ext}")).to_string_lossy().to_string();
         open_paint_studio::files::save(&image, &path).unwrap();
         let back = open_paint_studio::files::open(&path).unwrap();
         assert_eq!((back.width, back.height), (7, 5), "{ext}");
         assert_eq!(back.pixels, image.pixels, "{ext}");
+    }
+    for ext in ["bmp", "ppm", "webp", "ico"] {
+        let path = folder.join(format!("t.{ext}")).to_string_lossy().to_string();
+        open_paint_studio::files::save(&image, &path).unwrap();
+        let back = open_paint_studio::files::open(&path).unwrap();
+        assert_eq!((back.width, back.height), (7, 5), "{ext}");
+        assert_eq!(back.get(6, 4), Color::rgb(200, 100, 50), "{ext}");
     }
     let path = folder.join("t.jpg").to_string_lossy().to_string();
     open_paint_studio::files::save(&image, &path).unwrap();

@@ -13,11 +13,15 @@ path = "src/main.rs"
 [dependencies]
 x11rb = { version = "0.13", default-features = false, features = [] }
 freetype-rs = "0.38"
-resvg = { version = "0.49", default-features = false }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tiff", "webp", "ico", "tga", "qoi", "pnm", "hdr", "exr", "dds", "ff"] }
+
+[build-dependencies]
+png = "0.18"
 
 [profile.release]
+# Fat LTO in one unit and no symbols: the smallest program without giving up
+# speed (opt-level "s" saves another 66 KB and slows the pixel loops).
 opt-level = 3
-lto = "thin"
-codegen-units = 16
+lto = "fat"
+codegen-units = 1
 panic = "abort"
+strip = true
