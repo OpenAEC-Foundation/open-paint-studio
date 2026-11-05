@@ -184,15 +184,18 @@ are ready to edit; redraw is one frame at a new zoom level.
 | image | Tauri: decode / first frame / redraw | Rust: decode / first frame / redraw, peak | Open Paint Studio: decode / first frame / redraw, peak |
 |---|---|---|---|
 | 4K JPEG, 8.3 MP | 1861 / 180 / 32 ms | 47 / 8 / 5 ms, 123 MB | 36 / 6 / 4 ms, 70 MB |
-| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 196 / 6 / 4 ms, 91 MB |
+| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 61 / 6 / 4 ms, 91 MB |
 | 8K JPEG, 33 MP | 2220 / 178 / 32 ms (kept at 8.4 MP) | 128 / 8 / 6 ms, 317 MB | 118 / 6 / 4 ms, 206 MB |
-| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 775 / 7 / 4 ms, 281 MB |
+| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 191 / 6 / 4 ms, 281 MB |
 | 16K JPEG, 133 MP | refused: more than 64 megapixels | 439 / 8 / 6 ms, 1.10 GB | 428 / 7 / 4 ms, 0.75 GB |
 | 16384² JPEG, 268 MP | refused | 831 / 8 / 6 ms, 2.16 GB | 751 / 7 / 4 ms, 1.49 GB |
 
-The JPEG decoder runs the inverse DCT and colour conversion over all cores;
-the PNG inflater is single-threaded and still slower than libpng (107 and
-419 ms with it). The canvas is sampled at screen resolution over all cores,
+The JPEG decoder runs the inverse DCT and colour conversion over all cores.
+The PNG decoder inflates on one thread (eight input bytes at a time, a
+10-bit code lookup, matches copied eight bytes at a time; as fast as zlib on
+these files) while a second unfilters and places the rows as they arrive,
+with a branchless Paeth predictor; the compressed data is joined in place.
+With libpng the same files took 107 and 419 ms. The canvas is sampled at screen resolution over all cores,
 so redraws stay at 4 ms however large the image.
 
 **Code** (the browser editor at `3cb049c`)

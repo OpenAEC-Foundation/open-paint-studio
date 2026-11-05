@@ -3,6 +3,7 @@
 # written as eight-bit RGBA with the deflater in paint/inflate.dl.
 import dynlex/paint/decoded.dl
 import dynlex/paint/inflate.dl
+import lib/atomic.dl
 
 local function paint png pass start x {integer:pass}:
     execute:
@@ -61,28 +62,76 @@ local function unfilter {pointer:row} of {integer:size} by {integer:step} after 
     execute:
         set kind to (the byte 0 in row)
         set data to (row as a pointer to a byte) + 1
-        if kind = 0:
-            return nothing
-        loop index from 0 to size:
-            set left to 0
-            if index >= step:
-                set left to the byte (index - step) in data
-            set up to 0
-            set upLeft to 0
-            if previous != (0 as pointer):
-                set up to the byte index in previous
-                if index >= step:
-                    set upLeft to the byte (index - step) in previous
-            set value to the byte index in data
-            if kind = 1:
-                set value to value + left
-            else if kind = 2:
-                set value to value + up
-            else if kind = 3:
-                set value to value + ((left + up) / 2)
-            else if kind = 4:
-                set value to value + (the paeth of left up upLeft)
-            store ((value & 255) as a byte) at (data + index)
+        # previous is a row of zeros above the first row.
+        set above to previous as a pointer to a byte
+        if kind = 1:
+            loop index from step to size:
+                store ((((the item at index in data) as an integer) + ((the item at (index - step) in data) as an integer)) as a byte) at (data + index)
+        else if kind = 2:
+            loop index from 0 to size:
+                store ((((the item at index in data) as an integer) + ((the item at index in above) as an integer)) as a byte) at (data + index)
+        else if kind = 3:
+            loop index from 0 to step:
+                store ((((the item at index in data) as an integer) + ((((the item at index in above) as an integer) & 255) >> 1)) as a byte) at (data + index)
+            loop index from step to size:
+                set left to ((the item at (index - step) in data) as an integer) & 255
+                set up to ((the item at index in above) as an integer) & 255
+                store ((((the item at index in data) as an integer) + ((left + up) >> 1)) as a byte) at (data + index)
+        else if kind = 4:
+            loop index from 0 to step:
+                store ((((the item at index in data) as an integer) + ((the item at index in above) as an integer)) as a byte) at (data + index)
+            loop index from step to size:
+                set left to ((the item at (index - step) in data) as an integer) & 255
+                set up to ((the item at index in above) as an integer) & 255
+                set corner to ((the item at (index - step) in above) as an integer) & 255
+                # Paeth: the neighbour nearest to left + up - corner, without
+                # branches (sign masks select), as the choice is unpredictable.
+                set toLeft to up - corner
+                set toUp to left - corner
+                set toCorner to toLeft + toUp
+                set sign to toLeft >> 31
+                set toLeft to (toLeft ^ sign) - sign
+                set sign to toUp >> 31
+                set toUp to (toUp ^ sign) - sign
+                set sign to toCorner >> 31
+                set toCorner to (toCorner ^ sign) - sign
+                # up unless the corner is strictly nearer, then left unless
+                # that one is strictly nearer than left.
+                set pick to (toCorner - toUp) >> 31
+                set nearest to up ^ ((up ^ corner) & pick)
+                set distance to toUp ^ ((toUp ^ toCorner) & pick)
+                set pick to (distance - toLeft) >> 31
+                set predicted to left ^ ((left ^ nearest) & pick)
+                store ((((the item at index in data) as an integer) + predicted) as a byte) at (data + index)
+
+# An eight-bit grey, grey-alpha, RGB or RGBA row (no transparency key) into
+# the image's row y.
+local function copy eight-bit row {pointer:samples} of {integer:columns} holding {integer:channels} into {paint canvas:image} at line {integer:y}:
+    execute:
+        set source to samples as a pointer to a byte
+        set target to (image's pixels) + ((y * image's width) * 4)
+        if channels = 4:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, target, source, (columns * 4) as a word sized integer)
+        else if channels = 3:
+            set words to target as a pointer to an integer
+            set cursor to source
+            loop column from 0 to columns:
+                set first to ((the item at 0 in cursor) as an integer) & 255
+                set second to ((the item at 1 in cursor) as an integer) & 255
+                set third to ((the item at 2 in cursor) as an integer) & 255
+                store (((first | (second << 8)) | (third << 16)) | (-16777216)) at (words + column)
+                set cursor to cursor + 3
+        else if channels = 1:
+            set words to target as a pointer to an integer
+            loop column from 0 to columns:
+                set grey to ((the item at column in source) as an integer) & 255
+                store (((grey | (grey << 8)) | (grey << 16)) | (-16777216)) at (words + column)
+        else:
+            set words to target as a pointer to an integer
+            loop column from 0 to columns:
+                set grey to ((the item at (column * 2) in source) as an integer) & 255
+                set alpha to ((the item at ((column * 2) + 1) in source) as an integer) & 255
+                store (((grey | (grey << 8)) | (grey << 16)) | (alpha << 24)) at (words + column)
 
 # The sample numbered index (depth bits each) in the row, scaled to 8 bits
 # when scale is set (grey levels), raw otherwise (palette indices).
@@ -162,6 +211,40 @@ local function place row {pointer:samples} of {integer:columns} as {paint png he
             store (alpha as a byte) at (target + (offset + 3))
             ignore channels
 
+# The inflating thread's work: cells hold the bytes done (0), whether the
+# data was whole (1) and whether the thread has finished (2).
+class:
+    patterns:
+        [a|] png inflate job
+    members:
+        pjInput as a pointer to a byte
+        pjCount as an integer
+        pjOutput as a pointer to a byte
+        pjExpected as an integer
+        pjCells as a pointer to an integer
+
+function inflate png data {pointer:address}:
+    execute:
+        set job to address as a pointer to a png inflate job
+        set result to the zlib inflation of (job's pjInput as pointer) spanning (job's pjCount) into (job's pjOutput as pointer) of (job's pjExpected) reporting (job's pjCells)
+        if (result's valid) and ((result's count) >= (job's pjExpected)):
+            store 1 at ((job's pjCells) + 1)
+        atomically store release 1 at ((job's pjCells) + 2)
+        return 0 as a pointer
+
+# Waits until the inflating thread has written the bytes; false when it
+# finished without them.
+local function wait for {integer:needed} bytes of {a pointer to an integer:cells}:
+    execute:
+        loop while true:
+            if (atomically load acquire cells) >= needed:
+                return true
+            if (atomically load acquire (cells + 2)) = 1:
+                return (atomically load acquire cells) >= needed
+            ignore @intrinsic("call", "libc", "sched_yield", an integer)
+
+# Decodes the PNG in memory. Its image data is joined in place, so the bytes
+# are changed: give it a buffer that is read for this alone.
 function the paint png from {pointer:bytes} spanning {integer:count}:
     execute:
         if (count < 33) or (((the byte 0 in bytes) != 137) or (((the byte 1 in bytes) != 80) or (((the byte 2 in bytes) != 78) or ((the byte 3 in bytes) != 71)))):
@@ -232,16 +315,28 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
             set keyRed to keyRed >> 8
             set keyGreen to keyGreen >> 8
             set keyBlue to keyBlue >> 8
-        # Second pass: the image data, joined.
-        set joined to @intrinsic("call", "libc", "malloc", a pointer to a byte, (the maximum of dataSize and 1) as a word sized integer)
+        # Second pass: the image data joined in place, over the chunk
+        # headers between the IDAT chunks (the file's bytes are the
+        # decoder's to use; what comes before the first IDAT, the palette
+        # among it, stays as it is).
+        set joined to 0 as a pointer to a byte
         set filled to 0
         set at to 8
-        loop while (at + 8) <= count:
+        set ended to false
+        loop while ((at + 8) <= count) and (ended = false):
             set size to the big-endian word at in bytes
+            set next to (at + 12) + size
             if the bytes (at + 4) in bytes spell "IDAT":
-                ignore @intrinsic("call", "libc", "memcpy", a pointer, joined + filled, (bytes as a pointer to a byte) + (at + 8), size as a word sized integer)
+                if joined = (0 as a pointer to a byte):
+                    set joined to (bytes as a pointer to a byte) + (at + 8)
+                else:
+                    ignore @intrinsic("call", "libc", "memmove", a pointer, joined + filled, (bytes as a pointer to a byte) + (at + 8), size as a word sized integer)
                 set filled to filled + size
-            set at to (at + 12) + size
+            else if the bytes (at + 4) in bytes spell "IEND":
+                set ended to true
+            set at to next
+        if joined = (0 as a pointer to a byte):
+            return no decoded image because "the PNG holds no image data"
         set bitsPerPixel to channels * depth
         set step to the maximum of 1 and (bitsPerPixel / 8)
         # The unfiltered size: every pass's rows, a filter byte each.
@@ -257,15 +352,22 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
                 set rows to ((height - (paint png pass start y pass)) + ((paint png pass step y pass) - 1)) / (paint png pass step y pass)
             if (columns > 0) and (rows > 0):
                 set expected to expected + (rows * (1 + (((columns * bitsPerPixel) + 7) / 8)))
-        set raw to the zlib inflation of joined spanning filled expecting expected
-        @intrinsic("call", "libc", "free", nothing, joined)
-        if (raw's valid = false) or (raw's count < expected):
-            if raw's valid:
-                @intrinsic("call", "libc", "free", nothing, raw's bytes)
-            return no decoded image because "the PNG's image data is damaged"
+        # The image data is inflated on a second thread while this one
+        # unfilters and places the rows already there.
+        set raw to @intrinsic("call", "libc", "malloc", a pointer to a byte, (expected + 600) as a word sized integer)
+        set cells to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set job to @intrinsic("construct", a png inflate job, joined, filled, raw, expected, cells)
+        set thread to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 1 as a word sized integer, 8 as a word sized integer)
+        set threaded to false
+        if expected >= 1048576:
+            set threaded to (@intrinsic("call", "libc", "pthread_create", an integer, thread, 0 as a pointer, the function named "inflate png data $", (the address of job) as a pointer)) = 0
+        if threaded = false:
+            ignore inflate png data ((the address of job) as a pointer)
         set header to @intrinsic("construct", a paint png header, width, height, depth, colour, interlaced, channels)
         set image to an unfilled paint canvas width by height
+        set zeros to @intrinsic("call", "libc", "calloc", a pointer to a byte, ((((width * bitsPerPixel) + 7) / 8) + 8) as a word sized integer, 1 as a word sized integer)
         set at to 0
+        set damaged to false
         loop pass from 0 to passes:
             set columns to width
             set rows to height
@@ -282,14 +384,36 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
                 set rows to ((height - y0) + (stepY - 1)) / stepY
             if (columns > 0) and (rows > 0):
                 set rowBytes to ((columns * bitsPerPixel) + 7) / 8
-                set previous to 0 as pointer
+                set previous to zeros as pointer
+                set direct to ((depth = 8) and (colour != 3)) and ((keyed = false) and (interlaced = false))
                 loop lineIndex from 0 to rows:
-                    set rowStart to (raw's bytes) + at
-                    unfilter (rowStart as pointer) of rowBytes by step after previous
-                    place row ((rowStart + 1) as pointer) of columns as header into image placing (y0 + (lineIndex * stepY)) starting x0 stepping stepX with palette palette of colours transparency alphas of alphaCount key keyRed keyGreen keyBlue keyed keyed
+                    if damaged = false:
+                        set damaged to (wait for (at + (1 + rowBytes)) bytes of cells) = false
+                    if damaged:
+                        # Rows that never arrived stay as the allocation
+                        # left them; the image is refused below.
+                        set at to at
+                    set rowStart to raw + at
+                    if damaged = false:
+                        unfilter (rowStart as pointer) of rowBytes by step after previous
+                    if damaged:
+                        set direct to direct
+                    else if direct:
+                        copy eight-bit row ((rowStart + 1) as pointer) of columns holding channels into image at line lineIndex
+                    else:
+                        place row ((rowStart + 1) as pointer) of columns as header into image placing (y0 + (lineIndex * stepY)) starting x0 stepping stepX with palette palette of colours transparency alphas of alphaCount key keyRed keyGreen keyBlue keyed keyed
                     set previous to (rowStart + 1) as pointer
                     set at to at + (1 + rowBytes)
-        @intrinsic("call", "libc", "free", nothing, raw's bytes)
+        if threaded:
+            ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at 0 in thread, 0 as a pointer)
+        set damaged to damaged or ((the item at 1 in cells) = 0)
+        @intrinsic("call", "libc", "free", nothing, thread)
+        @intrinsic("call", "libc", "free", nothing, cells)
+        @intrinsic("call", "libc", "free", nothing, raw)
+        @intrinsic("call", "libc", "free", nothing, zeros)
+        if damaged:
+            free paint canvas image
+            return no decoded image because "the PNG's image data is damaged"
         return a decoded image
 
 # --- Writing ---
