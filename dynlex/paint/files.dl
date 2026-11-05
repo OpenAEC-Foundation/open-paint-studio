@@ -241,7 +241,7 @@ function the paint image opened from {string:path}:
         set count to buffer's length
         set first to the byte at 0 of buffer
         set second to the byte at 1 of buffer
-        set result to a failed paint file with "a file format the editor does not read (WebP, AVIF, HEIC, JPEG XL and JPEG 2000 are not supported yet)"
+        set result to a failed paint file with "a file format the editor does not read (AVIF, HEIC, JPEG XL and JPEG 2000 are not supported yet)"
         if (first = 66) and (second = 77):
             set result to (the paint bmp from data spanning count) as a paint file
         else if (first = 80) and ((second >= 49) and (second <= 54)):

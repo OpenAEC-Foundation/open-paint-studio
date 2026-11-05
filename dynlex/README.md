@@ -105,9 +105,10 @@ contents rather than its name:
 | TIFF | strips; none, LZW, deflate, PackBits; 1/8/16 bit, palettes | — |
 | TGA, ICO, QOI, PNM (P1–P6), XBM, XPM | `paint/formats.dl` | PPM |
 | DDS | uncompressed bit-mask layouts, BC1–BC5 and BC7 (DX9 and DX10 headers) | — |
+| WebP | lossless (all four transforms, colour cache, meta prefix codes; `paint/webp.dl`) and lossy (VP8 key frames with segments, token partitions, both loop filters; `paint/vp8.dl`), alpha plane, extended and animated files (first frame) | — |
 | SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
-Not read yet: WebP, AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
+Not read yet: AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
 (BC6H), lossless and arithmetic-coded JPEG.
 
 `tests/images/make_test_images.py` writes a test set:
@@ -117,7 +118,7 @@ Not read yet: WebP, AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
 
 `bench/open_images.dl` opens them all and `tests/images/compare.py` checks
 each against an independent decoder (Pillow or gdk-pixbuf), comparing colours
-premultiplied by alpha. State on 2026-11-05: all 80 images in the formats the
+premultiplied by alpha. State on 2026-11-05: all 88 images in the formats the
 editor reads match (DDS: Pillow-encoded DXT1/3/5 and BC3, and BC1, BC4, BC5
 and BC7 files of random blocks that reach every mode and partition):
 - exactly, or within the lossy formats' tolerance;
@@ -127,8 +128,12 @@ and BC7 files of random blocks that reach every mode and partition):
   fractional glyph positions); the comparison reports that separately and
   holds the rest of the image to the SVG tolerance.
 
-WebP, AVIF and JPEG 2000 are reported as not read yet, and the broken files
-fail with a readable message.
+Lossy WebP matches libwebp bit for bit: libwebp's colour conversion and
+"fancy" chroma upsampling are followed exactly, also on files from quality 1
+to 100, encoder methods 0 and 6, odd sizes, lossy alpha and a 4K photo.
+
+AVIF and JPEG 2000 are reported as not read yet, and the broken files fail
+with a readable message.
 
 ## The interface, tested in all three editions
 

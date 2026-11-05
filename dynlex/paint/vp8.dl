@@ -1,9 +1,1064 @@
-# Lossy WebP frames (VP8, RFC 6386), read by the editor itself.
+# Lossy WebP frames: VP8 key frames (RFC 6386), read by the editor itself.
+# The frame is reconstructed into Y, U and V planes macroblock by macroblock
+# (intra prediction sees only unfiltered pixels), then loop-filtered in
+# raster order, then turned into RGB with libwebp's "fancy" chroma
+# upsampling and colour conversion, so the pixels are those its viewers show.
 import dynlex/paint/decoded.dl
+import dynlex/paint/vp8_tables.dl
+import lib/string.dl
+
+# --- The boolean decoder (RFC 6386, section 7) ---
+
+class:
+    patterns:
+        [a|] vp8 bool decoder
+    members:
+        vbBytes as a pointer to a byte
+        vbAt as an integer
+        vbEnd as an integer
+        vbValue as an integer
+        vbRange as an integer
+        vbCount as an integer
+
+local function a vp8 bool decoder over {pointer:bytes} from {integer:start} to {integer:end}:
+    execute:
+        set value to 0
+        set at to start
+        if (end - start) >= 2:
+            set value to ((the byte start in bytes) << 8) | (the byte (start + 1) in bytes)
+            set at to start + 2
+        return @intrinsic("construct", a vp8 bool decoder, bytes as a pointer to a byte, at, end, value, 255, 0)
+
+local function the vp8 bool at {integer:probability} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        set split to 1 + ((((decoder's vbRange) - 1) * probability) >> 8)
+        set bigSplit to split << 8
+        set result to 0
+        if (decoder's vbValue) >= bigSplit:
+            set result to 1
+            set decoder's vbRange to (decoder's vbRange) - split
+            set decoder's vbValue to (decoder's vbValue) - bigSplit
+        else:
+            set decoder's vbRange to split
+        loop while (decoder's vbRange) < 128:
+            set decoder's vbValue to (decoder's vbValue) << 1
+            set decoder's vbRange to (decoder's vbRange) << 1
+            set decoder's vbCount to (decoder's vbCount) + 1
+            if (decoder's vbCount) = 8:
+                set decoder's vbCount to 0
+                if (decoder's vbAt) < (decoder's vbEnd):
+                    set decoder's vbValue to (decoder's vbValue) | (((the item at (decoder's vbAt) in (decoder's vbBytes)) as an integer) & 255)
+                    set decoder's vbAt to (decoder's vbAt) + 1
+        return result
+
+local function the vp8 literal of {integer:bits} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        set value to 0
+        loop bit from 0 to bits:
+            set value to (value << 1) | (the vp8 bool at 128 from decoder)
+        return value
+
+local function the vp8 signed of {integer:bits} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        set value to the vp8 literal of bits from decoder
+        if (the vp8 bool at 128 from decoder) = 1:
+            return 0 - value
+        return value
+
+local function the optional vp8 signed of {integer:bits} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        if (the vp8 bool at 128 from decoder) = 1:
+            return the vp8 signed of bits from decoder
+        return 0
+
+local function fill vp8 numbers {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+
+# --- Modes: 0 DC, 1 V, 2 H, 3 TM, 4 B; sub-blocks 0 DC, 1 TM, 2 VE, 3 HE,
+# 4 LD, 5 RD, 6 VR, 7 VL, 8 HD, 9 HU ---
+
+local function the vp8 key frame luma mode from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        if (the vp8 bool at 145 from decoder) = 0:
+            return 4
+        if (the vp8 bool at 156 from decoder) = 0:
+            if (the vp8 bool at 163 from decoder) = 0:
+                return 0
+            return 1
+        if (the vp8 bool at 128 from decoder) = 0:
+            return 2
+        return 3
+
+local function the vp8 chroma mode from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        if (the vp8 bool at 142 from decoder) = 0:
+            return 0
+        if (the vp8 bool at 114 from decoder) = 0:
+            return 1
+        if (the vp8 bool at 183 from decoder) = 0:
+            return 2
+        return 3
+
+# The sub-block mode by the bmode tree, its probabilities at offset in table.
+local function the vp8 sub-block mode with {a pointer to an integer:probabilities} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        if (the vp8 bool at (the item at 0 in probabilities) from decoder) = 0:
+            return 0
+        if (the vp8 bool at (the item at 1 in probabilities) from decoder) = 0:
+            return 1
+        if (the vp8 bool at (the item at 2 in probabilities) from decoder) = 0:
+            return 2
+        if (the vp8 bool at (the item at 3 in probabilities) from decoder) = 0:
+            if (the vp8 bool at (the item at 4 in probabilities) from decoder) = 0:
+                return 3
+            if (the vp8 bool at (the item at 5 in probabilities) from decoder) = 0:
+                return 5
+            return 6
+        if (the vp8 bool at (the item at 6 in probabilities) from decoder) = 0:
+            return 4
+        if (the vp8 bool at (the item at 7 in probabilities) from decoder) = 0:
+            return 7
+        if (the vp8 bool at (the item at 8 in probabilities) from decoder) = 0:
+            return 8
+        return 9
+
+# The sub-block mode a 16x16 mode stands for, as a neighbour's context.
+local function the vp8 implied sub-block mode of {integer:mode}:
+    execute:
+        if mode = 1:
+            return 2
+        if mode = 2:
+            return 3
+        if mode = 3:
+            return 1
+        return 0
+
+# --- Tokens (section 13) ---
+
+class:
+    patterns:
+        [a|] vp8 frame
+    members:
+        vfMbWide as an integer
+        vfMbHigh as an integer
+        vfProbabilities as a pointer to an integer
+        vfBands as a pointer to an integer
+        vfZigzag as a pointer to an integer
+        vfCategory as a pointer to an integer
+        vfFactors as a pointer to an integer
+        vfAboveContext as a pointer to an integer
+        vfLeftContext as a pointer to an integer
+
+local function the vp8 extra {integer:count} bits with {a pointer to an integer:probabilities} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        set value to 0
+        loop index from 0 to count:
+            set value to (value << 1) | (the vp8 bool at (the item at index in probabilities) from decoder)
+        return value
+
+# Decodes one block's coefficients (dequantised) into block from position
+# start; returns whether any coefficient was coded. kind: 0 Y after Y2,
+# 1 Y2, 2 chroma, 3 Y with its DC.
+local function decode vp8 block of {integer:kind} into {a pointer to an integer:block} context {integer:context} first {integer:start} factors {integer:dcFactor} {integer:acFactor} with {a pointer to a vp8 frame:frame} from {a pointer to a vp8 bool decoder:decoder}:
+    execute:
+        set table to (frame's vfProbabilities) + (kind * 264)
+        set bands to frame's vfBands
+        set zigzag to frame's vfZigzag
+        set position to start
+        set probabilities to table + (((the item at position in bands) * 33) + (context * 11))
+        if (the vp8 bool at (the item at 0 in probabilities) from decoder) = 0:
+            return false
+        loop while position < 16:
+            # After a zero no end of block is coded: the zero test again.
+            if (the vp8 bool at (the item at 1 in probabilities) from decoder) = 0:
+                set position to position + 1
+                if position < 16:
+                    set probabilities to table + ((the item at position in bands) * 33)
+            else:
+                set value to 0
+                set next to 2
+                if (the vp8 bool at (the item at 2 in probabilities) from decoder) = 0:
+                    set value to 1
+                    set next to 1
+                else if (the vp8 bool at (the item at 3 in probabilities) from decoder) = 0:
+                    if (the vp8 bool at (the item at 4 in probabilities) from decoder) = 0:
+                        set value to 2
+                    else if (the vp8 bool at (the item at 5 in probabilities) from decoder) = 0:
+                        set value to 3
+                    else:
+                        set value to 4
+                else if (the vp8 bool at (the item at 6 in probabilities) from decoder) = 0:
+                    if (the vp8 bool at (the item at 7 in probabilities) from decoder) = 0:
+                        set value to 5 + (the vp8 bool at 159 from decoder)
+                    else:
+                        set value to 7 + ((the vp8 bool at 165 from decoder) << 1)
+                        set value to value + (the vp8 bool at 145 from decoder)
+                else if (the vp8 bool at (the item at 8 in probabilities) from decoder) = 0:
+                    if (the vp8 bool at (the item at 9 in probabilities) from decoder) = 0:
+                        set value to 11 + ((the vp8 bool at 173 from decoder) << 2)
+                        set value to value + ((the vp8 bool at 148 from decoder) << 1)
+                        set value to value + (the vp8 bool at 140 from decoder)
+                    else:
+                        set value to 19 + ((the vp8 bool at 176 from decoder) << 3)
+                        set value to value + ((the vp8 bool at 155 from decoder) << 2)
+                        set value to value + ((the vp8 bool at 140 from decoder) << 1)
+                        set value to value + (the vp8 bool at 135 from decoder)
+                else if (the vp8 bool at (the item at 10 in probabilities) from decoder) = 0:
+                    set value to 35 + ((the vp8 bool at 180 from decoder) << 4)
+                    set value to value + ((the vp8 bool at 157 from decoder) << 3)
+                    set value to value + ((the vp8 bool at 141 from decoder) << 2)
+                    set value to value + ((the vp8 bool at 134 from decoder) << 1)
+                    set value to value + (the vp8 bool at 130 from decoder)
+                else:
+                    set value to 67 + (the vp8 extra 11 bits with (frame's vfCategory) from decoder)
+                if (the vp8 bool at 128 from decoder) = 1:
+                    set value to 0 - value
+                set factor to acFactor
+                if position = 0:
+                    set factor to dcFactor
+                store (value * factor) at (block + (the item at position in zigzag))
+                set position to position + 1
+                if position < 16:
+                    set probabilities to table + (((the item at position in bands) * 33) + (next * 11))
+                    if (the vp8 bool at (the item at 0 in probabilities) from decoder) = 0:
+                        return true
+        return true
+
+# --- Transforms (section 14) ---
+
+local function undo vp8 walsh of {a pointer to an integer:coefficients}:
+    execute:
+        set work to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set second to coefficients + 384
+        loop column from 0 to 4:
+            set a1 to (the item at column in second) + (the item at (column + 12) in second)
+            set b1 to (the item at (column + 4) in second) + (the item at (column + 8) in second)
+            set c1 to (the item at (column + 4) in second) - (the item at (column + 8) in second)
+            set d1 to (the item at column in second) - (the item at (column + 12) in second)
+            store (a1 + b1) at (work + column)
+            store (c1 + d1) at (work + (column + 4))
+            store (a1 - b1) at (work + (column + 8))
+            store (d1 - c1) at (work + (column + 12))
+        loop row from 0 to 4:
+            set base to row * 4
+            set a1 to (the item at base in work) + (the item at (base + 3) in work)
+            set b1 to (the item at (base + 1) in work) + (the item at (base + 2) in work)
+            set c1 to (the item at (base + 1) in work) - (the item at (base + 2) in work)
+            set d1 to (the item at base in work) - (the item at (base + 3) in work)
+            # Each result is the DC of one luma block.
+            store (((a1 + b1) + 3) >> 3) at (coefficients + ((base + 0) * 16))
+            store (((c1 + d1) + 3) >> 3) at (coefficients + ((base + 1) * 16))
+            store (((a1 - b1) + 3) >> 3) at (coefficients + ((base + 2) * 16))
+            store (((d1 - c1) + 3) >> 3) at (coefficients + ((base + 3) * 16))
+        @intrinsic("call", "libc", "free", nothing, work)
+
+local function vp8 sine part of {integer:value}:
+    execute:
+        return (value * 35468) >> 16
+
+local function vp8 cosine part of {integer:value}:
+    execute:
+        return value + ((value * 20091) >> 16)
+
+# Adds the inverse DCT of the block to the 4x4 pixels at target.
+local function add vp8 idct of {a pointer to an integer:block} to {pointer:target} stride {integer:stride} using {a pointer to an integer:work}:
+    execute:
+        set pixels to target as a pointer to a byte
+        loop column from 0 to 4:
+            set a1 to (the item at column in block) + (the item at (column + 8) in block)
+            set b1 to (the item at column in block) - (the item at (column + 8) in block)
+            set c1 to (vp8 sine part of (the item at (column + 4) in block)) - (vp8 cosine part of (the item at (column + 12) in block))
+            set d1 to (vp8 cosine part of (the item at (column + 4) in block)) + (vp8 sine part of (the item at (column + 12) in block))
+            store (a1 + d1) at (work + column)
+            store (a1 - d1) at (work + (column + 12))
+            store (b1 + c1) at (work + (column + 4))
+            store (b1 - c1) at (work + (column + 8))
+        loop row from 0 to 4:
+            set base to row * 4
+            set a1 to (the item at base in work) + (the item at (base + 2) in work)
+            set b1 to (the item at base in work) - (the item at (base + 2) in work)
+            set c1 to (vp8 sine part of (the item at (base + 1) in work)) - (vp8 cosine part of (the item at (base + 3) in work))
+            set d1 to (vp8 cosine part of (the item at (base + 1) in work)) + (vp8 sine part of (the item at (base + 3) in work))
+            set line to pixels + (row * stride)
+            store ((((((the item at 0 in line) as an integer) & 255) + (((a1 + d1) + 4) >> 3)) clamped between 0 and 255) as a byte) at line
+            store ((((((the item at 3 in line) as an integer) & 255) + (((a1 - d1) + 4) >> 3)) clamped between 0 and 255) as a byte) at (line + 3)
+            store ((((((the item at 1 in line) as an integer) & 255) + (((b1 + c1) + 4) >> 3)) clamped between 0 and 255) as a byte) at (line + 1)
+            store ((((((the item at 2 in line) as an integer) & 255) + (((b1 - c1) + 4) >> 3)) clamped between 0 and 255) as a byte) at (line + 2)
+
+# --- Intra prediction (section 12) ---
+
+local function the vp8 pixel {integer:offset} of {pointer:plane}:
+    execute:
+        return ((the item at offset in (plane as a pointer to a byte)) as an integer) & 255
+
+# 16x16 or 8x8 prediction at target (size n) by the mode; the frame edges
+# hold 127 above and 129 to the left. DC at an edge averages what exists.
+local function predict vp8 block at {pointer:target} of {integer:n} stride {integer:stride} mode {integer:mode} row {integer:row} column {integer:column}:
+    execute:
+        set pixels to target as a pointer to a byte
+        if mode = 0:
+            set sum to 0
+            set count to 0
+            if row > 0:
+                loop index from 0 to n:
+                    set sum to sum + (the vp8 pixel (index - stride) of target)
+                set count to count + n
+            if column > 0:
+                loop index from 0 to n:
+                    set sum to sum + (the vp8 pixel ((index * stride) - 1) of target)
+                set count to count + n
+            set dc to 128
+            if count > 0:
+                set dc to (sum + (count / 2)) / count
+            loop y from 0 to n:
+                ignore @intrinsic("call", "libc", "memset", a pointer, pixels + (y * stride), dc, n as a word sized integer)
+        else if mode = 1:
+            loop y from 0 to n:
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, pixels + (y * stride), pixels - stride, n as a word sized integer)
+        else if mode = 2:
+            loop y from 0 to n:
+                ignore @intrinsic("call", "libc", "memset", a pointer, pixels + (y * stride), the vp8 pixel ((y * stride) - 1) of target, n as a word sized integer)
+        else:
+            set corner to the vp8 pixel ((0 - stride) - 1) of target
+            loop y from 0 to n:
+                set left to the vp8 pixel ((y * stride) - 1) of target
+                loop x from 0 to n:
+                    store ((((left + (the vp8 pixel (x - stride) of target)) - corner) clamped between 0 and 255) as a byte) at (pixels + ((y * stride) + x))
+
+local function vp8 average3 {integer:first} {integer:middle} {integer:last}:
+    execute:
+        return ((first + (2 * middle)) + (last + 2)) >> 2
+
+local function vp8 average2 {integer:first} {integer:second}:
+    execute:
+        return ((first + second) + 1) >> 1
+
+# A 4x4 sub-block's prediction into out (16 values) from top (above[-1] at
+# 0, above[0..7] at 1..8) and left (4 values).
+local function predict vp8 sub-block {integer:mode} from {a pointer to an integer:top} {a pointer to an integer:left} into {a pointer to an integer:out}:
+    execute:
+        set corner to the item at 0 in top
+        set a0 to the item at 1 in top
+        set a1 to the item at 2 in top
+        set a2 to the item at 3 in top
+        set a3 to the item at 4 in top
+        set a4 to the item at 5 in top
+        set a5 to the item at 6 in top
+        set a6 to the item at 7 in top
+        set a7 to the item at 8 in top
+        set l0 to the item at 0 in left
+        set l1 to the item at 1 in left
+        set l2 to the item at 2 in left
+        set l3 to the item at 3 in left
+        if mode = 0:
+            set dc to ((((a0 + a1) + (a2 + a3)) + ((l0 + l1) + (l2 + l3))) + 4) >> 3
+            loop index from 0 to 16:
+                store dc at (out + index)
+        else if mode = 1:
+            loop y from 0 to 4:
+                loop x from 0 to 4:
+                    store ((((the item at y in left) + (the item at (x + 1) in top)) - corner) clamped between 0 and 255) at (out + ((y * 4) + x))
+        else if mode = 2:
+            loop y from 0 to 4:
+                store (vp8 average3 corner a0 a1) at (out + (y * 4))
+                store (vp8 average3 a0 a1 a2) at (out + ((y * 4) + 1))
+                store (vp8 average3 a1 a2 a3) at (out + ((y * 4) + 2))
+                store (vp8 average3 a2 a3 a4) at (out + ((y * 4) + 3))
+        else if mode = 3:
+            set r0 to vp8 average3 corner l0 l1
+            set r1 to vp8 average3 l0 l1 l2
+            set r2 to vp8 average3 l1 l2 l3
+            set r3 to vp8 average3 l2 l3 l3
+            loop x from 0 to 4:
+                store r0 at (out + x)
+                store r1 at (out + (4 + x))
+                store r2 at (out + (8 + x))
+                store r3 at (out + (12 + x))
+        else if mode = 4:
+            # LD: down-left along the above row.
+            set p0 to vp8 average3 a0 a1 a2
+            set p1 to vp8 average3 a1 a2 a3
+            set p2 to vp8 average3 a2 a3 a4
+            set p3 to vp8 average3 a3 a4 a5
+            set p4 to vp8 average3 a4 a5 a6
+            set p5 to vp8 average3 a5 a6 a7
+            set p6 to vp8 average3 a6 a7 a7
+            store p0 at out
+            store p1 at (out + 1)
+            store p2 at (out + 2)
+            store p3 at (out + 3)
+            store p1 at (out + 4)
+            store p2 at (out + 5)
+            store p3 at (out + 6)
+            store p4 at (out + 7)
+            store p2 at (out + 8)
+            store p3 at (out + 9)
+            store p4 at (out + 10)
+            store p5 at (out + 11)
+            store p3 at (out + 12)
+            store p4 at (out + 13)
+            store p5 at (out + 14)
+            store p6 at (out + 15)
+        else if mode = 5:
+            # RD: down-right.
+            set q0 to vp8 average3 l0 corner a0
+            set q1 to vp8 average3 corner a0 a1
+            set q2 to vp8 average3 a0 a1 a2
+            set q3 to vp8 average3 a1 a2 a3
+            set q4 to vp8 average3 l1 l0 corner
+            set q5 to vp8 average3 l2 l1 l0
+            set q6 to vp8 average3 l3 l2 l1
+            store q0 at out
+            store q1 at (out + 1)
+            store q2 at (out + 2)
+            store q3 at (out + 3)
+            store q4 at (out + 4)
+            store q0 at (out + 5)
+            store q1 at (out + 6)
+            store q2 at (out + 7)
+            store q5 at (out + 8)
+            store q4 at (out + 9)
+            store q0 at (out + 10)
+            store q1 at (out + 11)
+            store q6 at (out + 12)
+            store q5 at (out + 13)
+            store q4 at (out + 14)
+            store q0 at (out + 15)
+        else if mode = 6:
+            # VR: vertical-right.
+            set v0 to vp8 average2 corner a0
+            set v1 to vp8 average2 a0 a1
+            set v2 to vp8 average2 a1 a2
+            set v3 to vp8 average2 a2 a3
+            set v4 to vp8 average3 l0 corner a0
+            set v5 to vp8 average3 corner a0 a1
+            set v6 to vp8 average3 a0 a1 a2
+            set v7 to vp8 average3 a1 a2 a3
+            set v8 to vp8 average3 l1 l0 corner
+            set v9 to vp8 average3 l2 l1 l0
+            store v0 at out
+            store v1 at (out + 1)
+            store v2 at (out + 2)
+            store v3 at (out + 3)
+            store v4 at (out + 4)
+            store v5 at (out + 5)
+            store v6 at (out + 6)
+            store v7 at (out + 7)
+            store v8 at (out + 8)
+            store v0 at (out + 9)
+            store v1 at (out + 10)
+            store v2 at (out + 11)
+            store v9 at (out + 12)
+            store v4 at (out + 13)
+            store v5 at (out + 14)
+            store v6 at (out + 15)
+        else if mode = 7:
+            # VL: vertical-left.
+            set w0 to vp8 average2 a0 a1
+            set w1 to vp8 average2 a1 a2
+            set w2 to vp8 average2 a2 a3
+            set w3 to vp8 average2 a3 a4
+            set w4 to vp8 average3 a0 a1 a2
+            set w5 to vp8 average3 a1 a2 a3
+            set w6 to vp8 average3 a2 a3 a4
+            set w7 to vp8 average3 a3 a4 a5
+            set w8 to vp8 average3 a4 a5 a6
+            set w9 to vp8 average3 a5 a6 a7
+            store w0 at out
+            store w1 at (out + 1)
+            store w2 at (out + 2)
+            store w3 at (out + 3)
+            store w4 at (out + 4)
+            store w5 at (out + 5)
+            store w6 at (out + 6)
+            store w7 at (out + 7)
+            store w1 at (out + 8)
+            store w2 at (out + 9)
+            store w3 at (out + 10)
+            store w8 at (out + 11)
+            store w5 at (out + 12)
+            store w6 at (out + 13)
+            store w7 at (out + 14)
+            store w9 at (out + 15)
+        else if mode = 8:
+            # HD: horizontal-down.
+            set h0 to vp8 average2 l0 corner
+            set h1 to vp8 average3 l0 corner a0
+            set h2 to vp8 average3 corner a0 a1
+            set h3 to vp8 average3 a0 a1 a2
+            set h4 to vp8 average2 l1 l0
+            set h5 to vp8 average3 l1 l0 corner
+            set h6 to vp8 average2 l2 l1
+            set h7 to vp8 average3 l2 l1 l0
+            set h8 to vp8 average2 l3 l2
+            set h9 to vp8 average3 l3 l2 l1
+            store h0 at out
+            store h1 at (out + 1)
+            store h2 at (out + 2)
+            store h3 at (out + 3)
+            store h4 at (out + 4)
+            store h5 at (out + 5)
+            store h0 at (out + 6)
+            store h1 at (out + 7)
+            store h6 at (out + 8)
+            store h7 at (out + 9)
+            store h4 at (out + 10)
+            store h5 at (out + 11)
+            store h8 at (out + 12)
+            store h9 at (out + 13)
+            store h6 at (out + 14)
+            store h7 at (out + 15)
+        else:
+            # HU: horizontal-up.
+            set u0 to vp8 average2 l0 l1
+            set u1 to vp8 average3 l0 l1 l2
+            set u2 to vp8 average2 l1 l2
+            set u3 to vp8 average3 l1 l2 l3
+            set u4 to vp8 average2 l2 l3
+            set u5 to vp8 average3 l2 l3 l3
+            store u0 at out
+            store u1 at (out + 1)
+            store u2 at (out + 2)
+            store u3 at (out + 3)
+            store u2 at (out + 4)
+            store u3 at (out + 5)
+            store u4 at (out + 6)
+            store u5 at (out + 7)
+            store u4 at (out + 8)
+            store u5 at (out + 9)
+            store l3 at (out + 10)
+            store l3 at (out + 11)
+            store l3 at (out + 12)
+            store l3 at (out + 13)
+            store l3 at (out + 14)
+            store l3 at (out + 15)
+
+# --- The loop filter (section 15) ---
+
+local function vp8 clamp signed {integer:value}:
+    execute:
+        return value clamped between -128 and 127
+
+local function vp8 sample {integer:offset} of {pointer:plane}:
+    execute:
+        return ((the item at offset in (plane as a pointer to a byte)) as an integer) & 255
+
+local function set vp8 sample {integer:offset} of {pointer:plane} to {integer:value}:
+    execute:
+        store ((value clamped between 0 and 255) as a byte) at ((plane as a pointer to a byte) + offset)
+
+# The filter across one edge position: at is the first pixel after the edge
+# (q0), step the distance across it. kind: 0 sub-block, 1 macroblock edge,
+# 2 simple.
+local function filter vp8 edge at {integer:at} of {pointer:plane} across {integer:step} kind {integer:kind} limits {integer:edgeLimit} {integer:interior} {integer:variance}:
+    execute:
+        set p1 to vp8 sample (at - (2 * step)) of plane
+        set p0 to vp8 sample (at - step) of plane
+        set q0 to vp8 sample at of plane
+        set q1 to vp8 sample (at + step) of plane
+        if kind = 2:
+            if (((the absolute value of (p0 - q0)) * 2) + ((the absolute value of (p1 - q1)) >> 1)) > edgeLimit:
+                return nothing
+        else:
+            set p3 to vp8 sample (at - (4 * step)) of plane
+            set p2 to vp8 sample (at - (3 * step)) of plane
+            set q2 to vp8 sample (at + (2 * step)) of plane
+            set q3 to vp8 sample (at + (3 * step)) of plane
+            if (((the absolute value of (p0 - q0)) * 2) + ((the absolute value of (p1 - q1)) >> 1)) > ((2 * edgeLimit) + interior):
+                return nothing
+            if (((the absolute value of (p3 - p2)) > interior) or ((the absolute value of (p2 - p1)) > interior)) or ((the absolute value of (p1 - p0)) > interior):
+                return nothing
+            if (((the absolute value of (q3 - q2)) > interior) or ((the absolute value of (q2 - q1)) > interior)) or ((the absolute value of (q1 - q0)) > interior):
+                return nothing
+        set high to true
+        if kind != 2:
+            set high to ((the absolute value of (p1 - p0)) > variance) or ((the absolute value of (q1 - q0)) > variance)
+        if (kind = 1) and (high = false):
+            set w to vp8 clamp signed ((vp8 clamp signed (p1 - q1)) + (3 * (q0 - p0)))
+            set amount to ((27 * w) + 63) >> 7
+            set vp8 sample (at - step) of plane to (p0 + amount)
+            set vp8 sample at of plane to (q0 - amount)
+            set amount to ((18 * w) + 63) >> 7
+            set vp8 sample (at - (2 * step)) of plane to (p1 + amount)
+            set vp8 sample (at + step) of plane to (q1 - amount)
+            set amount to ((9 * w) + 63) >> 7
+            set p2 to vp8 sample (at - (3 * step)) of plane
+            set q2 to vp8 sample (at + (2 * step)) of plane
+            set vp8 sample (at - (3 * step)) of plane to (p2 + amount)
+            set vp8 sample (at + (2 * step)) of plane to (q2 - amount)
+            return nothing
+        set a to 3 * (q0 - p0)
+        if high:
+            set a to a + (vp8 clamp signed (p1 - q1))
+        set a to vp8 clamp signed a
+        set f1 to (the minimum of (a + 4) and 127) >> 3
+        set f2 to (the minimum of (a + 3) and 127) >> 3
+        set vp8 sample (at - step) of plane to (p0 + f2)
+        set vp8 sample at of plane to (q0 - f1)
+        if high = false:
+            set a to (f1 + 1) >> 1
+            set vp8 sample (at - (2 * step)) of plane to (p1 + a)
+            set vp8 sample (at + step) of plane to (q1 - a)
+
+# Filters count positions along an edge starting at start, moving by along
+# between positions and across by step.
+local function filter vp8 line at {integer:start} of {pointer:plane} along {integer:along} for {integer:count} across {integer:step} kind {integer:kind} limits {integer:edgeLimit} {integer:interior} {integer:variance}:
+    execute:
+        loop index from 0 to count:
+            filter vp8 edge at (start + (index * along)) of plane across step kind kind limits edgeLimit interior variance
+
+# --- Colour: libwebp's conversion and fancy upsampling ---
+
+local function vp8 clip {integer:value}:
+    execute:
+        if (value & -16384) = 0:
+            return value >> 6
+        if value < 0:
+            return 0
+        return 255
+
+local function vp8 rgb of {integer:luma} {integer:blueDifference} {integer:redDifference}:
+    execute:
+        set scaled to (luma * 19077) >> 8
+        set red to vp8 clip ((scaled + ((redDifference * 26149) >> 8)) - 14234)
+        set green to vp8 clip (((scaled - ((blueDifference * 6419) >> 8)) - ((redDifference * 13320) >> 8)) + 8708)
+        set blue to vp8 clip ((scaled + ((blueDifference * 33050) >> 8)) - 17685)
+        return ((red | (green << 8)) | (blue << 16)) | (-16777216)
+
+# One output row from its luma row and the two chroma rows around it (near
+# weighs three, far one), as libwebp upsamples.
+local function convert vp8 row {pointer:lumaRow} near {pointer:nearU} {pointer:nearV} far {pointer:farU} {pointer:farV} into {a pointer to an integer:out} of {integer:width}:
+    execute:
+        set half to (width + 1) / 2
+        # The chroma of this row at each chroma column: 3 near + 1 far.
+        set columnU to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
+        set columnV to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
+        loop x from 0 to half:
+            store ((3 * (vp8 sample x of nearU)) + (vp8 sample x of farU)) at (columnU + x)
+            store ((3 * (vp8 sample x of nearV)) + (vp8 sample x of farV)) at (columnV + x)
+        # Then horizontally: 3 own + 1 neighbour, over 16, rounded by 8.
+        loop x from 0 to width:
+            set own to x / 2
+            set other to own - 1
+            if (x & 1) = 1:
+                set other to own + 1
+            set other to other clamped between 0 and (half - 1)
+            set u to ((((3 * (the item at own in columnU)) + (the item at other in columnU)) + 8) >> 4)
+            set v to ((((3 * (the item at own in columnV)) + (the item at other in columnV)) + 8) >> 4)
+            store (vp8 rgb of (vp8 sample x of lumaRow) u v) at (out + x)
+        @intrinsic("call", "libc", "free", nothing, columnU)
+        @intrinsic("call", "libc", "free", nothing, columnV)
+
+# --- The frame ---
 
 function the paint vp8 frame at {pointer:bytes} from {integer:start} spanning {integer:count}:
     execute:
-        ignore bytes
-        ignore start
-        ignore count
-        return no decoded image because "lossy WebP is not read yet"
+        if count < 10:
+            return no decoded image because "the lossy WebP data is damaged"
+        set tag to ((the byte start in bytes) | ((the byte (start + 1) in bytes) << 8)) | ((the byte (start + 2) in bytes) << 16)
+        if (tag & 1) != 0:
+            return no decoded image because "the lossy WebP frame is not a key frame"
+        set firstSize to (tag >> 5) & 524287
+        if (((the byte (start + 3) in bytes) != 157) or ((the byte (start + 4) in bytes) != 1)) or ((the byte (start + 5) in bytes) != 42):
+            return no decoded image because "the lossy WebP data is damaged"
+        set width to (the little-endian half (start + 6) in bytes) & 16383
+        set height to (the little-endian half (start + 8) in bytes) & 16383
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "the lossy WebP has a size the editor cannot use"
+        set partitionStart to start + 10
+        if ((partitionStart + firstSize) > (start + count)):
+            return no decoded image because "the lossy WebP data is damaged"
+        set header to a vp8 bool decoder over bytes from partitionStart to (partitionStart + firstSize)
+        set source to the address of header
+        ignore the vp8 literal of 2 from source
+        # Segmentation.
+        set segmented to (the vp8 bool at 128 from source) = 1
+        set updateMap to false
+        set absolute to false
+        set segmentQuantisers to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set segmentFilters to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set segmentProbabilities to @intrinsic("call", "libc", "calloc", a pointer to an integer, 3 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 3:
+            store 255 at (segmentProbabilities + index)
+        if segmented:
+            set updateMap to (the vp8 bool at 128 from source) = 1
+            if (the vp8 bool at 128 from source) = 1:
+                set absolute to (the vp8 bool at 128 from source) = 1
+                loop index from 0 to 4:
+                    store (the optional vp8 signed of 7 from source) at (segmentQuantisers + index)
+                loop index from 0 to 4:
+                    store (the optional vp8 signed of 6 from source) at (segmentFilters + index)
+            if updateMap:
+                loop index from 0 to 3:
+                    if (the vp8 bool at 128 from source) = 1:
+                        store (the vp8 literal of 8 from source) at (segmentProbabilities + index)
+        # The loop filter.
+        set simple to (the vp8 bool at 128 from source) = 1
+        set filterLevel to the vp8 literal of 6 from source
+        set sharpness to the vp8 literal of 3 from source
+        set deltas to (the vp8 bool at 128 from source) = 1
+        set referenceDelta to 0
+        set modeDelta to 0
+        if deltas:
+            if (the vp8 bool at 128 from source) = 1:
+                loop index from 0 to 4:
+                    set delta to the optional vp8 signed of 6 from source
+                    if index = 0:
+                        set referenceDelta to delta
+                loop index from 0 to 4:
+                    set delta to the optional vp8 signed of 6 from source
+                    if index = 0:
+                        set modeDelta to delta
+        # Token partitions.
+        set partitions to 1 << (the vp8 literal of 2 from source)
+        set after to partitionStart + firstSize
+        set sizesAt to after
+        set dataAt to after + (3 * (partitions - 1))
+        set ends to start + count
+        set decoders to @intrinsic("call", "libc", "calloc", a pointer to a byte, (partitions * ((the size of (a vp8 bool decoder)) as an integer)) as a word sized integer, 1 as a word sized integer)
+        set decoderSize to (the size of (a vp8 bool decoder)) as an integer
+        set position to dataAt
+        loop index from 0 to partitions:
+            set size to ends - position
+            if index < (partitions - 1):
+                set size to ((the byte (sizesAt + (index * 3)) in bytes) | ((the byte ((sizesAt + (index * 3)) + 1) in bytes) << 8)) | ((the byte ((sizesAt + (index * 3)) + 2) in bytes) << 16)
+            set limit to the minimum of (position + size) and ends
+            set partition to a vp8 bool decoder over bytes from position to limit
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, decoders + (index * decoderSize), (the address of partition) as a pointer, decoderSize as a word sized integer)
+            set position to position + size
+        # Quantisers.
+        set baseQuantiser to the vp8 literal of 7 from source
+        set lumaDcDelta to the optional vp8 signed of 4 from source
+        set secondDcDelta to the optional vp8 signed of 4 from source
+        set secondAcDelta to the optional vp8 signed of 4 from source
+        set chromaDcDelta to the optional vp8 signed of 4 from source
+        set chromaAcDelta to the optional vp8 signed of 4 from source
+        # refresh_entropy_probs: one bit on a key frame.
+        ignore the vp8 bool at 128 from source
+        # Coefficient probabilities, defaults with their updates.
+        set probabilities to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1056 as a word sized integer, 4 as a word sized integer)
+        set updates to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1056 as a word sized integer, 4 as a word sized integer)
+        fill vp8 numbers probabilities from (vp8 default coefficient probabilities)
+        fill vp8 numbers updates from (vp8 coefficient update probabilities)
+        loop index from 0 to 1056:
+            if (the vp8 bool at (the item at index in updates) from source) = 1:
+                store (the vp8 literal of 8 from source) at (probabilities + index)
+        set skipEnabled to (the vp8 bool at 128 from source) = 1
+        set skipProbability to 0
+        if skipEnabled:
+            set skipProbability to the vp8 literal of 8 from source
+        # Dequantisation factors per segment: Y DC, Y AC, Y2 DC, Y2 AC, UV DC, UV AC.
+        set dcSteps to @intrinsic("call", "libc", "calloc", a pointer to an integer, 128 as a word sized integer, 4 as a word sized integer)
+        set acSteps to @intrinsic("call", "libc", "calloc", a pointer to an integer, 128 as a word sized integer, 4 as a word sized integer)
+        fill vp8 numbers dcSteps from (vp8 dc quantiser steps)
+        fill vp8 numbers acSteps from (vp8 ac quantiser steps)
+        set factors to @intrinsic("call", "libc", "calloc", a pointer to an integer, 24 as a word sized integer, 4 as a word sized integer)
+        loop segment from 0 to 4:
+            set q to baseQuantiser
+            if segmented:
+                if absolute:
+                    set q to the item at segment in segmentQuantisers
+                else:
+                    set q to q + (the item at segment in segmentQuantisers)
+            set base to factors + (segment * 6)
+            store (the item at ((q + lumaDcDelta) clamped between 0 and 127) in dcSteps) at base
+            store (the item at (q clamped between 0 and 127) in acSteps) at (base + 1)
+            store ((the item at ((q + secondDcDelta) clamped between 0 and 127) in dcSteps) * 2) at (base + 2)
+            store (the maximum of 8 and (((the item at ((q + secondAcDelta) clamped between 0 and 127) in acSteps) * 155) / 100)) at (base + 3)
+            store (the minimum of 132 and (the item at ((q + chromaDcDelta) clamped between 0 and 127) in dcSteps)) at (base + 4)
+            store (the item at ((q + chromaAcDelta) clamped between 0 and 127) in acSteps) at (base + 5)
+        set bands to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
+        set zigzag to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set category to @intrinsic("call", "libc", "calloc", a pointer to an integer, 12 as a word sized integer, 4 as a word sized integer)
+        fill vp8 numbers bands from (vp8 coefficient bands)
+        fill vp8 numbers zigzag from (vp8 zigzag)
+        fill vp8 numbers category from (vp8 category six probabilities)
+        set subModeProbabilities to @intrinsic("call", "libc", "calloc", a pointer to an integer, 900 as a word sized integer, 4 as a word sized integer)
+        fill vp8 numbers subModeProbabilities from (vp8 key frame sub-block mode probabilities)
+        set mbWide to (width + 15) / 16
+        set mbHigh to (height + 15) / 16
+        set aboveContext to @intrinsic("call", "libc", "calloc", a pointer to an integer, (mbWide * 9) as a word sized integer, 4 as a word sized integer)
+        set leftContext to @intrinsic("call", "libc", "calloc", a pointer to an integer, 9 as a word sized integer, 4 as a word sized integer)
+        set decoding to @intrinsic("construct", a vp8 frame, mbWide, mbHigh, probabilities, bands, zigzag, category, factors, aboveContext, leftContext)
+        # Planes with a border: 1 row above, 16 columns either side (the
+        # above-right of the last macroblock), edges 127 above and 129 left.
+        set lumaStride to (mbWide * 16) + 32
+        set chromaStride to (mbWide * 8) + 32
+        set lumaPlane to @intrinsic("call", "libc", "malloc", a pointer to a byte, (lumaStride * ((mbHigh * 16) + 1)) as a word sized integer)
+        set uPlane to @intrinsic("call", "libc", "malloc", a pointer to a byte, (chromaStride * ((mbHigh * 8) + 1)) as a word sized integer)
+        set vPlane to @intrinsic("call", "libc", "malloc", a pointer to a byte, (chromaStride * ((mbHigh * 8) + 1)) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, lumaPlane, 129, (lumaStride * ((mbHigh * 16) + 1)) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, uPlane, 129, (chromaStride * ((mbHigh * 8) + 1)) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, vPlane, 129, (chromaStride * ((mbHigh * 8) + 1)) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, lumaPlane, 127, lumaStride as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, uPlane, 127, chromaStride as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, vPlane, 127, chromaStride as a word sized integer)
+        set lumaOrigin to lumaPlane + (lumaStride + 16)
+        set uOrigin to uPlane + (chromaStride + 16)
+        set vOrigin to vPlane + (chromaStride + 16)
+        # Per macroblock: segment, luma mode, inner-edge filtering wanted.
+        set segments to @intrinsic("call", "libc", "calloc", a pointer to an integer, (mbWide * mbHigh) as a word sized integer, 4 as a word sized integer)
+        set lumaModes to @intrinsic("call", "libc", "calloc", a pointer to an integer, (mbWide * mbHigh) as a word sized integer, 4 as a word sized integer)
+        set inner to @intrinsic("call", "libc", "calloc", a pointer to an integer, (mbWide * mbHigh) as a word sized integer, 4 as a word sized integer)
+        # The sub-block modes along the bottom of the row above and the
+        # right of the macroblock to the left, for the mode contexts.
+        set aboveModes to @intrinsic("call", "libc", "calloc", a pointer to an integer, (mbWide * 4) as a word sized integer, 4 as a word sized integer)
+        set leftModes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set subModes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set coefficients to @intrinsic("call", "libc", "calloc", a pointer to an integer, 400 as a word sized integer, 4 as a word sized integer)
+        set work to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set top to @intrinsic("call", "libc", "calloc", a pointer to an integer, 9 as a word sized integer, 4 as a word sized integer)
+        set left to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set predicted to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        loop mbRow from 0 to mbHigh:
+            set tokens to (decoders + ((the remainder of mbRow divided by partitions) * decoderSize)) as a pointer to a vp8 bool decoder
+            loop index from 0 to 9:
+                store 0 at (leftContext + index)
+            loop index from 0 to 4:
+                store 0 at (leftModes + index)
+            loop mbColumn from 0 to mbWide:
+                set mb to (mbRow * mbWide) + mbColumn
+                set segment to 0
+                if updateMap:
+                    if (the vp8 bool at (the item at 0 in segmentProbabilities) from source) = 0:
+                        set segment to the vp8 bool at (the item at 1 in segmentProbabilities) from source
+                    else:
+                        set segment to 2 + (the vp8 bool at (the item at 2 in segmentProbabilities) from source)
+                store segment at (segments + mb)
+                set skip to 0
+                if skipEnabled:
+                    set skip to the vp8 bool at skipProbability from source
+                set lumaMode to the vp8 key frame luma mode from source
+                store lumaMode at (lumaModes + mb)
+                if lumaMode = 4:
+                    loop block from 0 to 16:
+                        set aboveMode to the item at ((mbColumn * 4) + (block & 3)) in aboveModes
+                        if block >= 4:
+                            set aboveMode to the item at (block - 4) in subModes
+                        set leftMode to the item at (block >> 2) in leftModes
+                        if (block & 3) != 0:
+                            set leftMode to the item at (block - 1) in subModes
+                        set mode to the vp8 sub-block mode with (subModeProbabilities + (((aboveMode * 10) + leftMode) * 9)) from source
+                        store mode at (subModes + block)
+                else:
+                    loop block from 0 to 16:
+                        store (the vp8 implied sub-block mode of lumaMode) at (subModes + block)
+                loop index from 0 to 4:
+                    store (the item at (12 + index) in subModes) at (aboveModes + ((mbColumn * 4) + index))
+                    store (the item at ((index * 4) + 3) in subModes) at (leftModes + index)
+                set chromaMode to the vp8 chroma mode from source
+                # Coefficients.
+                ignore @intrinsic("call", "libc", "memset", a pointer, coefficients, 0, 1600 as a word sized integer)
+                set factor to factors + (segment * 6)
+                set above to aboveContext + (mbColumn * 9)
+                set coded to false
+                if skip = 1:
+                    loop index from 0 to 8:
+                        store 0 at (leftContext + index)
+                        store 0 at (above + index)
+                    if lumaMode != 4:
+                        store 0 at (leftContext + 8)
+                        store 0 at (above + 8)
+                else:
+                    set firstLuma to 0
+                    set lumaKind to 3
+                    if lumaMode != 4:
+                        set context to (the item at 8 in leftContext) + (the item at 8 in above)
+                        set any to decode vp8 block of 1 into (coefficients + 384) context context first 0 factors (the item at 2 in factor) (the item at 3 in factor) with (the address of decoding) from tokens
+                        store (any as an integer) at (leftContext + 8)
+                        store (any as an integer) at (above + 8)
+                        set coded to coded or any
+                        set firstLuma to 1
+                        set lumaKind to 0
+                    loop block from 0 to 16:
+                        set context to (the item at (block >> 2) in leftContext) + (the item at (block & 3) in above)
+                        set any to decode vp8 block of lumaKind into (coefficients + (block * 16)) context context first firstLuma factors (the item at 0 in factor) (the item at 1 in factor) with (the address of decoding) from tokens
+                        store (any as an integer) at (leftContext + (block >> 2))
+                        store (any as an integer) at (above + (block & 3))
+                        set coded to coded or any
+                    loop block from 16 to 24:
+                        set leftSlot to 4 + ((block - 16) >> 1)
+                        set aboveSlot to 4 + ((block - 16) & 1)
+                        if block >= 20:
+                            set leftSlot to 6 + ((block - 20) >> 1)
+                            set aboveSlot to 6 + ((block - 20) & 1)
+                        set context to (the item at leftSlot in leftContext) + (the item at aboveSlot in above)
+                        set any to decode vp8 block of 2 into (coefficients + (block * 16)) context context first 0 factors (the item at 4 in factor) (the item at 5 in factor) with (the address of decoding) from tokens
+                        store (any as an integer) at (leftContext + leftSlot)
+                        store (any as an integer) at (above + aboveSlot)
+                        set coded to coded or any
+                    if lumaMode != 4:
+                        undo vp8 walsh of coefficients
+                store ((coded or (lumaMode = 4)) as an integer) at (inner + mb)
+                # Prediction and reconstruction.
+                set lumaAt to lumaOrigin + (((mbRow * 16) * lumaStride) + (mbColumn * 16))
+                if lumaMode = 4:
+                    loop block from 0 to 16:
+                        set bx to (block & 3) * 4
+                        set by to (block >> 2) * 4
+                        set blockAt to lumaAt + ((by * lumaStride) + bx)
+                        store (vp8 sample ((0 - lumaStride) - 1) of blockAt) at top
+                        loop index from 0 to 4:
+                            store (vp8 sample (index - lumaStride) of blockAt) at (top + (index + 1))
+                            store (vp8 sample ((index * lumaStride) - 1) of blockAt) at (left + index)
+                        # Above-right: within the macroblock's row above for
+                        # the top row and the right column.
+                        set rightAt to (blockAt - lumaStride) + 4
+                        if (bx = 12) and (by > 0):
+                            set rightAt to (lumaAt - lumaStride) + 16
+                        loop index from 0 to 4:
+                            store (vp8 sample index of rightAt) at (top + (index + 5))
+                        predict vp8 sub-block (the item at block in subModes) from top left into predicted
+                        loop y from 0 to 4:
+                            loop x from 0 to 4:
+                                store ((the item at ((y * 4) + x) in predicted) as a byte) at (blockAt + ((y * lumaStride) + x))
+                        add vp8 idct of (coefficients + (block * 16)) to (blockAt as pointer) stride lumaStride using work
+                else:
+                    predict vp8 block at (lumaAt as pointer) of 16 stride lumaStride mode lumaMode row mbRow column mbColumn
+                    loop block from 0 to 16:
+                        add vp8 idct of (coefficients + (block * 16)) to ((lumaAt + ((((block >> 2) * 4) * lumaStride) + ((block & 3) * 4))) as pointer) stride lumaStride using work
+                set uAt to uOrigin + (((mbRow * 8) * chromaStride) + (mbColumn * 8))
+                set vAt to vOrigin + (((mbRow * 8) * chromaStride) + (mbColumn * 8))
+                predict vp8 block at (uAt as pointer) of 8 stride chromaStride mode chromaMode row mbRow column mbColumn
+                predict vp8 block at (vAt as pointer) of 8 stride chromaStride mode chromaMode row mbRow column mbColumn
+                loop block from 0 to 4:
+                    set offset to ((((block >> 1) * 4) * chromaStride) + ((block & 1) * 4))
+                    add vp8 idct of (coefficients + ((16 + block) * 16)) to ((uAt + offset) as pointer) stride chromaStride using work
+                    add vp8 idct of (coefficients + ((20 + block) * 16)) to ((vAt + offset) as pointer) stride chromaStride using work
+            # The last macroblock's above-right for the next row: its bottom
+            # row's last pixel, repeated.
+            if mbRow > 0:
+                set rowEnd to lumaOrigin + ((((mbRow * 16) + 15) * lumaStride) + (mbWide * 16))
+                ignore @intrinsic("call", "libc", "memset", a pointer, rowEnd, vp8 sample -1 of rowEnd, 4 as a word sized integer)
+            else:
+                set rowEnd to lumaOrigin + ((15 * lumaStride) + (mbWide * 16))
+                ignore @intrinsic("call", "libc", "memset", a pointer, rowEnd, vp8 sample -1 of rowEnd, 4 as a word sized integer)
+        # The loop filter, macroblock by macroblock.
+        if filterLevel > 0:
+            loop mbRow from 0 to mbHigh:
+                loop mbColumn from 0 to mbWide:
+                    set mb to (mbRow * mbWide) + mbColumn
+                    set level to filterLevel
+                    if segmented:
+                        if absolute:
+                            set level to the item at (the item at mb in segments) in segmentFilters
+                        else:
+                            set level to level + (the item at (the item at mb in segments) in segmentFilters)
+                    set level to level clamped between 0 and 63
+                    if deltas:
+                        set level to level + referenceDelta
+                        if (the item at mb in lumaModes) = 4:
+                            set level to level + modeDelta
+                        set level to level clamped between 0 and 63
+                    if level > 0:
+                        set interior to level
+                        if sharpness > 0:
+                            if sharpness > 4:
+                                set interior to interior >> 2
+                            else:
+                                set interior to interior >> 1
+                            set interior to the minimum of interior and (9 - sharpness)
+                        set interior to the maximum of interior and 1
+                        set variance to 0
+                        if level >= 15:
+                            set variance to 1
+                        if level >= 40:
+                            set variance to 2
+                        set filterInner to (the item at mb in inner) = 1
+                        set lumaAt to ((mbRow * 16) * lumaStride) + (mbColumn * 16)
+                        set chromaAt to ((mbRow * 8) * chromaStride) + (mbColumn * 8)
+                        if simple:
+                            set mbLimit to ((level + 2) * 2) + interior
+                            set blockLimit to (level * 2) + interior
+                            if mbColumn > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits mbLimit 0 0
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits blockLimit 0 0
+                            if mbRow > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits mbLimit 0 0
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits blockLimit 0 0
+                        else:
+                            if mbColumn > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (uOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (vOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + 4) of (uOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + 4) of (vOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
+                            if mbRow > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (uOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (vOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (uOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (vOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
+        # RGB: each output row from its luma row and the chroma rows around
+        # it, as libwebp pairs them.
+        set image to an unfilled paint canvas width by height
+        set chromaRows to (height + 1) / 2
+        loop y from 0 to height:
+            set near to y / 2
+            set far to near
+            if y > 0:
+                if (y & 1) = 1:
+                    set far to the minimum of (near + 1) and (chromaRows - 1)
+                else:
+                    set far to near - 1
+            if (y & 1) = 1:
+                # Odd rows: the chroma row below is the near one when it
+                # exists, as libwebp's row pairs (2k-1, 2k) share k-1 and k.
+                set near to y / 2
+                set far to the minimum of (near + 1) and (chromaRows - 1)
+            convert vp8 row ((lumaOrigin + (y * lumaStride)) as pointer) near ((uOrigin + (near * chromaStride)) as pointer) ((vOrigin + (near * chromaStride)) as pointer) far ((uOrigin + (far * chromaStride)) as pointer) ((vOrigin + (far * chromaStride)) as pointer) into (((image's pixels) as a pointer to an integer) + (y * width)) of width
+        @intrinsic("call", "libc", "free", nothing, lumaPlane)
+        @intrinsic("call", "libc", "free", nothing, uPlane)
+        @intrinsic("call", "libc", "free", nothing, vPlane)
+        @intrinsic("call", "libc", "free", nothing, segmentQuantisers)
+        @intrinsic("call", "libc", "free", nothing, segmentFilters)
+        @intrinsic("call", "libc", "free", nothing, segmentProbabilities)
+        @intrinsic("call", "libc", "free", nothing, decoders)
+        @intrinsic("call", "libc", "free", nothing, probabilities)
+        @intrinsic("call", "libc", "free", nothing, updates)
+        @intrinsic("call", "libc", "free", nothing, dcSteps)
+        @intrinsic("call", "libc", "free", nothing, acSteps)
+        @intrinsic("call", "libc", "free", nothing, factors)
+        @intrinsic("call", "libc", "free", nothing, bands)
+        @intrinsic("call", "libc", "free", nothing, zigzag)
+        @intrinsic("call", "libc", "free", nothing, category)
+        @intrinsic("call", "libc", "free", nothing, subModeProbabilities)
+        @intrinsic("call", "libc", "free", nothing, aboveContext)
+        @intrinsic("call", "libc", "free", nothing, leftContext)
+        @intrinsic("call", "libc", "free", nothing, segments)
+        @intrinsic("call", "libc", "free", nothing, lumaModes)
+        @intrinsic("call", "libc", "free", nothing, inner)
+        @intrinsic("call", "libc", "free", nothing, aboveModes)
+        @intrinsic("call", "libc", "free", nothing, leftModes)
+        @intrinsic("call", "libc", "free", nothing, subModes)
+        @intrinsic("call", "libc", "free", nothing, coefficients)
+        @intrinsic("call", "libc", "free", nothing, work)
+        @intrinsic("call", "libc", "free", nothing, top)
+        @intrinsic("call", "libc", "free", nothing, left)
+        @intrinsic("call", "libc", "free", nothing, predicted)
+        return a decoded image
