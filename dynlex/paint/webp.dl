@@ -1,0 +1,723 @@
+# WebP, read by the editor itself (RFC 9649): the RIFF container, simple and
+# extended, and the lossless bitstream (VP8L) with its prefix codes, colour
+# cache, LZ77 references and four transforms. Lossy frames (VP8) are read by
+# paint/vp8.dl; their alpha chunk is a lossless stream like this one.
+import dynlex/paint/decoded.dl
+import dynlex/paint/vp8.dl
+import lib/list.dl
+import lib/string.dl
+
+# --- Bits, least significant first ---
+
+class:
+    patterns:
+        [a|] webp bits
+    members:
+        wbBytes as a pointer to a byte
+        wbCount as an integer
+        wbAt as an integer
+        wbBuffer as a C long integer
+        wbHeld as an integer
+        wbBroken as a boolean
+
+local function fill {a pointer to a webp bits:reader}:
+    execute:
+        loop while (reader's wbHeld) <= 48:
+            set next to 0
+            if (reader's wbAt) < (reader's wbCount):
+                set next to ((the item at (reader's wbAt) in (reader's wbBytes)) as an integer) & 255
+            else if (reader's wbAt) > ((reader's wbCount) + 16):
+                set reader's wbBroken to true
+            set reader's wbAt to (reader's wbAt) + 1
+            set reader's wbBuffer to (reader's wbBuffer) | ((next as a C long integer) << (reader's wbHeld))
+            set reader's wbHeld to (reader's wbHeld) + 8
+
+local function read {integer:count} webp bits from {a pointer to a webp bits:reader}:
+    execute:
+        if count = 0:
+            return 0
+        if (reader's wbHeld) < count:
+            fill reader
+        set value to ((reader's wbBuffer) & (((1 as a C long integer) << count) - (1 as a C long integer))) as an integer
+        set reader's wbBuffer to (reader's wbBuffer) >> count
+        set reader's wbHeld to (reader's wbHeld) - count
+        return value
+
+# --- Prefix codes: a 10-bit lookup, the canonical code beyond it ---
+
+local function webp table counts:
+    replacement: 1024
+local function webp table firsts:
+    replacement: 1041
+local function webp table offsets:
+    replacement: 1058
+local function webp table single:
+    replacement: 1075
+local function webp table symbols:
+    replacement: 1077
+local function webp table size:
+    replacement: 3420
+
+# Builds the code from one length per symbol; false when the lengths do not
+# make a code. A code of one symbol takes no bits.
+local function the webp table for {a pointer to an integer:lengths} of {integer:symbolCount} into {a pointer to an integer:table}:
+    execute:
+        set counts to table + webp table counts
+        set firsts to table + webp table firsts
+        set offsets to table + webp table offsets
+        set sorted to table + webp table symbols
+        loop size from 0 to 17:
+            store 0 at (counts + size)
+        set used to 0
+        set only to 0
+        loop symbol from 0 to symbolCount:
+            set size to the item at symbol in lengths
+            if size > 0:
+                store ((the item at size in counts) + 1) at (counts + size)
+                set used to used + 1
+                set only to symbol
+        store 0 at (table + webp table single)
+        if used = 0:
+            return false
+        if used = 1:
+            store 1 at (table + webp table single)
+            store only at (table + (webp table single + 1))
+            return true
+        set code to 0
+        set offset to 0
+        set space to 0
+        loop size from 1 to 16:
+            store code at (firsts + size)
+            store offset at (offsets + size)
+            set offset to offset + (the item at size in counts)
+            set space to space + ((the item at size in counts) << (15 - size))
+            set code to (code + (the item at size in counts)) << 1
+        # A complete code fills the whole space.
+        if space != 32768:
+            return false
+        ignore @intrinsic("call", "libc", "memset", a pointer, table, 0, 4096 as a word sized integer)
+        set next to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
+        set place to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
+        loop size from 1 to 16:
+            store (the item at size in firsts) at (next + size)
+            store (the item at size in offsets) at (place + size)
+        loop symbol from 0 to symbolCount:
+            set size to the item at symbol in lengths
+            if size > 0:
+                store symbol at (sorted + (the item at size in place))
+                store ((the item at size in place) + 1) at (place + size)
+                set code to the item at size in next
+                store (code + 1) at (next + size)
+                if size <= 10:
+                    set reversed to 0
+                    loop bit from 0 to size:
+                        set reversed to (reversed << 1) | ((code >> bit) & 1)
+                    set step to 1 << size
+                    set slot to reversed
+                    loop while slot < 1024:
+                        store ((size << 16) | symbol) at (table + slot)
+                        set slot to slot + step
+        @intrinsic("call", "libc", "free", nothing, next)
+        @intrinsic("call", "libc", "free", nothing, place)
+        return true
+
+local function the webp symbol of {a pointer to an integer:table} from {a pointer to a webp bits:reader}:
+    execute:
+        if (the item at webp table single in table) = 1:
+            return the item at (webp table single + 1) in table
+        if (reader's wbHeld) < 16:
+            fill reader
+        set entry to the item at (((reader's wbBuffer) & (1023 as a C long integer)) as an integer) in table
+        if entry = 0:
+            # Longer than ten bits: the canonical code bit by bit.
+            set candidate to 0
+            set found to -1
+            set size to 1
+            loop while (size <= 15) and (found < 0):
+                set candidate to candidate | ((((reader's wbBuffer) >> (size - 1)) & (1 as a C long integer)) as an integer)
+                set first to the item at (webp table firsts + size) in table
+                if (candidate >= first) and ((candidate - first) < (the item at (webp table counts + size) in table)):
+                    set found to (size << 16) | (the item at ((webp table symbols + (the item at (webp table offsets + size) in table)) + (candidate - first)) in table)
+                set candidate to candidate << 1
+                set size to size + 1
+            if found < 0:
+                set reader's wbBroken to true
+                return 0
+            set entry to found
+        set length to entry >> 16
+        set reader's wbBuffer to (reader's wbBuffer) >> length
+        set reader's wbHeld to (reader's wbHeld) - length
+        return entry & 65535
+
+local function webp code length order:
+    execute:
+        return the string form of "17 18 0 1 2 3 4 5 16 6 7 8 9 10 11 12 13 14 15"
+
+local function fill webp numbers {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        set negative to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if character = 45:
+                set negative to true
+            else if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                if negative:
+                    set value to 0 - value
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+                set negative to false
+
+# Reads one prefix code of the alphabet into the table.
+local function read webp code of {integer:alphabet} into {a pointer to an integer:table} from {a pointer to a webp bits:reader}:
+    execute:
+        set lengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, (alphabet + 8) as a word sized integer, 4 as a word sized integer)
+        set made to false
+        if (read 1 webp bits from reader) = 1:
+            # Simple: one or two symbols of length 1.
+            set symbolCount to (read 1 webp bits from reader) + 1
+            set firstBits to 1
+            if (read 1 webp bits from reader) = 1:
+                set firstBits to 8
+            set first to read firstBits webp bits from reader
+            if first < alphabet:
+                store 1 at (lengths + first)
+            if symbolCount = 2:
+                set second to read 8 webp bits from reader
+                if second < alphabet:
+                    store 1 at (lengths + second)
+            set made to the webp table for lengths of alphabet into table
+        else:
+            set order to @intrinsic("call", "libc", "calloc", a pointer to an integer, 19 as a word sized integer, 4 as a word sized integer)
+            fill webp numbers order from (webp code length order)
+            set codeLengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 19 as a word sized integer, 4 as a word sized integer)
+            set lengthCount to 4 + (read 4 webp bits from reader)
+            loop index from 0 to lengthCount:
+                store (read 3 webp bits from reader) at (codeLengths + (the item at index in order))
+            set lengthTable to @intrinsic("call", "libc", "calloc", a pointer to an integer, webp table size as a word sized integer, 4 as a word sized integer)
+            if the webp table for codeLengths of 19 into lengthTable:
+                set tokens to alphabet
+                if (read 1 webp bits from reader) = 1:
+                    set width to 2 + (2 * (read 3 webp bits from reader))
+                    set tokens to 2 + (read width webp bits from reader)
+                set symbol to 0
+                set previous to 8
+                loop while (symbol < alphabet) and (tokens > 0):
+                    set tokens to tokens - 1
+                    set token to the webp symbol of lengthTable from reader
+                    if token < 16:
+                        store token at (lengths + symbol)
+                        set symbol to symbol + 1
+                        if token != 0:
+                            set previous to token
+                    else:
+                        set repeat to 0
+                        set value to 0
+                        if token = 16:
+                            set repeat to 3 + (read 2 webp bits from reader)
+                            set value to previous
+                        else if token = 17:
+                            set repeat to 3 + (read 3 webp bits from reader)
+                        else:
+                            set repeat to 11 + (read 7 webp bits from reader)
+                        if (symbol + repeat) > alphabet:
+                            set reader's wbBroken to true
+                            set symbol to alphabet
+                        else:
+                            loop step from 0 to repeat:
+                                store value at (lengths + (symbol + step))
+                            set symbol to symbol + repeat
+                set made to the webp table for lengths of alphabet into table
+            @intrinsic("call", "libc", "free", nothing, order)
+            @intrinsic("call", "libc", "free", nothing, codeLengths)
+            @intrinsic("call", "libc", "free", nothing, lengthTable)
+        @intrinsic("call", "libc", "free", nothing, lengths)
+        if made = false:
+            set reader's wbBroken to true
+
+# A length or distance from its prefix symbol and extra bits.
+local function the webp copy value of {integer:prefix} from {a pointer to a webp bits:reader}:
+    execute:
+        if prefix < 4:
+            return prefix + 1
+        set extra to (prefix - 2) >> 1
+        set offset to (2 + (prefix & 1)) << extra
+        return (offset + (read extra webp bits from reader)) + 1
+
+local function webp distance map:
+    execute:
+        return the string form of "0 1 1 0 1 1 -1 1 0 2 2 0 1 2 -1 2 2 1 -2 1 2 2 -2 2 0 3 3 0 1 3 -1 3 3 1 -3 1 2 3 -2 3 3 2 -3 2 0 4 4 0 1 4 -1 4 4 1 -4 1 3 3 -3 3 2 4 -2 4 4 2 -4 2 0 5 3 4 -3 4 4 3 -4 3 5 0 1 5 -1 5 5 1 -5 1 2 5 -2 5 5 2 -5 2 4 4 -4 4 3 5 -3 5 5 3 -5 3 0 6 6 0 1 6 -1 6 6 1 -6 1 2 6 -2 6 6 2 -6 2 4 5 -4 5 5 4 -5 4 3 6 -3 6 6 3 -6 3 0 7 7 0 1 7 -1 7 5 5 -5 5 7 1 -7 1 4 6 -4 6 6 4 -6 4 2 7 -2 7 7 2 -7 2 3 7 -3 7 7 3 -7 3 5 6 -5 6 6 5 -6 5 8 0 4 7 -4 7 7 4 -7 4 8 1 8 2 6 6 -6 6 8 3 5 7 -5 7 7 5 -7 5 8 4 6 7 -6 7 7 6 -7 6 8 5 7 7 -7 7 8 6 8 7"
+
+local function the webp cache slot of {integer:colour} for {integer:bits}:
+    execute:
+        set product to (((colour as a C long integer) & (4294967295 as a C long integer)) * (506832829 as a C long integer)) & (4294967295 as a C long integer)
+        return (product >> (32 - bits)) as an integer
+
+# --- Entropy-coded images ---
+
+# Decodes an image of the size into ARGB words. Only the main image may
+# carry meta prefix codes; every image may use a colour cache.
+local function the webp pixels of {integer:width} by {integer:height} main {boolean:main} from {a pointer to a webp bits:reader}:
+    execute:
+        set total to width * height
+        set decoded to @intrinsic("call", "libc", "calloc", a pointer to an integer, (the maximum of total and 1) as a word sized integer, 4 as a word sized integer)
+        set cacheBits to 0
+        if (read 1 webp bits from reader) = 1:
+            set cacheBits to read 4 webp bits from reader
+            if (cacheBits < 1) or (cacheBits > 11):
+                set reader's wbBroken to true
+                return decoded
+        set cacheSize to 0
+        if cacheBits > 0:
+            set cacheSize to 1 << cacheBits
+        set groupBits to 0
+        set groupWidth to 1
+        set groupMap to 0 as a pointer to an integer
+        set groups to 1
+        # Only the main image has meta prefix codes ("and" evaluates both
+        # sides, so the bit is read in a test of its own).
+        set grouped to false
+        if main:
+            set grouped to (read 1 webp bits from reader) = 1
+        if grouped:
+            set groupBits to (read 3 webp bits from reader) + 2
+            set groupWidth to (width + ((1 << groupBits) - 1)) >> groupBits
+            set groupHeight to (height + ((1 << groupBits) - 1)) >> groupBits
+            set groupMap to the webp pixels of groupWidth by groupHeight main false from reader
+            loop index from 0 to (groupWidth * groupHeight):
+                set value to ((the item at index in groupMap) >> 8) & 65535
+                store value at (groupMap + index)
+                set groups to the maximum of groups and (value + 1)
+        if reader's wbBroken:
+            return decoded
+        # Five codes a group: green with lengths and cache, red, blue,
+        # alpha, distance.
+        set tables to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((groups * 5) * webp table size) as a word sized integer, 4 as a word sized integer)
+        loop group from 0 to groups:
+            loop kind from 0 to 5:
+                set alphabet to 256
+                if kind = 0:
+                    set alphabet to (256 + 24) + cacheSize
+                if kind = 4:
+                    set alphabet to 40
+                if (reader's wbBroken) = false:
+                    read webp code of alphabet into (tables + (((group * 5) + kind) * webp table size)) from reader
+        set cache to @intrinsic("call", "libc", "calloc", a pointer to an integer, (cacheSize + 1) as a word sized integer, 4 as a word sized integer)
+        set distances to @intrinsic("call", "libc", "calloc", a pointer to an integer, 240 as a word sized integer, 4 as a word sized integer)
+        fill webp numbers distances from (webp distance map)
+        set at to 0
+        set cached to 0
+        loop while (at < total) and ((reader's wbBroken) = false):
+            set x to the remainder of at divided by width
+            set y to at / width
+            set group to 0
+            if groupBits > 0:
+                set group to the item at (((y >> groupBits) * groupWidth) + (x >> groupBits)) in groupMap
+            set base to tables + ((group * 5) * webp table size)
+            set green to the webp symbol of base from reader
+            if green < 256:
+                set red to the webp symbol of (base + webp table size) from reader
+                set blue to the webp symbol of (base + (2 * webp table size)) from reader
+                set alpha to the webp symbol of (base + (3 * webp table size)) from reader
+                store (((alpha << 24) | (red << 16)) | ((green << 8) | blue)) at (decoded + at)
+                set at to at + 1
+            else if green < 280:
+                set length to the webp copy value of (green - 256) from reader
+                set code to the webp copy value of (the webp symbol of (base + (4 * webp table size)) from reader) from reader
+                set distance to code - 120
+                if code <= 120:
+                    set dx to the item at ((code - 1) * 2) in distances
+                    set dy to the item at (((code - 1) * 2) + 1) in distances
+                    set distance to the maximum of 1 and ((dy * width) + dx)
+                if (distance > at) or ((at + length) > total):
+                    set reader's wbBroken to true
+                else:
+                    loop step from 0 to length:
+                        store (the item at ((at + step) - distance) in decoded) at (decoded + (at + step))
+                    set at to at + length
+            else:
+                set slot to green - 280
+                if slot >= cacheSize:
+                    set reader's wbBroken to true
+                else:
+                    # The cache holds every pixel before this one.
+                    loop while cached < at:
+                        set colour to the item at cached in decoded
+                        store colour at (cache + (the webp cache slot of colour for cacheBits))
+                        set cached to cached + 1
+                    store (the item at slot in cache) at (decoded + at)
+                    set at to at + 1
+            if cacheBits > 0:
+                loop while cached < at:
+                    set colour to the item at cached in decoded
+                    store colour at (cache + (the webp cache slot of colour for cacheBits))
+                    set cached to cached + 1
+        @intrinsic("call", "libc", "free", nothing, tables)
+        @intrinsic("call", "libc", "free", nothing, cache)
+        @intrinsic("call", "libc", "free", nothing, distances)
+        if groupMap != (0 as a pointer to an integer):
+            @intrinsic("call", "libc", "free", nothing, groupMap)
+        return decoded
+
+# --- Transforms ---
+
+local function webp average {integer:first} {integer:second}:
+    execute:
+        set alpha to (((first >> 24) & 255) + ((second >> 24) & 255)) / 2
+        set red to (((first >> 16) & 255) + ((second >> 16) & 255)) / 2
+        set green to (((first >> 8) & 255) + ((second >> 8) & 255)) / 2
+        set blue to ((first & 255) + (second & 255)) / 2
+        return ((alpha << 24) | (red << 16)) | ((green << 8) | blue)
+
+local function webp clamp {integer:value}:
+    execute:
+        return value clamped between 0 and 255
+
+local function webp channel {integer:pixel} at {integer:shift}:
+    execute:
+        return (pixel >> shift) & 255
+
+local function the webp prediction {integer:mode} from {integer:left} {integer:top} {integer:topRight} {integer:topLeft}:
+    execute:
+        if mode = 1:
+            return left
+        if mode = 2:
+            return top
+        if mode = 3:
+            return topRight
+        if mode = 4:
+            return topLeft
+        if mode = 5:
+            return webp average (webp average left topRight) top
+        if mode = 6:
+            return webp average left topLeft
+        if mode = 7:
+            return webp average left top
+        if mode = 8:
+            return webp average topLeft top
+        if mode = 9:
+            return webp average top topRight
+        if mode = 10:
+            return webp average (webp average left topLeft) (webp average top topRight)
+        if mode = 11:
+            # Select: the neighbour nearer to left + top - top left.
+            set towardsLeft to 0
+            set towardsTop to 0
+            loop shift from 0 to 4:
+                set leftValue to webp channel left at (shift * 8)
+                set topValue to webp channel top at (shift * 8)
+                set cornerValue to webp channel topLeft at (shift * 8)
+                set estimate to (leftValue + topValue) - cornerValue
+                set towardsLeft to towardsLeft + (the absolute value of (estimate - leftValue))
+                set towardsTop to towardsTop + (the absolute value of (estimate - topValue))
+            if towardsLeft < towardsTop:
+                return left
+            return top
+        if (mode = 12) or (mode = 13):
+            set result to 0
+            loop shift from 0 to 4:
+                set leftValue to webp channel left at (shift * 8)
+                set topValue to webp channel top at (shift * 8)
+                set cornerValue to webp channel topLeft at (shift * 8)
+                set value to 0
+                if mode = 12:
+                    set value to webp clamp ((leftValue + topValue) - cornerValue)
+                else:
+                    set mean to (leftValue + topValue) / 2
+                    set value to webp clamp (mean + ((mean - cornerValue) / 2))
+                set result to result | (value << (shift * 8))
+            return result
+        return -16777216
+
+local function {integer:first} plus {integer:second} by channel:
+    execute:
+        set alpha to ((((first >> 24) & 255) + ((second >> 24) & 255)) & 255) << 24
+        set red to ((((first >> 16) & 255) + ((second >> 16) & 255)) & 255) << 16
+        set green to ((((first >> 8) & 255) + ((second >> 8) & 255)) & 255) << 8
+        set blue to ((first & 255) + (second & 255)) & 255
+        return ((alpha | red) | (green | blue))
+
+local function undo webp prediction in {a pointer to an integer:pixels} of {integer:width} by {integer:height} with {a pointer to an integer:modes} bits {integer:bits}:
+    execute:
+        set blocksWide to (width + ((1 << bits) - 1)) >> bits
+        loop y from 0 to height:
+            loop x from 0 to width:
+                set at to (y * width) + x
+                set predicted to -16777216
+                if (y = 0) and (x > 0):
+                    set predicted to the item at (at - 1) in pixels
+                else if (x = 0) and (y > 0):
+                    set predicted to the item at (at - width) in pixels
+                else if (x > 0) and (y > 0):
+                    set mode to ((the item at (((y >> bits) * blocksWide) + (x >> bits)) in modes) >> 8) & 15
+                    set topRight to the item at ((at - width) + 1) in pixels
+                    if x = (width - 1):
+                        set topRight to the item at (y * width) in pixels
+                    set predicted to the webp prediction mode from (the item at (at - 1) in pixels) (the item at (at - width) in pixels) topRight (the item at ((at - width) - 1) in pixels)
+                store ((the item at at in pixels) plus predicted by channel) at (pixels + at)
+
+local function the signed {integer:value}:
+    execute:
+        set narrowed to value & 255
+        if narrowed >= 128:
+            return narrowed - 256
+        return narrowed
+
+local function undo webp colour transform in {a pointer to an integer:pixels} of {integer:width} by {integer:height} with {a pointer to an integer:elements} bits {integer:bits}:
+    execute:
+        set blocksWide to (width + ((1 << bits) - 1)) >> bits
+        loop y from 0 to height:
+            loop x from 0 to width:
+                set at to (y * width) + x
+                set element to the item at (((y >> bits) * blocksWide) + (x >> bits)) in elements
+                set greenToRed to the signed (element & 255)
+                set greenToBlue to the signed ((element >> 8) & 255)
+                set redToBlue to the signed ((element >> 16) & 255)
+                set pixel to the item at at in pixels
+                set green to the signed ((pixel >> 8) & 255)
+                set red to ((pixel >> 16) & 255) + ((greenToRed * green) >> 5)
+                set blue to (pixel & 255) + ((greenToBlue * green) >> 5)
+                set blue to blue + ((redToBlue * (the signed red)) >> 5)
+                store (((pixel & -16711936) | ((red & 255) << 16)) | (blue & 255)) at (pixels + at)
+
+local function add webp green in {a pointer to an integer:pixels} of {integer:count}:
+    execute:
+        loop at from 0 to count:
+            set pixel to the item at at in pixels
+            set level to (pixel >> 8) & 255
+            set red to (((pixel >> 16) & 255) + level) & 255
+            set blue to ((pixel & 255) + level) & 255
+            store (((pixel & -16711936) | (red << 16)) | blue) at (pixels + at)
+
+# Unpacks the indices (bundled per width bits) of the packed image of
+# packedWidth into colours of the palette, for an image of the width.
+local function the webp colours of {a pointer to an integer:packed} {integer:packedWidth} by {integer:height} to {integer:width} with {a pointer to an integer:palette} of {integer:colours} bundling {integer:bits}:
+    execute:
+        set result to @intrinsic("call", "libc", "calloc", a pointer to an integer, (width * height) as a word sized integer, 4 as a word sized integer)
+        set perPixel to 1 << bits
+        set indexBits to 8 >> bits
+        set mask to (1 << indexBits) - 1
+        loop y from 0 to height:
+            loop x from 0 to width:
+                set word to the item at ((y * packedWidth) + (x >> bits)) in packed
+                set index to ((word >> 8) & 255) >> ((x & (perPixel - 1)) * indexBits)
+                if bits > 0:
+                    set index to index & mask
+                set colour to 0
+                if index < colours:
+                    set colour to the item at index in palette
+                store colour at (result + ((y * width) + x))
+        return result
+
+class:
+    patterns:
+        [a|] webp transform
+    members:
+        wtKind as an integer
+        wtBits as an integer
+        wtData as a pointer to an integer
+        wtWidth as an integer
+        wtColours as an integer
+
+# Decodes a lossless image stream (transforms and image data, no header) of
+# the size into ARGB words; broken is set in the reader when it fails.
+function the webp lossless pixels of {integer:width} by {integer:height} from {a pointer to a webp bits:reader}:
+    execute:
+        set transforms to an empty list of a webp transform
+        set codedWidth to width
+        set seen to 0
+        loop while ((reader's wbBroken) = false) and ((read 1 webp bits from reader) = 1):
+            set kind to read 2 webp bits from reader
+            if ((seen >> kind) & 1) = 1:
+                set reader's wbBroken to true
+            set seen to seen | (1 << kind)
+            if (kind = 0) or (kind = 1):
+                set bits to (read 3 webp bits from reader) + 2
+                set blocksWide to (codedWidth + ((1 << bits) - 1)) >> bits
+                set blocksHigh to (height + ((1 << bits) - 1)) >> bits
+                append @intrinsic("construct", a webp transform, kind, bits, the webp pixels of blocksWide by blocksHigh main false from reader, codedWidth, 0) to transforms
+            else if kind = 2:
+                append @intrinsic("construct", a webp transform, kind, 0, 0 as a pointer to an integer, codedWidth, 0) to transforms
+            else:
+                set colours to (read 8 webp bits from reader) + 1
+                set palette to the webp pixels of colours by 1 main false from reader
+                # The palette is coded as differences.
+                loop index from 1 to colours:
+                    store ((the item at index in palette) plus (the item at (index - 1) in palette) by channel) at (palette + index)
+                set bits to 0
+                if colours <= 2:
+                    set bits to 3
+                else if colours <= 4:
+                    set bits to 2
+                else if colours <= 16:
+                    set bits to 1
+                append @intrinsic("construct", a webp transform, kind, bits, palette, codedWidth, colours) to transforms
+                set codedWidth to (codedWidth + ((1 << bits) - 1)) >> bits
+        set argb to the webp pixels of codedWidth by height main true from reader
+        # The transforms undone, the last read first.
+        set index to (the length of transforms) - 1
+        loop while index >= 0:
+            set transform to the item at index in transforms
+            if transform's wtKind = 0:
+                undo webp prediction in argb of (transform's wtWidth) by height with (transform's wtData) bits (transform's wtBits)
+            else if transform's wtKind = 1:
+                undo webp colour transform in argb of (transform's wtWidth) by height with (transform's wtData) bits (transform's wtBits)
+            else if transform's wtKind = 2:
+                add webp green in argb of ((transform's wtWidth) * height)
+            else:
+                set packedWidth to ((transform's wtWidth) + ((1 << (transform's wtBits)) - 1)) >> (transform's wtBits)
+                set unpacked to the webp colours of argb packedWidth by height to (transform's wtWidth) with (transform's wtData) of (transform's wtColours) bundling (transform's wtBits)
+                @intrinsic("call", "libc", "free", nothing, argb)
+                set argb to unpacked
+            if transform's wtData != (0 as a pointer to an integer):
+                @intrinsic("call", "libc", "free", nothing, transform's wtData)
+            set index to index - 1
+        free transforms
+        return argb
+
+local function a webp reader over {pointer:bytes} from {integer:start} spanning {integer:count}:
+    execute:
+        return @intrinsic("construct", a webp bits, (bytes as a pointer to a byte) + start, count, 0, 0 as a C long integer, 0, false)
+
+# A VP8L chunk's image.
+local function the paint vp8l at {pointer:bytes} from {integer:start} spanning {integer:count}:
+    execute:
+        if (count < 5) or ((the byte start in bytes) != 47):
+            return no decoded image because "the lossless WebP data is damaged"
+        set reader to a webp reader over bytes from (start + 1) spanning (count - 1)
+        set source to the address of reader
+        set width to (read 14 webp bits from source) + 1
+        set height to (read 14 webp bits from source) + 1
+        ignore read 1 webp bits from source
+        if (read 3 webp bits from source) != 0:
+            return no decoded image because "a lossless WebP version the editor does not read"
+        if (a paint canvas width by height fits) = false:
+            return no decoded image because "the image is larger than 32768 pixels a side or 268 million pixels"
+        set argb to the webp lossless pixels of width by height from source
+        if reader's wbBroken:
+            @intrinsic("call", "libc", "free", nothing, argb)
+            return no decoded image because "the lossless WebP data is damaged"
+        set image to an unfilled paint canvas width by height
+        set target to (image's pixels) as a pointer to an integer
+        loop spot from 0 to (width * height):
+            set pixel to the item at spot in argb
+            # ARGB to the canvas's RGBA bytes.
+            store ((((pixel >> 16) & 255) | (pixel & -16711936)) | ((pixel & 255) << 16)) at (target + spot)
+        @intrinsic("call", "libc", "free", nothing, argb)
+        return a decoded image
+
+# --- The container ---
+
+function the paint webp from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 20) or (((the bytes 0 in bytes spell "RIFF") = false) or ((the bytes 8 in bytes spell "WEBP") = false)):
+            return no decoded image because "not a WebP file"
+        set cursor to 12
+        set alphaAt to -1
+        set alphaSize to 0
+        set canvasWidth to 0
+        set canvasHeight to 0
+        loop while (cursor + 8) <= count:
+            set size to the little-endian word (cursor + 4) in bytes
+            set start to cursor + 8
+            if (start + size) > count:
+                set size to count - start
+            if the bytes cursor in bytes spell "VP8L":
+                return the paint vp8l at bytes from start spanning size
+            if the bytes cursor in bytes spell "VP8 ":
+                set frame to the paint vp8 frame at bytes from start spanning size
+                if (frame's ok) and (alphaAt >= 0):
+                    set plane to the webp alpha at bytes from alphaAt spanning alphaSize for (frame's image's width) by (frame's image's height)
+                    if plane = (0 as a pointer to a byte):
+                        free paint canvas frame's image
+                        return no decoded image because "the WebP's alpha data is damaged"
+                    loop spot from 0 to ((frame's image's width) * (frame's image's height)):
+                        store (the item at spot in plane) at ((frame's image's pixels) + ((spot * 4) + 3))
+                    @intrinsic("call", "libc", "free", nothing, plane)
+                return frame
+            if the bytes cursor in bytes spell "VP8X":
+                set canvasWidth to ((the byte (start + 4) in bytes) | ((the byte (start + 5) in bytes) << 8)) | ((the byte (start + 6) in bytes) << 16)
+                set canvasHeight to ((the byte (start + 7) in bytes) | ((the byte (start + 8) in bytes) << 8)) | ((the byte (start + 9) in bytes) << 16)
+            if the bytes cursor in bytes spell "ALPH":
+                set alphaAt to start
+                set alphaSize to size
+            if the bytes cursor in bytes spell "ANMF":
+                # An animation: its first frame, read from the frame's own
+                # chunks after the 16-byte frame header.
+                set cursor to start + 16
+                set alphaAt to -1
+            else:
+                set cursor to (start + size) + (size & 1)
+        ignore canvasWidth
+        ignore canvasHeight
+        return no decoded image because "the WebP holds no image"
+
+# --- Alpha (ALPH chunk) for a lossy frame ---
+
+# The alpha plane (width * height bytes) from the chunk; null when damaged.
+function the webp alpha at {pointer:bytes} from {integer:start} spanning {integer:count} for {integer:width} by {integer:height}:
+    execute:
+        if count < 1:
+            return 0 as a pointer to a byte
+        set header to the byte start in bytes
+        set method to header & 3
+        set filter to (header >> 2) & 3
+        set plane to @intrinsic("call", "libc", "calloc", a pointer to a byte, (width * height) as a word sized integer, 1 as a word sized integer)
+        if method = 0:
+            if (count - 1) < (width * height):
+                @intrinsic("call", "libc", "free", nothing, plane)
+                return 0 as a pointer to a byte
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, plane, (bytes as a pointer to a byte) + (start + 1), (width * height) as a word sized integer)
+        else if method = 1:
+            set reader to a webp reader over bytes from (start + 1) spanning (count - 1)
+            set argb to the webp lossless pixels of width by height from (the address of reader)
+            if reader's wbBroken:
+                @intrinsic("call", "libc", "free", nothing, argb)
+                @intrinsic("call", "libc", "free", nothing, plane)
+                return 0 as a pointer to a byte
+            loop spot from 0 to (width * height):
+                store ((((the item at spot in argb) >> 8) & 255) as a byte) at (plane + spot)
+            @intrinsic("call", "libc", "free", nothing, argb)
+        else:
+            @intrinsic("call", "libc", "free", nothing, plane)
+            return 0 as a pointer to a byte
+        # Unfiltering: horizontal, vertical or gradient prediction.
+        if filter > 0:
+            loop y from 0 to height:
+                loop x from 0 to width:
+                    set spot to (y * width) + x
+                    set left to 0
+                    set top to 0
+                    set corner to 0
+                    if x > 0:
+                        set left to ((the item at (spot - 1) in plane) as an integer) & 255
+                    if y > 0:
+                        set top to ((the item at (spot - width) in plane) as an integer) & 255
+                    if (x > 0) and (y > 0):
+                        set corner to ((the item at ((spot - width) - 1) in plane) as an integer) & 255
+                    set predicted to 0
+                    if (x = 0) and (y = 0):
+                        set predicted to 0
+                    else if x = 0:
+                        # The first column takes the pixel above.
+                        set predicted to top
+                    else if y = 0:
+                        # The first row takes the pixel to the left.
+                        set predicted to left
+                    else if filter = 1:
+                        set predicted to left
+                    else if filter = 2:
+                        set predicted to top
+                    else:
+                        set predicted to ((left + top) - corner) clamped between 0 and 255
+                    store (((((the item at spot in plane) as an integer) & 255) + predicted) as a byte) at (plane + spot)
+        return plane

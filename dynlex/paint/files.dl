@@ -7,6 +7,7 @@ import dynlex/paint/canvas.dl
 import dynlex/paint/jpeg.dl
 import dynlex/paint/png.dl
 import dynlex/paint/formats.dl
+import dynlex/paint/webp.dl
 import dynlex/paint/vector.dl
 import dynlex/paint/inflate.dl
 import lib/string.dl
@@ -276,6 +277,8 @@ function the paint image opened from {string:path}:
                 set result to a failed paint file with "the compressed file could not be read"
         else if ((first = 68) and (second = 68)) and (((the byte at 2 of buffer) = 83) and ((the byte at 3 of buffer) = 32)):
             set result to (the paint dds from data spanning count) as a paint file
+        else if ((first = 82) and (second = 73)) and ((the byte at 8 of buffer) = 87):
+            set result to (the paint webp from data spanning count) as a paint file
         else if (first = 35) and (second = 100):
             set result to (the paint xbm from data spanning count) as a paint file
         else if ((first = 47) and (second = 42)) and (path ends with extension ".xpm"):

@@ -1,0 +1,9 @@
+# Lossy WebP frames (VP8, RFC 6386), read by the editor itself.
+import dynlex/paint/decoded.dl
+
+function the paint vp8 frame at {pointer:bytes} from {integer:start} spanning {integer:count}:
+    execute:
+        ignore bytes
+        ignore start
+        ignore count
+        return no decoded image because "lossy WebP is not read yet"

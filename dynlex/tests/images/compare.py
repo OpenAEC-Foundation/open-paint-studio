@@ -43,7 +43,6 @@ def reference(path):
 
 # Formats this system's gdk-pixbuf (glycin loaders) lists but cannot read.
 unsupported = {
-               ".webp": "the editor does not read WebP yet and says so",
                ".avif": "the editor does not read AVIF yet and says so",
                ".jp2": "the editor does not read JPEG 2000 yet and says so"}
 failed = 0
