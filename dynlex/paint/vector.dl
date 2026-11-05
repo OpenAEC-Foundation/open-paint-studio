@@ -899,64 +899,108 @@ local function the stroke of {paint outline:outline} thick {a 64 bit floating-po
 
 # --- Gaussian blur of a straight-alpha RGBA canvas, in place ---
 
+# One box pass along lines of a premultiplied plane: each output is the sum
+# of the inputs from left before to right after it, over size; outside is
+# transparent. Lines are count long, step apart within a line, and lines
+# start lineStep apart.
+local function box pass over {a pointer to an integer:source} into {a pointer to an integer:target} lines {integer:lines} of {integer:count} stepping {integer:step} and {integer:lineStep} reaching {integer:left} {integer:right}:
+    execute:
+        set size to (left + right) + 1
+        loop line from 0 to lines:
+            set base to line * lineStep
+            set sum to 0
+            # The window for position 0: inputs 0..right.
+            loop index from 0 to (the minimum of (right + 1) and count):
+                set sum to sum + (the item at (base + (index * step)) in source)
+            loop index from 0 to count:
+                store ((sum + (size / 2)) / size) at (target + (base + (index * step)))
+                set entering to (index + right) + 1
+                if entering < count:
+                    set sum to sum + (the item at (base + (entering * step)) in source)
+                set leaving to index - left
+                if leaving >= 0:
+                    set sum to sum - (the item at (base + (leaving * step)) in source)
+
+# Three box passes along one axis, as SVG approximates a Gaussian of the
+# deviation: boxes of size d, or for an even d two of size d (shifted left,
+# then right) and one of d + 1.
+local function box blur {a pointer to an integer:plane} using {a pointer to an integer:spare} lines {integer:lines} of {integer:count} stepping {integer:step} and {integer:lineStep} deviation {a 64 bit floating-point number:sigma}:
+    execute:
+        set d to (the floor of ((((sigma * 3.0) * 2.5066282746310002) / 4.0) + 0.5)) as an integer
+        if d < 1:
+            return nothing
+        if (d & 1) = 1:
+            box pass over plane into spare lines lines of count stepping step and lineStep reaching (d / 2) (d / 2)
+            box pass over spare into plane lines lines of count stepping step and lineStep reaching (d / 2) (d / 2)
+            box pass over plane into spare lines lines of count stepping step and lineStep reaching (d / 2) (d / 2)
+        else:
+            box pass over plane into spare lines lines of count stepping step and lineStep reaching (d / 2) ((d / 2) - 1)
+            box pass over spare into plane lines lines of count stepping step and lineStep reaching ((d / 2) - 1) (d / 2)
+            box pass over plane into spare lines lines of count stepping step and lineStep reaching (d / 2) (d / 2)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, plane, spare, ((lines * count) * 4) as a word sized integer)
+
+# Gaussian blur of a straight-alpha RGBA canvas, in place, on premultiplied
+# values: three box blurs per axis as SVG specifies for a deviation of 2 or
+# more, the exact kernel below that.
 local function blur {paint canvas:image} by {a 64 bit floating-point number:sigma}:
     execute:
         if sigma <= 0.0:
             return nothing
-        set radius to ((the ceiling of (sigma * 3.0)) as an integer) clamped between 1 and 200
         set width to image's width
         set height to image's height
-        set kernel to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, ((radius * 2) + 1) as a word sized integer, 8 as a word sized integer)
-        set total to 0.0
-        loop index from 0 to ((radius * 2) + 1):
-            set distance to (index - radius) as a 64 bit floating-point number
-            set weight to e to the (0.0 - ((distance * distance) / ((2.0 * sigma) * sigma)))
-            store weight at (kernel + index)
-            set total to total + weight
-        loop index from 0 to ((radius * 2) + 1):
-            store ((the item at index in kernel) / total) at (kernel + index)
-        # Premultiplied planes.
         set count to width * height
-        set planes to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (count * 4) as a word sized integer, 8 as a word sized integer)
-        set scratch to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (count * 4) as a word sized integer, 8 as a word sized integer)
         set pixels to image's pixels
+        set planes to @intrinsic("call", "libc", "calloc", a pointer to an integer, (count * 4) as a word sized integer, 4 as a word sized integer)
+        set spare to @intrinsic("call", "libc", "calloc", a pointer to an integer, (count * 4) as a word sized integer, 4 as a word sized integer)
+        # Premultiplied channels, in 1/256 levels for precision.
         loop index from 0 to count:
-            set alpha to (((the item at ((index * 4) + 3) in pixels) as an integer) & 255) as a 64 bit floating-point number
+            set alpha to ((the item at ((index * 4) + 3) in pixels) as an integer) & 255
             loop channel from 0 to 3:
-                store (((((the item at ((index * 4) + channel) in pixels) as an integer) & 255) as a 64 bit floating-point number) * (alpha / 255.0)) at (planes + ((channel * count) + index))
-            store alpha at (planes + ((3 * count) + index))
-        # Rows, then columns.
+                store ((((((the item at ((index * 4) + channel) in pixels) as an integer) & 255) * alpha) * 256) / 255) at (planes + ((channel * count) + index))
+            store (alpha * 256) at (planes + ((3 * count) + index))
         loop channel from 0 to 4:
             set plane to planes + (channel * count)
-            set target to scratch + (channel * count)
-            loop row from 0 to height:
-                loop column from 0 to width:
-                    set sum to 0.0
-                    loop tap from 0 to ((radius * 2) + 1):
-                        set source to (column + tap) - radius
-                        if (source >= 0) and (source < width):
-                            set sum to sum + ((the item at tap in kernel) * (the item at ((row * width) + source) in plane))
-                    store sum at (target + ((row * width) + column))
-            loop row from 0 to height:
-                loop column from 0 to width:
-                    set sum to 0.0
-                    loop tap from 0 to ((radius * 2) + 1):
-                        set source to (row + tap) - radius
-                        if (source >= 0) and (source < height):
-                            set sum to sum + ((the item at tap in kernel) * (the item at ((source * width) + column) in target))
-                    store sum at (plane + ((row * width) + column))
+            if sigma >= 2.0:
+                box blur plane using spare lines height of width stepping 1 and width deviation sigma
+                box blur plane using spare lines width of height stepping width and 1 deviation sigma
+            else:
+                set radius to ((the ceiling of (sigma * 3.0)) as an integer) clamped between 1 and 8
+                set weights to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, ((radius * 2) + 1) as a word sized integer, 8 as a word sized integer)
+                set total to 0.0
+                loop tap from 0 to ((radius * 2) + 1):
+                    set distance to (tap - radius) as a 64 bit floating-point number
+                    set weight to e to the (0.0 - ((distance * distance) / ((2.0 * sigma) * sigma)))
+                    store weight at (weights + tap)
+                    set total to total + weight
+                # Rows into spare, columns back.
+                loop row from 0 to height:
+                    loop column from 0 to width:
+                        set sum to 0.0
+                        loop tap from 0 to ((radius * 2) + 1):
+                            set source to (column + tap) - radius
+                            if (source >= 0) and (source < width):
+                                set sum to sum + ((the item at tap in weights) * ((the item at ((row * width) + source) in plane) as a 64 bit floating-point number))
+                        store ((the rounded value of (sum / total)) as an integer) at (spare + ((row * width) + column))
+                loop row from 0 to height:
+                    loop column from 0 to width:
+                        set sum to 0.0
+                        loop tap from 0 to ((radius * 2) + 1):
+                            set source to (row + tap) - radius
+                            if (source >= 0) and (source < height):
+                                set sum to sum + ((the item at tap in weights) * ((the item at ((source * width) + column) in spare) as a 64 bit floating-point number))
+                        store ((the rounded value of (sum / total)) as an integer) at (plane + ((row * width) + column))
+                @intrinsic("call", "libc", "free", nothing, weights)
         loop index from 0 to count:
-            set alpha to the item at ((3 * count) + index) in planes
-            set alphaByte to ((the rounded value of alpha) as an integer) clamped between 0 and 255
+            set alpha to ((the item at ((3 * count) + index) in planes) + 128) / 256
+            set alpha to alpha clamped between 0 and 255
             loop channel from 0 to 3:
                 set value to 0
-                if alpha > 0.001:
-                    set value to ((the rounded value of (((the item at ((channel * count) + index) in planes) * 255.0) / alpha)) as an integer) clamped between 0 and 255
-                store (value as a byte) at (pixels + ((index * 4) + channel))
-            store (alphaByte as a byte) at (pixels + ((index * 4) + 3))
-        @intrinsic("call", "libc", "free", nothing, kernel)
+                if alpha > 0:
+                    set value to ((((the item at ((channel * count) + index) in planes) / 256) * 255) + (alpha / 2)) / alpha
+                store ((value clamped between 0 and 255) as a byte) at (pixels + ((index * 4) + channel))
+            store (alpha as a byte) at (pixels + ((index * 4) + 3))
         @intrinsic("call", "libc", "free", nothing, planes)
-        @intrinsic("call", "libc", "free", nothing, scratch)
+        @intrinsic("call", "libc", "free", nothing, spare)
 
 # Composites the straight-alpha layer onto the target.
 local function composite {paint canvas:layer} onto {paint canvas:target}:

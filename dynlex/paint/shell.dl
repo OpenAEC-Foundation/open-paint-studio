@@ -7,6 +7,7 @@ import dynlex/paint/skin_data.dl
 import dynlex/paint/app.dl
 import dynlex/paint/typeset.dl
 import dynlex/paint/vector.dl
+import lib/atomic.dl
 
 # --- Shell state beside the editor's own ---
 
@@ -1018,6 +1019,95 @@ local function draw the canvas of {paint app:app} on {paint canvas:frame} in {a 
         ignore draw caption at start baseline with typeface at 9 pixels spaced 32 in muted on frame
         ignore draw (the string form of "PX") at ((start + captionWidth) + (3 * 64)) baseline with typeface at 8 pixels spaced 32 in muted on frame
 
+# --- Rasterising the chrome's pictures on all cores ---
+
+# One picture to rasterise: its markup copied for the thread alone (a string
+# without an owner, so no reference count is shared), the size, the result.
+class:
+    patterns:
+        [a|] paint picture job
+    members:
+        pjBytes as a pointer to a byte
+        pjLength as an integer
+        pjWidth as an integer
+        pjHeight as an integer
+        pjImage as a paint canvas
+
+class:
+    patterns:
+        [a|] paint picture batch
+    members:
+        pbJobs as a pointer to a byte
+        pbCount as an integer
+        pbNext as a pointer to an integer
+
+function rasterise paint pictures {pointer:address}:
+    execute:
+        set batch to address as a pointer to a paint picture batch
+        set jobSize to (the size of (a paint picture job)) as an integer
+        loop while true:
+            set index to atomically add 1 at (batch's pbNext)
+            if index >= (batch's pbCount):
+                return 0 as a pointer
+            set job to ((batch's pbJobs) + (index * jobSize)) as a pointer to a paint picture job
+            set markup to a new string from (job's pjBytes) containing (job's pjLength) bytes
+            set job's pjImage to the paint canvas of svg markup sized (job's pjWidth) by (job's pjHeight)
+
+# The pictures the chrome is about to draw that are not cached, rasterised
+# together over the cores and put into the cache.
+local function prepare the pictures for {paint shell view:view} in {a pointer to a paint shell:shell} within {paint skin state:state}:
+    execute:
+        set entries to shell's skin's entries
+        set jobSize to (the size of (a paint picture job)) as an integer
+        set capacity to the length of entries
+        set jobs to @intrinsic("call", "libc", "calloc", a pointer to a byte, (jobSize * capacity) as a word sized integer, 1 as a word sized integer)
+        set indices to @intrinsic("call", "libc", "calloc", a pointer to an integer, capacity as a word sized integer, 4 as a word sized integer)
+        set wantedKeys to an empty list of a string
+        set count to 0
+        loop index from 0 to capacity:
+            set entry to the item at index in entries
+            set drawn to ((entry's kind = paint skin image) or ((entry's kind = paint skin ring) and (shell's focused's length = 0))) and ((entry's opened < 0) and (entry shows in state))
+            if drawn:
+                set box to the box of entry in view's width by view's height within state
+                set markup to the item at entry's image in (shell's skin's svgs)
+                if markup contains "{color}":
+                    set markup to markup with "{color}" as (the hex of view's app's color)
+                set wanted to ((markup + (the string form of "@")) + (the string form of box's w)) + ((the string form of "x") + (the string form of box's h))
+                if ((the item at index in (shell's keys)) = wanted) = false:
+                    set copy to @intrinsic("call", "libc", "malloc", a pointer to a byte, (markup's length + 1) as a word sized integer)
+                    ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, the data of markup, markup's length as a word sized integer)
+                    store (0 as a byte) at (copy + markup's length)
+                    set job to @intrinsic("construct", a paint picture job, copy, markup's length, box's w, box's h, a new paint canvas 1 by 1 filled with the transparent paint color)
+                    ignore @intrinsic("call", "libc", "memcpy", a pointer, jobs + (count * jobSize), (the address of job) as a pointer, jobSize as a word sized integer)
+                    store index at (indices + count)
+                    append wanted to wantedKeys
+                    set count to count + 1
+        if count > 0:
+            set next to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+            set batch to @intrinsic("construct", a paint picture batch, jobs, count, next)
+            set cores to (@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer
+            set helpers to (the minimum of (cores clamped between 1 and 16) and count) - 1
+            set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, (helpers + 1) as a word sized integer, 8 as a word sized integer)
+            loop helper from 0 to helpers:
+                if @intrinsic("call", "libc", "pthread_create", an integer, threads + helper, 0 as a pointer, the function named "rasterise paint pictures $", (the address of batch) as a pointer) != 0:
+                    store 0 as a C long integer at (threads + helper)
+            ignore rasterise paint pictures ((the address of batch) as a pointer)
+            loop helper from 0 to helpers:
+                if (the item at helper in threads) != (0 as a C long integer):
+                    ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at helper in threads, 0 as a pointer)
+            loop position from 0 to count:
+                set job to (jobs + (position * jobSize)) as a pointer to a paint picture job
+                set index to the item at position in indices
+                free paint canvas (the item at index in (shell's images))
+                replace item at index index in (shell's images) with (job's pjImage)
+                replace item at index index in (shell's keys) with (the item at position in wantedKeys)
+                @intrinsic("call", "libc", "free", nothing, job's pjBytes)
+            @intrinsic("call", "libc", "free", nothing, threads)
+            @intrinsic("call", "libc", "free", nothing, next)
+        free wantedKeys
+        @intrinsic("call", "libc", "free", nothing, jobs)
+        @intrinsic("call", "libc", "free", nothing, indices)
+
 # --- The whole frame ---
 
 local function draw entry {integer:index} for {paint shell view:view} on {paint canvas:frame} in {a pointer to a paint shell:shell} moved down {integer:shift}:
@@ -1129,6 +1219,7 @@ function draw the shell of app {paint app:app} sized {integer:width} by {integer
                 set shell's composed to a new paint canvas width by height filled with (the paint color from hex "ffffff")
                 set frame to shell's composed
             set base to shell's base
+            prepare the pictures for view in shell within state
             loop index from 0 to count:
                 set entry to the item at index in entries
                 if ((entry's opened < 0) and ((entry follows the mouse) = false)) and (entry shows in state):

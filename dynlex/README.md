@@ -166,14 +166,15 @@ edition is the native port on the `rust/native-port` branch.
 
 | | Tauri build | Rust edition | Open Paint Studio |
 |---|---|---|---|
-| window drawn after start | 1.05–1.19 s | 29 ms | 48 ms |
+| window drawn after start | 1.05–1.19 s | 26 ms | 23 ms |
 | processes | 3 | 1 | 1 |
-| memory, whole process tree (PSS) | 237 MB | 38 MB | 24 MB |
+| memory, whole process tree (PSS) | 237 MB | 39 MB | 22 MB |
 | idle CPU after start-up | 0.1 % | 0.0 % | 0.0 % |
 | CPU per mouse move / per brush-drag event | — | 1.2 / 4.1 ms | 0.07 / 0.14 ms |
 
-The DynLex edition drew its first frame in 28 ms while librsvg drew the
-interface's icons; its own SVG rasteriser takes the difference.
+The first frame's 88 icons are rasterised together over the cores, and blur
+filters use the three box passes SVG specifies, so a large shadow costs the
+same at any radius.
 
 **Large images** (`bench/make_large_images.py`, a real 4K photograph scaled
 up). For Tauri: the editor's own `decodeFile` path (`src/images.ts`) run
