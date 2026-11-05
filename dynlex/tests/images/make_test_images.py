@@ -105,6 +105,26 @@ save("qoi-rgba.qoi", rgba)
 save("jp2-rgb.jp2", rgb)
 save("xbm-mono.xbm", gray.convert("1"))
 save("dds-rgba.dds", rgba)
+save("dds-dxt1.dds", rgb, pixel_format="DXT1")
+save("dds-dxt3.dds", rgba, pixel_format="DXT3")
+save("dds-dxt5.dds", rgba, pixel_format="DXT5")
+save("dds-bc3-dx10.dds", rgba, pixel_format="BC3")
+# Blocks of random bits reach every block mode and BC7 partition; Pillow's
+# decoder is the reference.
+def dds_blocks(name, fourcc, block_bytes, dxgi=None, size=64):
+    import os, random, struct
+    random.seed(name)
+    blocks = bytes(random.getrandbits(8) for _ in range((size // 4) ** 2 * block_bytes))
+    header = b"DDS " + struct.pack("<7I", 124, 0x81007, size, size, len(blocks), 0, 1) + b"\0" * 44
+    header += struct.pack("<2I", 32, 4) + fourcc + b"\0" * 20 + struct.pack("<4I", 0x1000, 0, 0, 0) + b"\0" * 4
+    if dxgi is not None:
+        header += struct.pack("<5I", dxgi, 3, 0, 1, 0)
+    (out / name).write_bytes(header + blocks)
+    made.append(name)
+dds_blocks("dds-bc1-random.dds", b"DXT1", 8)
+dds_blocks("dds-bc4-random.dds", b"ATI1", 8)
+dds_blocks("dds-bc5-random.dds", b"ATI2", 16)
+dds_blocks("dds-bc7-random.dds", b"DX10", 16, dxgi=98)
 # Through gdk-pixbuf's savers: AVIF and JPEG XL.
 try:
     import gi

@@ -104,10 +104,11 @@ contents rather than its name:
 | BMP | 1, 4, 8, 16, 24 and 32 bit, RLE4/RLE8, bit fields, OS/2 headers | 24 bit |
 | TIFF | strips; none, LZW, deflate, PackBits; 1/8/16 bit, palettes | — |
 | TGA, ICO, QOI, PNM (P1–P6), XBM, XPM | `paint/formats.dl` | PPM |
+| DDS | uncompressed bit-mask layouts, BC1–BC5 and BC7 (DX9 and DX10 headers) | — |
 | SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
-Not read: WebP, AVIF, HEIC, JPEG XL, JPEG 2000, DDS, lossless and
-arithmetic-coded JPEG.
+Not read yet: WebP, AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
+(BC6H), lossless and arithmetic-coded JPEG.
 
 `tests/images/make_test_images.py` writes a test set:
 - 52 variants of one test card (bit depths, palettes, alpha, interlacing, compression, EXIF orientation, misnamed files);
@@ -116,8 +117,9 @@ arithmetic-coded JPEG.
 
 `bench/open_images.dl` opens them all and `tests/images/compare.py` checks
 each against an independent decoder (Pillow or gdk-pixbuf), comparing colours
-premultiplied by alpha. State on 2026-11-05: all 71 images in the formats the
-editor reads match:
+premultiplied by alpha. State on 2026-11-05: all 80 images in the formats the
+editor reads match (DDS: Pillow-encoded DXT1/3/5 and BC3, and BC1, BC4, BC5
+and BC7 files of random blocks that reach every mode and partition):
 - exactly, or within the lossy formats' tolerance;
 - SVG within 24 levels on anti-aliased edges: the editor covers each pixel by
   its exact area, librsvg samples 15 sub-rows where edges end;
@@ -125,7 +127,7 @@ editor reads match:
   fractional glyph positions); the comparison reports that separately and
   holds the rest of the image to the SVG tolerance.
 
-WebP, AVIF, JPEG 2000 and DDS are reported as not read, and the broken files
+WebP, AVIF and JPEG 2000 are reported as not read yet, and the broken files
 fail with a readable message.
 
 ## The interface, tested in all three editions

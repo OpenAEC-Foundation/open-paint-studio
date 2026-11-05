@@ -25,7 +25,7 @@ def pixbuf_reference(path):
     return im.convert("RGBA"), "gdk-pixbuf"
 
 def reference(path):
-    if path.suffix.lower() in (".svg", ".svgz", ".avif", ".xpm", ".jxl", ".heic", ".dds", ".xbm"):
+    if path.suffix.lower() in (".svg", ".svgz", ".avif", ".xpm", ".jxl", ".heic", ".xbm"):
         return pixbuf_reference(path)
     try:
         im = Image.open(path)
@@ -42,7 +42,7 @@ def reference(path):
         return pixbuf_reference(path)
 
 # Formats this system's gdk-pixbuf (glycin loaders) lists but cannot read.
-unsupported = {".dds": "glycin has no DDS loader; the editor reports that it cannot open it",
+unsupported = {
                ".webp": "the editor does not read WebP yet and says so",
                ".avif": "the editor does not read AVIF yet and says so",
                ".jp2": "the editor does not read JPEG 2000 yet and says so"}

@@ -1390,3 +1390,490 @@ function the paint pnm from {pointer:bytes} spanning {integer:count}:
                             set blue to ((the big-endian half (at + 4) in bytes) * 255) / maximum
                 store pixel red green blue 255 at x y in image
         return a decoded image
+
+# --- BC7 ---
+
+# The partition of each texel for the 64 two-subset and 64 three-subset
+# shapes (digit per texel), and where the second and third subsets' anchor
+# texels are: the format's tables, checked texel by texel against a
+# reference decoder.
+local function bc7 two subsets:
+    execute:
+        return the string form of "0011001100110011000100010001000101110111011101110001001100110111000000010001001100110111011111110001001101111111000000010011011100000000000100110011011111111111000000010111111100000000000101110001011111111111000000001111111100001111111111110000000000001111000010001110111101110001000000000000000010001110011100110001000000110001000000000000100011001110000000001000110001110011001100010011000100010000000010001000110001100110011001100011011001101100000101111110100000001111111100000111000110001110001110011001110001010101010101010000111100001111010110100101101000110011110011000011110000111100010101011010101001101001011010010101101010100101011100111100111000010011110010000011001001001100001110111101110001101001100101100011110011000011011001101001100100000110011000000100111001000000001001110010000000000010011100100000010011100100011011001001001100110110110010010110001110011100001110011100011001101100110010010110001100111001011111101000000100011000111001110000111100110011001100111111000000100010111011100100010001110111"
+
+local function bc7 three subsets:
+    execute:
+        return the string form of "0011001102212222000100112211222100002001221122110222002200110111000000001122112200110011002200220022002211111111001100112211221100000000111122220000111111112222000011112222222200120012001200120112011201120112012201220122012200110112112212220011200122002220000100110112112201110011200122000000112211221122002200220022111101110111022202220001000122212221000000110122012200001100221022100122012200110000001200121122222201101221122101100000011012211221002211021102002201100110200222220011012201220011000020002211222100000002112212220222002200120011001100120022022201200120012001200000111122220000012012012012012001202012120101200011220011220011001111222200001101010101222222220000000021212121002211220022112200220011002200110220122102201221010122222222010100002121212121210101010101012222022201110222011100021112000211120000211221122112022201110111022200021112111200020110011001102222000000002112211201100110222222220022001100110022002211221122002200000000000021120002000100020001022212220222122201012222222222220111201122012220"
+
+local function bc7 anchors for two:
+    execute:
+        return the string form of "15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15 2 8 2 2 8 8 15 2 8 2 2 8 8 2 2 15 15 6 8 2 8 15 15 2 8 2 2 2 15 15 6 6 2 6 8 15 15 2 2 15 15 15 15 15 2 2 15"
+
+local function bc7 second anchors for three:
+    execute:
+        return the string form of "3 3 15 15 8 3 15 15 8 8 6 6 6 5 3 3 3 3 8 15 3 3 6 10 5 8 8 6 8 5 15 15 8 15 3 5 6 10 8 15 15 3 15 5 15 15 15 15 3 15 5 5 5 8 5 10 5 10 8 13 15 12 3 3"
+
+local function bc7 third anchors for three:
+    execute:
+        return the string form of "15 8 8 3 15 15 3 8 15 15 15 15 15 15 15 8 15 8 15 3 15 8 15 8 3 15 6 10 15 15 10 8 15 3 15 10 10 8 9 10 6 15 8 15 3 6 6 8 15 3 15 15 15 15 15 15 15 15 15 15 3 15 15 8"
+
+local function fill bc7 table {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+
+class:
+    patterns:
+        [a|] bc7 reader
+    members:
+        b7Low as a C long integer
+        b7High as a C long integer
+        b7At as an integer
+
+local function take {integer:count} bc7 bits from {a pointer to a bc7 reader:reader}:
+    execute:
+        if count = 0:
+            return 0
+        set value to 0
+        loop bit from 0 to count:
+            set position to (reader's b7At) + bit
+            set word to reader's b7Low
+            if position >= 64:
+                set word to reader's b7High
+                set position to position - 64
+            set value to value | ((((word >> position) & (1 as a C long integer)) as an integer) << bit)
+        set reader's b7At to (reader's b7At) + count
+        return value
+
+# An endpoint value of bits bits (p-bit included) widened to eight.
+local function widen {integer:value} of {integer:bits}:
+    execute:
+        if bits >= 8:
+            return value
+        set shifted to value << (8 - bits)
+        return shifted | (shifted >> bits)
+
+local function bc7 weight {integer:index} of {integer:bits}:
+    execute:
+        if bits = 2:
+            if index = 0:
+                return 0
+            if index = 1:
+                return 21
+            if index = 2:
+                return 43
+            return 64
+        if bits = 3:
+            if index < 4:
+                return (index * 9) + (index / 4)
+            return (index * 9) + 1
+        # Four bits: 0 4 9 13 17 21 26 30 34 38 43 47 51 55 60 64.
+        return ((index * 64) + 7) / 15
+
+local function blend bc7 {integer:first} {integer:second} by {integer:weight}:
+    execute:
+        return ((((64 - weight) * first) + (weight * second)) + 32) >> 6
+
+# Decodes the 16-byte BC7 block at offset into 16 words of 0xAABBGGRR.
+function decode bc7 block from {pointer:bytes} at {integer:offset} into {a pointer to an integer:texels}:
+    execute:
+        set reader to @intrinsic("construct", a bc7 reader, @intrinsic("dereference", ((bytes as a pointer to a byte) + offset) as a pointer to a C long integer), @intrinsic("dereference", ((bytes as a pointer to a byte) + (offset + 8)) as a pointer to a C long integer), 0)
+        set source to the address of reader
+        set mode to 0
+        loop while (mode < 8) and ((take 1 bc7 bits from source) = 0):
+            set mode to mode + 1
+        if mode >= 8:
+            # No mode: black, opaque as the reference decoders give it.
+            loop texel from 0 to 16:
+                store -16777216 at (texels + texel)
+            return nothing
+        set subsets to 1
+        set partitionBits to 0
+        set rotationBits to 0
+        set selectorBits to 0
+        set colourBits to 7
+        set alphaBits to 0
+        set endpointPBits to false
+        set sharedPBits to false
+        set indexBits to 2
+        set secondIndexBits to 0
+        if mode = 0:
+            set subsets to 3
+            set partitionBits to 4
+            set colourBits to 4
+            set endpointPBits to true
+            set indexBits to 3
+        else if mode = 1:
+            set subsets to 2
+            set partitionBits to 6
+            set colourBits to 6
+            set sharedPBits to true
+            set indexBits to 3
+        else if mode = 2:
+            set subsets to 3
+            set partitionBits to 6
+            set colourBits to 5
+        else if mode = 3:
+            set subsets to 2
+            set partitionBits to 6
+            set endpointPBits to true
+        else if mode = 4:
+            set rotationBits to 2
+            set selectorBits to 1
+            set colourBits to 5
+            set alphaBits to 6
+            set secondIndexBits to 3
+        else if mode = 5:
+            set rotationBits to 2
+            set alphaBits to 8
+            set secondIndexBits to 2
+        else if mode = 6:
+            set alphaBits to 7
+            set endpointPBits to true
+            set indexBits to 4
+        else:
+            set subsets to 2
+            set partitionBits to 6
+            set colourBits to 5
+            set alphaBits to 5
+            set endpointPBits to true
+        set partition to take partitionBits bc7 bits from source
+        set rotation to take rotationBits bc7 bits from source
+        set selector to take selectorBits bc7 bits from source
+        # Endpoints: channel by channel, two per subset.
+        set ends to @intrinsic("call", "libc", "calloc", a pointer to an integer, 24 as a word sized integer, 4 as a word sized integer)
+        set endpointCount to subsets * 2
+        loop channel from 0 to 3:
+            loop point from 0 to endpointCount:
+                store (take colourBits bc7 bits from source) at (ends + ((point * 4) + channel))
+        loop point from 0 to endpointCount:
+            if alphaBits > 0:
+                store (take alphaBits bc7 bits from source) at (ends + ((point * 4) + 3))
+            else:
+                store 255 at (ends + ((point * 4) + 3))
+        set colourWidth to colourBits
+        set alphaWidth to alphaBits
+        if endpointPBits or sharedPBits:
+            set colourWidth to colourBits + 1
+            if alphaBits > 0:
+                set alphaWidth to alphaBits + 1
+            loop point from 0 to endpointCount:
+                set pbit to 0
+                if endpointPBits:
+                    set pbit to take 1 bc7 bits from source
+                else if (point & 1) = 0:
+                    set pbit to take 1 bc7 bits from source
+                    store pbit at (ends + 20)
+                else:
+                    set pbit to the item at 20 in ends
+                loop channel from 0 to 3:
+                    store (((the item at ((point * 4) + channel) in ends) << 1) | pbit) at (ends + ((point * 4) + channel))
+                if alphaBits > 0:
+                    store (((the item at ((point * 4) + 3) in ends) << 1) | pbit) at (ends + ((point * 4) + 3))
+        loop point from 0 to endpointCount:
+            loop channel from 0 to 3:
+                store (widen (the item at ((point * 4) + channel) in ends) of colourWidth) at (ends + ((point * 4) + channel))
+            if alphaBits > 0:
+                store (widen (the item at ((point * 4) + 3) in ends) of alphaWidth) at (ends + ((point * 4) + 3))
+        # Which subset each texel is in, and the anchors (one bit less).
+        set shapes to bc7 two subsets
+        if subsets = 3:
+            set shapes to bc7 three subsets
+        set anchors to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set anchorB to 0
+        set anchorC to 0
+        if subsets = 2:
+            fill bc7 table anchors from (bc7 anchors for two)
+            set anchorB to the item at partition in anchors
+        if subsets = 3:
+            fill bc7 table anchors from (bc7 second anchors for three)
+            set anchorB to the item at partition in anchors
+            fill bc7 table anchors from (bc7 third anchors for three)
+            set anchorC to the item at partition in anchors
+        set subsetOf to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        loop texel from 0 to 16:
+            if subsets > 1:
+                store ((((the character at ((partition * 16) + texel) in shapes) as an integer) & 255) - 48) at (subsetOf + texel)
+        set primary to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set secondary to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        loop texel from 0 to 16:
+            set width to indexBits
+            if ((texel = 0) or ((subsets > 1) and (texel = anchorB))) or ((subsets > 2) and (texel = anchorC)):
+                set width to indexBits - 1
+            store (take width bc7 bits from source) at (primary + texel)
+        if secondIndexBits > 0:
+            loop texel from 0 to 16:
+                set width to secondIndexBits
+                if texel = 0:
+                    set width to secondIndexBits - 1
+                store (take width bc7 bits from source) at (secondary + texel)
+        loop texel from 0 to 16:
+            set subset to the item at texel in subsetOf
+            set low to ends + ((subset * 2) * 4)
+            set high to ends + (((subset * 2) + 1) * 4)
+            set colourIndex to the item at texel in primary
+            set colourWidth to indexBits
+            set alphaIndex to colourIndex
+            set alphaIndexWidth to indexBits
+            if secondIndexBits > 0:
+                set alphaIndex to the item at texel in secondary
+                set alphaIndexWidth to secondIndexBits
+                if selector = 1:
+                    set colourIndex to the item at texel in secondary
+                    set colourWidth to secondIndexBits
+                    set alphaIndex to the item at texel in primary
+                    set alphaIndexWidth to indexBits
+            set weight to bc7 weight colourIndex of colourWidth
+            set red to blend bc7 (the item at 0 in low) (the item at 0 in high) by weight
+            set green to blend bc7 (the item at 1 in low) (the item at 1 in high) by weight
+            set blue to blend bc7 (the item at 2 in low) (the item at 2 in high) by weight
+            set alpha to blend bc7 (the item at 3 in low) (the item at 3 in high) by (bc7 weight alphaIndex of alphaIndexWidth)
+            if rotation = 1:
+                set swap to alpha
+                set alpha to red
+                set red to swap
+            else if rotation = 2:
+                set swap to alpha
+                set alpha to green
+                set green to swap
+            else if rotation = 3:
+                set swap to alpha
+                set alpha to blue
+                set blue to swap
+            store (((red | (green << 8)) | (blue << 16)) | (alpha << 24)) at (texels + texel)
+        @intrinsic("call", "libc", "free", nothing, ends)
+        @intrinsic("call", "libc", "free", nothing, anchors)
+        @intrinsic("call", "libc", "free", nothing, subsetOf)
+        @intrinsic("call", "libc", "free", nothing, primary)
+        @intrinsic("call", "libc", "free", nothing, secondary)
+
+# --- DDS: uncompressed bit-mask layouts and the BC1 to BC5 and BC7 blocks ---
+
+local function expand five {integer:value}:
+    execute:
+        return (value << 3) | (value >> 2)
+
+local function expand six {integer:value}:
+    execute:
+        return (value << 2) | (value >> 4)
+
+# The four colours of a BC1 colour block at offset into colours (four words
+# of 0xAABBGGRR); without four-colour mode a 0x0565 pair gives the
+# three-colour block with transparent black.
+local function bc1 palette from {pointer:bytes} at {integer:offset} into {a pointer to an integer:colours} always four {boolean:four}:
+    execute:
+        set first to the little-endian half offset in bytes
+        set second to the little-endian half (offset + 2) in bytes
+        set r0 to expand five (first >> 11)
+        set g0 to expand six ((first >> 5) & 63)
+        set b0 to expand five (first & 31)
+        set r1 to expand five (second >> 11)
+        set g1 to expand six ((second >> 5) & 63)
+        set b1 to expand five (second & 31)
+        store (((r0 | (g0 << 8)) | (b0 << 16)) | (-16777216)) at colours
+        store (((r1 | (g1 << 8)) | (b1 << 16)) | (-16777216)) at (colours + 1)
+        if four or (first > second):
+            set r2 to ((2 * r0) + r1) / 3
+            set g2 to ((2 * g0) + g1) / 3
+            set b2 to ((2 * b0) + b1) / 3
+            set r3 to (r0 + (2 * r1)) / 3
+            set g3 to (g0 + (2 * g1)) / 3
+            set b3 to (b0 + (2 * b1)) / 3
+            store (((r2 | (g2 << 8)) | (b2 << 16)) | (-16777216)) at (colours + 2)
+            store (((r3 | (g3 << 8)) | (b3 << 16)) | (-16777216)) at (colours + 3)
+        else:
+            set r2 to (r0 + r1) / 2
+            set g2 to (g0 + g1) / 2
+            set b2 to (b0 + b1) / 2
+            store (((r2 | (g2 << 8)) | (b2 << 16)) | (-16777216)) at (colours + 2)
+            store 0 at (colours + 3)
+
+# The eight values of a BC3 alpha or BC4/BC5 channel block.
+local function channel palette from {pointer:bytes} at {integer:offset} into {a pointer to an integer:values}:
+    execute:
+        set first to the byte offset in bytes
+        set second to the byte (offset + 1) in bytes
+        store first at values
+        store second at (values + 1)
+        if first > second:
+            loop step from 1 to 7:
+                store ((((7 - step) * first) + (step * second)) / 7) at (values + (step + 1))
+        else:
+            loop step from 1 to 5:
+                store ((((5 - step) * first) + (step * second)) / 5) at (values + (step + 1))
+            store 0 at (values + 6)
+            store 255 at (values + 7)
+
+# The 3-bit index of texel within the channel block's 48 index bits.
+local function channel index {integer:texel} from {pointer:bytes} at {integer:offset}:
+    execute:
+        set bit to texel * 3
+        set low to the little-endian word ((offset + 2) + (bit / 8)) in bytes
+        return (low >> (bit & 7)) & 7
+
+function the paint dds from {pointer:bytes} spanning {integer:count}:
+    execute:
+        if (count < 128) or ((the bytes 0 in bytes spell "DDS ") = false):
+            return no decoded image because "not a DDS file"
+        set height to the little-endian word 12 in bytes
+        set width to the little-endian word 16 in bytes
+        set flags to the little-endian word 80 in bytes
+        set fourcc to the little-endian word 84 in bytes
+        set bitCount to the little-endian word 88 in bytes
+        set redMask to the little-endian word 92 in bytes
+        set greenMask to the little-endian word 96 in bytes
+        set blueMask to the little-endian word 100 in bytes
+        set alphaMask to the little-endian word 104 in bytes
+        if ((width < 1) or (height < 1)) or ((a paint canvas width by height fits) = false):
+            return no decoded image because "the DDS has a size the editor cannot use"
+        set start to 128
+        # The block kind: 1..5 for BC1..BC5, 7 for BC7, 0 uncompressed.
+        set kind to 0
+        set swapped to false
+        if (flags & 4) != 0:
+            if the bytes 84 in bytes spell "DXT1":
+                set kind to 1
+            else if (the bytes 84 in bytes spell "DXT2") or (the bytes 84 in bytes spell "DXT3"):
+                set kind to 2
+            else if (the bytes 84 in bytes spell "DXT4") or (the bytes 84 in bytes spell "DXT5"):
+                set kind to 3
+            else if (the bytes 84 in bytes spell "ATI1") or (the bytes 84 in bytes spell "BC4U"):
+                set kind to 4
+            else if (the bytes 84 in bytes spell "ATI2") or (the bytes 84 in bytes spell "BC5U"):
+                set kind to 5
+            else if the bytes 84 in bytes spell "DX10":
+                set format to the little-endian word 128 in bytes
+                set start to 148
+                if (format = 70) or ((format = 71) or (format = 72)):
+                    set kind to 1
+                else if (format = 73) or ((format = 74) or (format = 75)):
+                    set kind to 2
+                else if (format = 76) or ((format = 77) or (format = 78)):
+                    set kind to 3
+                else if (format = 79) or ((format = 80) or (format = 81)):
+                    set kind to 4
+                else if (format = 82) or ((format = 83) or (format = 84)):
+                    set kind to 5
+                else if (format = 97) or ((format = 98) or (format = 99)):
+                    set kind to 7
+                else if (format = 27) or ((format = 28) or (format = 29)):
+                    set bitCount to 32
+                    set redMask to 255
+                    set greenMask to 65280
+                    set blueMask to 16711680
+                    set alphaMask to -16777216
+                    set flags to 65
+                else if (format = 87) or ((format = 90) or (format = 91)):
+                    set bitCount to 32
+                    set redMask to 16711680
+                    set greenMask to 65280
+                    set blueMask to 255
+                    set alphaMask to -16777216
+                    set flags to 65
+                else if (format = 88) or ((format = 92) or (format = 93)):
+                    set bitCount to 32
+                    set redMask to 16711680
+                    set greenMask to 65280
+                    set blueMask to 255
+                    set alphaMask to 0
+                    set flags to 64
+                else:
+                    return no decoded image because "a DDS pixel format the editor does not read (HDR or video formats)"
+            else:
+                return no decoded image because "a DDS pixel format the editor does not read"
+        set image to a new paint canvas width by height filled with the transparent paint color
+        if kind = 0:
+            set step to bitCount / 8
+            if (step < 1) or (step > 4):
+                free paint canvas image
+                return no decoded image because "a DDS bit depth the editor does not read"
+            set stride to width * step
+            if (start + (stride * height)) > count:
+                free paint canvas image
+                return no decoded image because "the DDS file is truncated"
+            set grey to (flags & 131072) != 0
+            set alphaOnly to (flags & 2) != 0
+            if (flags & 1) = 0:
+                set alphaMask to 0
+            loop y from 0 to height:
+                loop x from 0 to width:
+                    set at to start + ((y * stride) + (x * step))
+                    set pixel to 0
+                    loop part from 0 to step:
+                        set pixel to pixel | ((the byte (at + part) in bytes) << (8 * part))
+                    set alpha to the channel pixel under alphaMask or 255
+                    if alphaOnly:
+                        store pixel 0 0 0 alpha at x y in image
+                    else if grey:
+                        set level to the channel pixel under redMask or 0
+                        store pixel level level level alpha at x y in image
+                    else:
+                        store pixel (the channel pixel under redMask or 0) (the channel pixel under greenMask or 0) (the channel pixel under blueMask or 0) alpha at x y in image
+            return a decoded image
+        set blockBytes to 16
+        if (kind = 1) or (kind = 4):
+            set blockBytes to 8
+        set blocksWide to (width + 3) / 4
+        set blocksHigh to (height + 3) / 4
+        if (start + ((blocksWide * blocksHigh) * blockBytes)) > count:
+            free paint canvas image
+            return no decoded image because "the DDS file is truncated"
+        set colours to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set firstValues to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        set secondValues to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        set texels to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        loop blockRow from 0 to blocksHigh:
+            loop blockColumn from 0 to blocksWide:
+                set at to start + (((blockRow * blocksWide) + blockColumn) * blockBytes)
+                if kind = 7:
+                    decode bc7 block from bytes at at into texels
+                else if (kind = 1) or ((kind = 2) or (kind = 3)):
+                    set colourAt to at
+                    if kind != 1:
+                        set colourAt to at + 8
+                    bc1 palette from bytes at colourAt into colours always four (kind != 1)
+                    if kind = 3:
+                        channel palette from bytes at at into firstValues
+                    set indexBits to the little-endian word (colourAt + 4) in bytes
+                    loop texel from 0 to 16:
+                        set colour to the item at ((indexBits >> (texel * 2)) & 3) in colours
+                        if kind = 2:
+                            set nibble to ((the byte (at + (texel / 2)) in bytes) >> (4 * (texel & 1))) & 15
+                            set colour to (colour & 16777215) | ((nibble * 17) << 24)
+                        else if kind = 3:
+                            set colour to (colour & 16777215) | ((the item at (channel index texel from bytes at at) in firstValues) << 24)
+                        store colour at (texels + texel)
+                else:
+                    channel palette from bytes at at into firstValues
+                    if kind = 5:
+                        channel palette from bytes at (at + 8) into secondValues
+                    loop texel from 0 to 16:
+                        set red to the item at (channel index texel from bytes at at) in firstValues
+                        if kind = 4:
+                            store (((red | (red << 8)) | (red << 16)) | (-16777216)) at (texels + texel)
+                        else:
+                            set green to the item at (channel index texel from bytes at (at + 8)) in secondValues
+                            store ((red | (green << 8)) | (-16777216)) at (texels + texel)
+                loop texel from 0 to 16:
+                    set x to (blockColumn * 4) + (texel & 3)
+                    set y to (blockRow * 4) + (texel >> 2)
+                    if (x < width) and (y < height):
+                        store (the item at texel in texels) at (((image's pixels) as a pointer to an integer) + ((y * width) + x))
+        @intrinsic("call", "libc", "free", nothing, colours)
+        @intrinsic("call", "libc", "free", nothing, firstValues)
+        @intrinsic("call", "libc", "free", nothing, secondValues)
+        @intrinsic("call", "libc", "free", nothing, texels)
+        return a decoded image
