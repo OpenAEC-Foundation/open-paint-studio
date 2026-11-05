@@ -528,7 +528,7 @@ local function clear {a pointer to a paint coverage:coverage}:
         set coverage's svTop to coverage's svHeight
         set coverage's svBottom to 0
 
-# Adds the span (a, b) of one sub-row (weight 0.25) to the row's cells.
+# Adds the span (a, b) of one sub-row (weight 1/15, as cairo samples) to the row's cells.
 local function cover from {a 64 bit floating-point number:a} to {a 64 bit floating-point number:b} into cells {pointer:cells} of {integer:width}:
     execute:
         set left to the maximum of a and 0.0
@@ -539,16 +539,98 @@ local function cover from {a 64 bit floating-point number:a} to {a 64 bit floati
         set firstCell to (the floor of left) as an integer
         set lastCell to (the floor of right) as an integer
         if firstCell = lastCell:
-            store ((the item at firstCell in row) + ((right - left) * 0.25)) at (row + firstCell)
+            store ((the item at firstCell in row) + ((right - left) * 0.0666666666666667)) at (row + firstCell)
             return nothing
-        store ((the item at firstCell in row) + ((((firstCell + 1) as a 64 bit floating-point number) - left) * 0.25)) at (row + firstCell)
+        store ((the item at firstCell in row) + ((((firstCell + 1) as a 64 bit floating-point number) - left) * 0.0666666666666667)) at (row + firstCell)
         loop cell from (firstCell + 1) to lastCell:
-            store ((the item at cell in row) + 0.25) at (row + cell)
+            store ((the item at cell in row) + 0.0666666666666667) at (row + cell)
         if lastCell < width:
-            store ((the item at lastCell in row) + ((right - (lastCell as a 64 bit floating-point number)) * 0.25)) at (row + lastCell)
+            store ((the item at lastCell in row) + ((right - (lastCell as a 64 bit floating-point number)) * 0.0666666666666667)) at (row + lastCell)
 
 # Rasterises the outline's subpaths (closed for filling) into the coverage,
 # by the nonzero rule or the even-odd rule.
+# Adds the signed area of the line (x0, y0)-(x1, y1) to the accumulation
+# rows (width + 2 cells each); a running sum along a row then gives each
+# pixel's exact coverage (the font-rs method).
+local function add line {a 64 bit floating-point number:startX} {a 64 bit floating-point number:startY} {a 64 bit floating-point number:endX} {a 64 bit floating-point number:endY} to {a pointer to a 64 bit floating-point number:sums} of {integer:width} by {integer:height}:
+    execute:
+        if startY = endY:
+            return nothing
+        set direction to 1.0
+        set x0 to startX
+        set y0 to startY
+        set x1 to endX
+        set y1 to endY
+        if startY > endY:
+            set direction to -1.0
+            set x0 to endX
+            set y0 to endY
+            set x1 to startX
+            set y1 to startY
+        set limit to width as a 64 bit floating-point number
+        set slope to (x1 - x0) / (y1 - y0)
+        set x to x0
+        set startRow to (the floor of y0) as an integer
+        if y0 < 0.0:
+            set x to x - (y0 * slope)
+            set startRow to 0
+        set stopRow to the minimum of height and ((the ceiling of y1) as an integer)
+        set stride to width + 2
+        loop row from startRow to stopRow:
+            set top to the maximum of (row as a 64 bit floating-point number) and y0
+            set bottom to the minimum of ((row + 1) as a 64 bit floating-point number) and y1
+            set dy to bottom - top
+            set xnext to x + (slope * dy)
+            set d to dy * direction
+            # Clipped to the canvas: what lies left of it covers column 0.
+            set left to (the minimum of x and xnext) clamped between 0.0 and limit
+            set right to (the maximum of x and xnext) clamped between 0.0 and limit
+            set base to sums + (row * stride)
+            set leftFloor to the floor of left
+            set leftCell to leftFloor as an integer
+            set rightCell to (the ceiling of right) as an integer
+            if rightCell <= (leftCell + 1):
+                set middle to (0.5 * (left + right)) - leftFloor
+                store ((the item at leftCell in base) + (d - (d * middle))) at (base + leftCell)
+                store ((the item at (leftCell + 1) in base) + (d * middle)) at (base + (leftCell + 1))
+            else:
+                set inverse to 1.0 / (right - left)
+                set leftFraction to left - leftFloor
+                set a0 to (0.5 * inverse) * ((1.0 - leftFraction) * (1.0 - leftFraction))
+                set rightFraction to (right - (rightCell as a 64 bit floating-point number)) + 1.0
+                set am to (0.5 * inverse) * (rightFraction * rightFraction)
+                store ((the item at leftCell in base) + (d * a0)) at (base + leftCell)
+                if rightCell = (leftCell + 2):
+                    store ((the item at (leftCell + 1) in base) + (d * ((1.0 - a0) - am))) at (base + (leftCell + 1))
+                else:
+                    set a1 to inverse * (1.5 - leftFraction)
+                    store ((the item at (leftCell + 1) in base) + (d * (a1 - a0))) at (base + (leftCell + 1))
+                    loop cell from (leftCell + 2) to (rightCell - 1):
+                        store ((the item at cell in base) + (d * inverse)) at (base + cell)
+                    set a2 to a1 + (((rightCell - leftCell) - 3) as a 64 bit floating-point number) * inverse
+                    store ((the item at (rightCell - 1) in base) + (d * ((1.0 - a2) - am))) at (base + (rightCell - 1))
+                store ((the item at rightCell in base) + (d * am)) at (base + rightCell)
+            set x to xnext
+
+local function accumulate {a pointer to a list:edges} {integer:edgeCount} into {a pointer to a paint coverage:coverage} from {integer:firstRow} to {integer:lastRow} skipping {a pointer to a byte:vertexRows}:
+    execute:
+        set width to coverage's svWidth
+        set height to coverage's svHeight
+        set stride to width + 2
+        set sums to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (stride * (height + 1)) as a word sized integer, 8 as a word sized integer)
+        loop edge from 0 to edgeCount:
+            add line (the item at (edge * 4) in edges) (the item at ((edge * 4) + 1) in edges) (the item at ((edge * 4) + 2) in edges) (the item at ((edge * 4) + 3) in edges) to sums of width by height
+        set cells to coverage's svCells
+        loop row from firstRow to lastRow:
+            if ((the item at row in vertexRows) as an integer) = 0:
+                set running to 0.0
+                loop column from 0 to width:
+                    set running to running + (the item at ((row * stride) + column) in sums)
+                    set amount to the minimum of 1.0 and (the absolute value of running)
+                    if amount > 0.0:
+                        store ((the item at ((row * width) + column) in cells) + amount) at (cells + ((row * width) + column))
+        @intrinsic("call", "libc", "free", nothing, sums)
+
 local function rasterise {paint outline:outline} evenodd {boolean:alternate} into {a pointer to a paint coverage:coverage}:
     execute:
         set total to (the length of outline's svPoints) / 2
@@ -588,50 +670,65 @@ local function rasterise {paint outline:outline} evenodd {boolean:alternate} int
         set lastRow to (((the ceiling of maxY) as an integer) + 1) clamped between 0 and height
         set coverage's svTop to the minimum of coverage's svTop and firstRow
         set coverage's svBottom to the maximum of coverage's svBottom and lastRow
+        # As cairo draws: rows in which an edge starts or ends are sampled
+        # in 15 sub-rows, the others get their exact area (nonzero rule;
+        # parts of one winding that overlap count once).
+        set vertexRows to @intrinsic("call", "libc", "calloc", a pointer to a byte, (height + 1) as a word sized integer, 1 as a word sized integer)
+        loop edge from 0 to edgeCount:
+            set top to (the floor of (the item at ((edge * 4) + 1) in edges)) as an integer
+            set bottom to (the floor of (the item at ((edge * 4) + 3) in edges)) as an integer
+            if (top >= 0) and (top < height):
+                store (1 as a byte) at (vertexRows + top)
+            if (bottom >= 0) and (bottom < height):
+                store (1 as a byte) at (vertexRows + bottom)
+        if alternate = false:
+            accumulate edges edgeCount into coverage from firstRow to lastRow skipping vertexRows
         set crossings to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (edgeCount + 1) as a word sized integer, 8 as a word sized integer)
         set directions to @intrinsic("call", "libc", "calloc", a pointer to an integer, (edgeCount + 1) as a word sized integer, 4 as a word sized integer)
         loop row from firstRow to lastRow:
-            set cells to ((coverage's svCells) + (row * width)) as pointer
-            loop sub from 0 to 4:
-                set sampleY to (row as a 64 bit floating-point number) + (((sub as a 64 bit floating-point number) + 0.5) / 4.0)
-                set found to 0
-                loop edge from 0 to edgeCount:
-                    set x0 to the item at (edge * 4) in edges
-                    set y0 to the item at ((edge * 4) + 1) in edges
-                    set x1 to the item at ((edge * 4) + 2) in edges
-                    set y1 to the item at ((edge * 4) + 3) in edges
-                    set lower to the minimum of y0 and y1
-                    set upper to the maximum of y0 and y1
-                    if (sampleY >= lower) and (sampleY < upper):
-                        set crossing to x0 + (((sampleY - y0) * (x1 - x0)) / (y1 - y0))
-                        set direction to 1
-                        if y1 < y0:
-                            set direction to -1
-                        # Insertion into order.
-                        set slot to found
-                        loop while (slot > 0) and ((the item at (slot - 1) in crossings) > crossing):
-                            store (the item at (slot - 1) in crossings) at (crossings + slot)
-                            store (the item at (slot - 1) in directions) at (directions + slot)
-                            set slot to slot - 1
-                        store crossing at (crossings + slot)
-                        store direction at (directions + slot)
-                        set found to found + 1
-                set winding to 0
-                set spanStart to 0.0
-                loop index from 0 to found:
-                    set before to winding
-                    set winding to winding + (the item at index in directions)
-                    set insideBefore to before != 0
-                    set insideAfter to winding != 0
-                    if alternate:
-                        set insideBefore to (before & 1) != 0
-                        set insideAfter to (winding & 1) != 0
-                    if (insideBefore = false) and insideAfter:
-                        set spanStart to the item at index in crossings
-                    else if insideBefore and (insideAfter = false):
-                        cover from spanStart to (the item at index in crossings) into cells cells of width
+            if alternate or (((the item at row in vertexRows) as an integer) != 0):
+                set cells to ((coverage's svCells) + (row * width)) as pointer
+                loop sub from 0 to 15:
+                    set sampleY to (row as a 64 bit floating-point number) + (((sub as a 64 bit floating-point number) + 0.5) / 15.0)
+                    set found to 0
+                    loop edge from 0 to edgeCount:
+                        set x0 to the item at (edge * 4) in edges
+                        set y0 to the item at ((edge * 4) + 1) in edges
+                        set x1 to the item at ((edge * 4) + 2) in edges
+                        set y1 to the item at ((edge * 4) + 3) in edges
+                        set lower to the minimum of y0 and y1
+                        set upper to the maximum of y0 and y1
+                        if (sampleY >= lower) and (sampleY < upper):
+                            set crossing to x0 + (((sampleY - y0) * (x1 - x0)) / (y1 - y0))
+                            set direction to 1
+                            if y1 < y0:
+                                set direction to -1
+                            # Insertion into order.
+                            set slot to found
+                            loop while (slot > 0) and ((the item at (slot - 1) in crossings) > crossing):
+                                store (the item at (slot - 1) in crossings) at (crossings + slot)
+                                store (the item at (slot - 1) in directions) at (directions + slot)
+                                set slot to slot - 1
+                            store crossing at (crossings + slot)
+                            store direction at (directions + slot)
+                            set found to found + 1
+                    set winding to 0
+                    set spanStart to 0.0
+                    loop index from 0 to found:
+                        set before to winding
+                        set winding to winding + (the item at index in directions)
+                        set insideBefore to before != 0
+                        set insideAfter to winding != 0
+                        if alternate:
+                            set insideBefore to (before & 1) != 0
+                            set insideAfter to (winding & 1) != 0
+                        if (insideBefore = false) and insideAfter:
+                            set spanStart to the item at index in crossings
+                        else if insideBefore and (insideAfter = false):
+                            cover from spanStart to (the item at index in crossings) into cells cells of width
         @intrinsic("call", "libc", "free", nothing, crossings)
         @intrinsic("call", "libc", "free", nothing, directions)
+        @intrinsic("call", "libc", "free", nothing, vertexRows)
         free edges
 
 # Blends the colour where the coverage is, at the opacity, through the clip
@@ -893,10 +990,11 @@ class:
         svMatrix as a paint matrix
         svBlur as a 64 bit floating-point number
         svClip as a string
+        svFontSize as a 64 bit floating-point number
 
 local function the root paint svg style through {paint matrix:matrix}:
     execute:
-        return @intrinsic("construct", a paint svg style, @intrinsic("construct", a paint svg paint, true, the paint color red 0 green 0 blue 0), @intrinsic("construct", a paint svg paint, false, the transparent paint color), 1.0, 1.0, 1.0, 1.0, false, false, false, false, false, matrix, 0.0, the string form of "")
+        return @intrinsic("construct", a paint svg style, @intrinsic("construct", a paint svg paint, true, the paint color red 0 green 0 blue 0), @intrinsic("construct", a paint svg paint, false, the transparent paint color), 1.0, 1.0, 1.0, 1.0, false, false, false, false, false, matrix, 0.0, the string form of "", 16.0)
 
 # One element's attributes.
 class:
@@ -970,7 +1068,169 @@ local function free {paint svg element:element}:
         free element's svValues
 
 # The style of an element: its parent's, then its own attributes.
-local function the styling of {paint svg element:element} within {paint svg style:parent}:
+local function {string:text} contains {C string:fragment}:
+    execute:
+        set wanted to the string form of fragment
+        if wanted's length > text's length:
+            return false
+        loop index from 0 to ((text's length - wanted's length) + 1):
+            if text has wanted at offset index:
+                return true
+        return false
+
+# --- Style sheets: <style> rules with type, class and id selectors ---
+
+class:
+    patterns:
+        [a|] paint svg rule
+    members:
+        svSelector as a string
+        svDeclarations as a string
+
+local function {integer:character} is blank:
+    execute:
+        return ((character = 32) or (character = 9)) or ((character = 10) or (character = 13))
+
+local function the trimmed {string:text}:
+    execute:
+        set first to 0
+        set last to text's length
+        loop while (first < last) and ((((the character at first in text) as an integer) & 255) is blank):
+            set first to first + 1
+        loop while (last > first) and ((((the character at (last - 1) in text) as an integer) & 255) is blank):
+            set last to last - 1
+        return the substring of text from first spanning (last - first) bytes
+
+# Applies "property: value; ..." declarations to the style.
+local function {paint svg style:style} given declarations {string:text}:
+    execute:
+        set result to style
+        set cursor to 0
+        loop while cursor < text's length:
+            set colon to cursor
+            loop while (colon < text's length) and ((((the character at colon in text) as an integer) & 255) != 58):
+                set colon to colon + 1
+            set semicolon to colon
+            loop while (semicolon < text's length) and ((((the character at semicolon in text) as an integer) & 255) != 59):
+                set semicolon to semicolon + 1
+            if colon < text's length:
+                set property to the trimmed (the substring of text from cursor spanning (colon - cursor) bytes)
+                set setting to the trimmed (the substring of text from (colon + 1) spanning ((semicolon - colon) - 1) bytes)
+                if property = (the string form of "fill"):
+                    set result's svFill to the svg paint named setting inheriting result's svFill
+                else if property = (the string form of "stroke"):
+                    set result's svStroke to the svg paint named setting inheriting result's svStroke
+                else if property = (the string form of "stroke-width"):
+                    set result's svStrokeWidth to the first number in setting or result's svStrokeWidth
+                else if property = (the string form of "opacity"):
+                    set result's svOpacity to result's svOpacity * (the first number in setting or 1.0)
+                else if property = (the string form of "fill-opacity"):
+                    set result's svFillOpacity to the first number in setting or result's svFillOpacity
+                else if property = (the string form of "stroke-opacity"):
+                    set result's svStrokeOpacity to the first number in setting or result's svStrokeOpacity
+                else if property = (the string form of "stroke-linecap"):
+                    set result's svRoundCap to setting = (the string form of "round")
+                    set result's svSquareCap to setting = (the string form of "square")
+                else if property = (the string form of "stroke-linejoin"):
+                    set result's svRoundJoin to setting = (the string form of "round")
+                    set result's svBevelJoin to setting = (the string form of "bevel")
+                else if property = (the string form of "fill-rule"):
+                    set result's svEvenOdd to setting = (the string form of "evenodd")
+                else if property = (the string form of "font-size"):
+                    set result's svFontSize to the first number in setting or result's svFontSize
+            set cursor to semicolon + 1
+        return result
+
+# Whether a simple selector (type, .class, #id, type.class or *) picks the
+# element.
+local function {string:selector} selects {paint svg element:element}:
+    execute:
+        if selector = (the string form of "*"):
+            return true
+        set dot to -1
+        set hash to -1
+        loop index from 0 to selector's length:
+            set character to ((the character at index in selector) as an integer) & 255
+            if (character = 46) and (dot < 0):
+                set dot to index
+            if (character = 35) and (hash < 0):
+                set hash to index
+        if hash >= 0:
+            return (the substring of selector from (hash + 1) spanning ((selector's length - hash) - 1) bytes) = (the attribute "id" of element)
+        if dot < 0:
+            return selector = element's svName
+        if dot > 0:
+            if (the substring of selector from 0 spanning dot bytes) != element's svName:
+                return false
+        set wanted to the substring of selector from (dot + 1) spanning ((selector's length - dot) - 1) bytes
+        # The class attribute is a list of names.
+        set classes to the attribute "class" of element
+        set start to 0
+        loop index from 0 to (classes' length + 1):
+            set ends to index = classes' length
+            if ends = false:
+                set ends to ((((the character at index in classes) as an integer) & 255) is blank)
+            if ends:
+                if (index > start) and ((the substring of classes from start spanning (index - start) bytes) = wanted):
+                    return true
+                set start to index + 1
+        return false
+
+# The rules of every <style> element in the markup.
+local function the style rules in {string:markup}:
+    execute:
+        set gathered to an empty list of a paint svg rule
+        set cursor to 0
+        loop while (cursor + 7) < markup's length:
+            if (the substring of markup from cursor spanning 6 bytes) = (the string form of "<style"):
+                set open to cursor
+                loop while (open < markup's length) and ((((the character at open in markup) as an integer) & 255) != 62):
+                    set open to open + 1
+                set close to open
+                loop while ((close + 8) <= markup's length) and ((the substring of markup from close spanning 8 bytes) != (the string form of "</style>")):
+                    set close to close + 1
+                set sheet to the substring of markup from (open + 1) spanning ((close - open) - 1) bytes
+                set here to 0
+                loop while here < sheet's length:
+                    set brace to here
+                    loop while (brace < sheet's length) and ((((the character at brace in sheet) as an integer) & 255) != 123):
+                        set brace to brace + 1
+                    set shut to brace
+                    loop while (shut < sheet's length) and ((((the character at shut in sheet) as an integer) & 255) != 125):
+                        set shut to shut + 1
+                    if brace < sheet's length:
+                        set selectors to the substring of sheet from here spanning (brace - here) bytes
+                        set declarations to the substring of sheet from (brace + 1) spanning ((shut - brace) - 1) bytes
+                        # Comma-separated selectors; comments and CDATA
+                        # markers dropped.
+                        set start to 0
+                        loop index from 0 to (selectors' length + 1):
+                            set ends to index = selectors' length
+                            if ends = false:
+                                set ends to (((the character at index in selectors) as an integer) & 255) = 44
+                            if ends:
+                                set selector to the trimmed (the substring of selectors from start spanning (index - start) bytes)
+                                set cut to selector's length
+                                loop at from 0 to selector's length:
+                                    if ((((the character at at in selector) as an integer) & 255) = 47) or ((((the character at at in selector) as an integer) & 255) = 60):
+                                        set cut to at
+                                set selector to the trimmed (the substring of selector from 0 spanning cut bytes)
+                                set marker to selector's length
+                                loop at from 0 to selector's length:
+                                    if (((the character at at in selector) as an integer) & 255) = 93:
+                                        set marker to at
+                                if marker < selector's length:
+                                    set selector to the trimmed (the substring of selector from (marker + 1) spanning ((selector's length - marker) - 1) bytes)
+                                if selector's length > 0:
+                                    append @intrinsic("construct", a paint svg rule, selector, declarations) to gathered
+                                set start to index + 1
+                    set here to shut + 1
+                set cursor to close + 8
+            else:
+                set cursor to cursor + 1
+        return gathered
+
+local function the styling of {paint svg element:element} within {paint svg style:parent} under {a pointer to a list:rules}:
     execute:
         set result to parent
         set result's svFill to the svg paint named (the attribute "fill" of element) inheriting parent's svFill
@@ -979,6 +1239,7 @@ local function the styling of {paint svg element:element} within {paint svg styl
         set result's svOpacity to parent's svOpacity * (the numeric attribute "opacity" of element or 1.0)
         set result's svFillOpacity to the numeric attribute "fill-opacity" of element or parent's svFillOpacity
         set result's svStrokeOpacity to the numeric attribute "stroke-opacity" of element or parent's svStrokeOpacity
+        set result's svFontSize to the numeric attribute "font-size" of element or parent's svFontSize
         set cap to the attribute "stroke-linecap" of element
         if cap's length > 0:
             set result's svRoundCap to cap = (the string form of "round")
@@ -996,29 +1257,14 @@ local function the styling of {paint svg element:element} within {paint svg styl
         set clip to the attribute "clip-path" of element
         if clip's length > 5:
             set result's svClip to the substring of clip from 5 spanning ((clip's length - 6)) bytes
-        # Inline style, the common properties only.
+        # Style sheet rules, then the inline style, each over the last.
+        loop index from 0 to (the length of rules):
+            set sheetRule to the item at index in rules
+            if (sheetRule's svSelector) selects element:
+                set result to result given declarations (sheetRule's svDeclarations)
         set inline to the attribute "style" of element
         if inline's length > 0:
-            set cursor to 0
-            loop while cursor < inline's length:
-                set colon to cursor
-                loop while (colon < inline's length) and ((((the character at colon in inline) as an integer) & 255) != 58):
-                    set colon to colon + 1
-                set semicolon to colon
-                loop while (semicolon < inline's length) and ((((the character at semicolon in inline) as an integer) & 255) != 59):
-                    set semicolon to semicolon + 1
-                if colon < inline's length:
-                    set property to the substring of inline from cursor spanning (colon - cursor) bytes
-                    set setting to the substring of inline from (colon + 1) spanning ((semicolon - colon) - 1) bytes
-                    if property = (the string form of "fill"):
-                        set result's svFill to the svg paint named setting inheriting result's svFill
-                    if property = (the string form of "stroke"):
-                        set result's svStroke to the svg paint named setting inheriting result's svStroke
-                    if property = (the string form of "stroke-width"):
-                        set result's svStrokeWidth to the first number in setting or result's svStrokeWidth
-                    if property = (the string form of "opacity"):
-                        set result's svOpacity to result's svOpacity * (the first number in setting or 1.0)
-                set cursor to semicolon + 1
+            set result to result given declarations inline
         return result
 
 # The element's own geometry, in device space.
@@ -1114,6 +1360,69 @@ local function draw {paint svg element:element} with {paint svg style:style} ont
             free stroked
         free outline
 
+# --- Text: the characters of a <text> element (tspans flattened), set in
+# the system's sans face at the element's size and anchor ---
+
+local function the sans typeface for svg text:
+    execute:
+        set chosen to a paint face from (the string form of "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf")
+        if (chosen is loaded) = false:
+            set chosen to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+        return chosen
+
+local function draw the text at {integer:start} in {string:markup} for {paint svg element:element} with {paint svg style:style} onto {paint canvas:target}:
+    execute:
+        if (style's svFill's svOn = false) or ((style's svFill's svColor's alpha) = 0):
+            return nothing
+        # The characters up to </text>, tags left out, whitespace collapsed.
+        set letters to the string form of ""
+        set cursor to start
+        set inTag to false
+        set lastBlank to true
+        loop while cursor < markup's length:
+            set character to ((the character at cursor in markup) as an integer) & 255
+            if (character = 60) and ((the substring of markup from cursor spanning 7 bytes) = (the string form of "</text>")):
+                set cursor to markup's length
+            else if character = 60:
+                set inTag to true
+            else if character = 62:
+                set inTag to false
+            else if inTag = false:
+                if character is blank:
+                    if lastBlank = false:
+                        set letters to letters + (the string form of " ")
+                    set lastBlank to true
+                else:
+                    set letters to letters + (the substring of markup from cursor spanning 1 bytes)
+                    set lastBlank to false
+            set cursor to cursor + 1
+        set letters to the trimmed letters
+        if letters's length = 0:
+            return nothing
+        set matrix to style's svMatrix
+        set x to the numeric attribute "x" of element or 0.0
+        set y to the numeric attribute "y" of element or 0.0
+        set deviceX to ((matrix's svA * x) + (matrix's svC * y)) + matrix's svE
+        set deviceY to ((matrix's svB * x) + (matrix's svD * y)) + matrix's svF
+        set size to (the rounded value of (style's svFontSize * (the scale of matrix))) as an integer
+        if size < 1:
+            return nothing
+        set face to the sans typeface for svg text
+        if (face is loaded) = false:
+            return nothing
+        use unhinted glyphs for (the address of face)
+        set pen to (the rounded value of (deviceX * 64.0)) as an integer
+        set anchor to the attribute "text-anchor" of element
+        if anchor's length > 0:
+            set advance to the width of letters with (the address of face) at size pixels spaced 0
+            if anchor = (the string form of "middle"):
+                set pen to pen - (advance / 2)
+            if anchor = (the string form of "end"):
+                set pen to pen - advance
+        set colour to style's svFill's svColor
+        set colour's alpha to (the rounded value of ((((colour's alpha) as a 64 bit floating-point number) * style's svOpacity) * style's svFillOpacity)) as an integer
+        ignore draw letters at pen ((the rounded value of deviceY) as an integer) with (the address of face) at size pixels spaced 0 in colour on target
+
 class:
     patterns:
         [a|] paint svg definition
@@ -1172,6 +1481,7 @@ function the paint canvas of svg {string:markup} sized {integer:width} by {integ
         set depth to 0
         set matrix to the identity paint matrix
         append (the root paint svg style through matrix) to styles
+        set sheet to the style rules in markup
         set cursor to 0
         loop while cursor < markup's length:
             set character to ((the character at cursor in markup) as an integer) & 255
@@ -1205,7 +1515,7 @@ function the paint canvas of svg {string:markup} sized {integer:width} by {integ
                         set skipDepth to 0
                 else:
                     set parent to the last item of styles
-                    set style to the styling of element within parent
+                    set style to the styling of element within parent under sheet
                     if name = (the string form of "svg"):
                         # The viewBox maps onto the canvas.
                         set viewBox to the attribute "viewBox" of element
@@ -1225,7 +1535,31 @@ function the paint canvas of svg {string:markup} sized {integer:width} by {integ
                         if (boxW > 0.0) and (boxH > 0.0):
                             set scaleX to (width as a 64 bit floating-point number) / boxW
                             set scaleY to (height as a 64 bit floating-point number) / boxH
-                            set style's svMatrix to @intrinsic("construct", a paint matrix, scaleX, 0.0, 0.0, scaleY, 0.0 - (boxX * scaleX), 0.0 - (boxY * scaleY))
+                            set shiftX to 0.0
+                            set shiftY to 0.0
+                            # preserveAspectRatio: by default one scale for
+                            # both axes ("meet", or "slice" for the larger),
+                            # the box aligned in the middle; "none" stretches.
+                            set aspect to the attribute "preserveAspectRatio" of element
+                            if ((aspect has (the string form of "none") at offset 0) = false) and (viewBox's length > 0):
+                                set uniform to the minimum of scaleX and scaleY
+                                if aspect contains "slice":
+                                    set uniform to the maximum of scaleX and scaleY
+                                set spareX to (width as a 64 bit floating-point number) - (boxW * uniform)
+                                set spareY to (height as a 64 bit floating-point number) - (boxH * uniform)
+                                set shiftX to spareX / 2.0
+                                set shiftY to spareY / 2.0
+                                if aspect contains "xMin":
+                                    set shiftX to 0.0
+                                if aspect contains "xMax":
+                                    set shiftX to spareX
+                                if aspect contains "YMin":
+                                    set shiftY to 0.0
+                                if aspect contains "YMax":
+                                    set shiftY to spareY
+                                set scaleX to uniform
+                                set scaleY to uniform
+                            set style's svMatrix to @intrinsic("construct", a paint matrix, scaleX, 0.0, 0.0, scaleY, shiftX - (boxX * scaleX), shiftY - (boxY * scaleY))
                     if (name = (the string form of "defs")) or ((name = (the string form of "clipPath")) or (name = (the string form of "filter"))):
                         if definitionDepth = 0:
                             set definitionDepth to depth + 1
@@ -1245,6 +1579,8 @@ function the paint canvas of svg {string:markup} sized {integer:width} by {integ
                             set definition to the item at (count - 1) in definitions
                             set definition's svBlur to the numeric attribute "stdDeviation" of element or 0.0
                             replace item at index (count - 1) in definitions with definition
+                    if ((name = (the string form of "text")) and ((definitionDepth = 0) and (skipDepth = 0))) and (element's svSelfClosing = false):
+                        draw the text at cursor in markup for element with style onto image
                     if (name = (the string form of "title")) or ((name = (the string form of "desc")) or ((name = (the string form of "text")) or (name = (the string form of "metadata")))):
                         if (element's svSelfClosing = false) and (skipDepth = 0):
                             set skipDepth to depth + 1
@@ -1281,6 +1617,7 @@ function the paint canvas of svg {string:markup} sized {integer:width} by {integ
                         append style to styles
                 free element
         free styles
+        free sheet
         free definitions
         free coverage
         return image

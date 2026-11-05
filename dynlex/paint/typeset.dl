@@ -23,6 +23,7 @@ class:
         coverage as a pointer to a byte
         used as an integer
         capacity as an integer
+        loadFlags as an integer
 
 class:
     patterns:
@@ -61,7 +62,14 @@ function a paint face from {string:path}:
             append 0 to slots
         set capacity to 65536
         set coverage to @intrinsic("call", "libc", "malloc", a pointer to a byte, capacity as a word sized integer)
-        return @intrinsic("construct", a paint face, library, handle, shaper, 12, an empty list of a paint glyph image, slots, coverage, 0, capacity)
+        return @intrinsic("construct", a paint face, library, handle, shaper, 12, an empty list of a paint glyph image, slots, coverage, 0, capacity, freetype hinted rendering)
+
+# Outlines and advances as drawn, without hinting (FT_LOAD_RENDER |
+# FT_LOAD_NO_HINTING): how librsvg sets an SVG's text.
+function use unhinted glyphs for {a pointer to a paint face:typeface}:
+    execute:
+        set typeface's loadFlags to 6
+        @intrinsic("call", ":libharfbuzz.so.0", "hb_ft_font_set_load_flags", nothing, typeface's font, 2)
 
 function {paint face:typeface} is loaded:
     execute:
@@ -153,7 +161,7 @@ local function the glyph image of {integer:glyph} in {a pointer to a paint face:
 
 local function render glyph {integer:glyph} with key {integer:key} in {a pointer to a paint face:typeface}:
     execute:
-        set error to @intrinsic("call", "freetype", "FT_Load_Glyph", an integer, typeface's face, glyph, freetype hinted rendering)
+        set error to @intrinsic("call", "freetype", "FT_Load_Glyph", an integer, typeface's face, glyph, typeface's loadFlags)
         if error != 0:
             return @intrinsic("construct", a paint glyph image, key, 0, 0, 0, 0, 0)
         set slot to (the glyph of (typeface's face as a pointer to an FT face)) as a pointer to an FT glyph slot

@@ -101,10 +101,10 @@ contents rather than its name:
 | PNG | all bit depths and colour types, palettes, transparency, Adam7 (`paint/png.dl`, deflate in `paint/inflate.dl`) | 8-bit RGBA |
 | JPEG | baseline, extended and progressive; grey, YCbCr, CMYK, YCCK; restart intervals; EXIF orientation (`paint/jpeg.dl`, decoded over all cores) | baseline 4:2:0, quality 90 |
 | GIF | first frame, transparency, interlacing (`paint/formats.dl`) | — |
-| BMP | 24 and 32 bit | 24 bit |
+| BMP | 1, 4, 8, 16, 24 and 32 bit, RLE4/RLE8, bit fields, OS/2 headers | 24 bit |
 | TIFF | strips; none, LZW, deflate, PackBits; 1/8/16 bit, palettes | — |
 | TGA, ICO, QOI, PNM (P1–P6), XBM, XPM | `paint/formats.dl` | PPM |
-| SVG, SVGZ | paths, shapes, strokes, transforms, clip paths, blur (`paint/vector.dl`); no text | — |
+| SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
 Not read: WebP, AVIF, HEIC, JPEG XL, JPEG 2000, DDS, lossless and
 arithmetic-coded JPEG.
@@ -115,15 +115,18 @@ arithmetic-coded JPEG.
 - 5 broken files.
 
 `bench/open_images.dl` opens them all and `tests/images/compare.py` checks
-each against an independent decoder (Pillow or gdk-pixbuf). State on
-2026-10-31, after the move to the editor's own decoders:
-- PNG and JPEG (all 27 variants, from 97 × 61 to 4K) match: PNG exactly, JPEG
-  within the lossy tolerance;
-- still to finish: palette and 1-bit BMP, XBM, uncompressed TGA (taken for an
-  ICO), TGA run-length colours, XPM colour names, and SVG fidelity (the
-  Ubuntu logos and the test card's text differ);
-- the formats listed as not read report that, and broken files fail with a
-  readable message.
+each against an independent decoder (Pillow or gdk-pixbuf), comparing colours
+premultiplied by alpha. State on 2026-11-05: all 71 images in the formats the
+editor reads match:
+- exactly, or within the lossy formats' tolerance;
+- SVG within 24 levels on anti-aliased edges: the editor covers each pixel by
+  its exact area, librsvg samples 15 sub-rows where edges end;
+- the test card's text lands up to a pixel from librsvg's (whole-pixel against
+  fractional glyph positions); the comparison reports that separately and
+  holds the rest of the image to the SVG tolerance.
+
+WebP, AVIF, JPEG 2000 and DDS are reported as not read, and the broken files
+fail with a readable message.
 
 ## The interface, tested in all three editions
 

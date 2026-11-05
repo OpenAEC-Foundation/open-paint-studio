@@ -142,52 +142,6 @@ local function save {paint canvas:image} as png to {string:path}:
         @intrinsic("call", "libc", "free", nothing, encoded's bytes)
         return written
 
-local function the paint bmp from {paint byte buffer:buffer}:
-    execute:
-        if ((the byte at 0 of buffer) != 66) or ((the byte at 1 of buffer) != 77):
-            return a failed paint file with "not a BMP file"
-        set start to the little-endian 4 byte number at 10 of buffer
-        set width to the little-endian 4 byte number at 18 of buffer
-        set rawHeight to the little-endian 4 byte number at 22 of buffer
-        set bits to the little-endian 2 byte number at 28 of buffer
-        set compression to the little-endian 4 byte number at 30 of buffer
-        set topDown to false
-        set height to rawHeight
-        if rawHeight >= 2147483648:
-            set height to 4294967296 - rawHeight
-            set topDown to true
-        if ((bits != 24) and (bits != 32)) or ((compression != 0) and (compression != 3)):
-            return a failed paint file with "only uncompressed 24 and 32 bit BMP files are supported"
-        if (a paint canvas width by height fits) = false:
-            return a failed paint file with "the BMP size is not supported"
-        set step to bits / 8
-        set stride to (((width * bits) + 31) / 32) * 4
-        if (start + (stride * height)) > buffer's length:
-            return a failed paint file with "the BMP file is truncated"
-        set image to a new paint canvas width by height filled with the transparent paint color
-        loop row from 0 to height:
-            set source to row
-            if topDown = false:
-                set source to (height - 1) - row
-            loop column from 0 to width:
-                set offset to (start + (source * stride)) + (column * step)
-                set alpha to 255
-                if bits = 32:
-                    set alpha to the byte at (offset + 3) of buffer
-                put (the paint color red (the byte at (offset + 2) of buffer) green (the byte at (offset + 1) of buffer) blue (the byte at offset of buffer) alpha alpha) at column row in image
-        # Many writers leave the fourth byte of a 32-bit BMP at zero; when no
-        # pixel has alpha the image is opaque, as browsers show it.
-        if bits = 32:
-            set seen to false
-            set pixels to image's pixels
-            loop index from 0 to (width * height):
-                if (the item at ((index * 4) + 3) in pixels) != (0 as a byte):
-                    set seen to true
-            if seen = false:
-                loop index from 0 to (width * height):
-                    store (255 as a byte) at (pixels + ((index * 4) + 3))
-        return a paint file holding image
-
 # Writes a 24 bit BMP, transparent pixels composited on white as most viewers
 # show them.
 local function save {paint canvas:image} as bmp to {string:path}:
@@ -259,6 +213,14 @@ local function {paint byte buffer:buffer} looks like markup:
             set cursor to cursor + 1
         return (the byte at cursor of buffer) = 60
 
+# TGA has no signature: its version 2 footer or the extension names it.
+local function {paint byte buffer:buffer} is a tga at {string:path}:
+    execute:
+        if path ends with extension ".tga":
+            return true
+        set footer to buffer's length - 18
+        return (footer > 0) and (((the byte at footer of buffer) = 84) and (((the byte at (footer + 1) of buffer) = 82) and ((the byte at (footer + 2) of buffer) = 85)))
+
 # An SVG document (markup in memory) rendered at its own size.
 local function the paint svg from {pointer:data} spanning {integer:count}:
     execute:
@@ -280,7 +242,7 @@ function the paint image opened from {string:path}:
         set second to the byte at 1 of buffer
         set result to a failed paint file with "a file format the editor does not read (WebP, AVIF, HEIC, JPEG XL, JPEG 2000 and DDS are not supported)"
         if (first = 66) and (second = 77):
-            set result to the paint bmp from buffer
+            set result to (the paint bmp from data spanning count) as a paint file
         else if (first = 80) and ((second >= 49) and (second <= 54)):
             set result to (the paint pnm from data spanning count) as a paint file
         else if (first = 137) and (second = 80):
@@ -301,6 +263,8 @@ function the paint image opened from {string:path}:
             set result to (the paint tiff from data spanning count) as a paint file
         else if (first = 113) and ((second = 111) and (((the byte at 2 of buffer) = 105) and ((the byte at 3 of buffer) = 102))):
             set result to (the paint qoi from data spanning count) as a paint file
+        else if buffer is a tga at path:
+            set result to (the paint tga from data spanning count) as a paint file
         else if ((first = 0) and (second = 0)) and ((((the byte at 2 of buffer) = 1) or ((the byte at 2 of buffer) = 2)) and ((the byte at 3 of buffer) = 0)):
             set result to (the paint ico from data spanning count) as a paint file
         else if (first = 31) and (second = 139):
@@ -316,11 +280,6 @@ function the paint image opened from {string:path}:
             set result to (the paint xpm from data spanning count) as a paint file
         else if buffer looks like markup:
             set result to (the paint svg from data spanning count) as a paint file
-        else if (path ends with extension ".tga") or (count > 26):
-            # TGA has no signature; its footer or its extension names it.
-            set footer to count - 18
-            if (path ends with extension ".tga") or ((footer > 0) and (((the byte at footer of buffer) = 84) and (((the byte at (footer + 1) of buffer) = 82) and ((the byte at (footer + 2) of buffer) = 85)))):
-                set result to (the paint tga from data spanning count) as a paint file
         @intrinsic("call", "libc", "free", nothing, buffer's data)
         return result
 
