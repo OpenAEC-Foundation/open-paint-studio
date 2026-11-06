@@ -1,0 +1,35 @@
+name: open-paint-studio
+base: core22
+version: 0.0.0
+title: Open Paint Studio
+summary: Open Paint Studio for Linux
+description: Open Paint Studio. This Snap packages the published OpenAEC release with its approved app
+  logo.
+grade: stable
+confinement: strict
+icon: src-tauri/icons/icon.png
+architectures:
+- amd64
+apps:
+  open-paint-studio:
+    command: usr/bin/open-paint-studio
+    extensions:
+    - gnome
+    desktop: usr/share/applications/open-paint-studio.desktop
+    plugs:
+    - home
+    - removable-media
+    - network
+    - browser-support
+parts:
+  open-paint-studio:
+    plugin: nil
+    stage-packages:
+    - libappindicator3-1
+    override-build: 'set -eu
+
+      dpkg-deb -x "${CRAFT_PROJECT_DIR}/release.deb" "${CRAFT_PART_INSTALL}"
+
+      python3 "${CRAFT_PROJECT_DIR}/snap/prepare-desktop.py" "${CRAFT_PART_INSTALL}"
+
+      '
