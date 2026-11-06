@@ -7,7 +7,7 @@ export default function TitleBar({ name, save, undo, redo, settings, canUndo, ca
     await getCurrentWindow()[action]();
   }
   return <header className="titlebar">
-    <div className="brand"><img src="/brand/openaec-symbol-transparent.svg" alt="OpenAEC"/><span>Open<span className="brand-aec">AEC</span> <b>Paint Studio</b></span></div>
+    <div className="brand"><img src="/app-icon.svg" alt="Open Paint Studio"/><span>Open<span className="brand-aec">AEC</span> <b>Paint Studio</b></span></div>
     <span className="titlebar-separator"/>
     <button onClick={save} title="Save (Ctrl+S)" aria-label="Save"><Save size={16}/></button>
     <button onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo}><Undo2 size={16}/></button>

@@ -1,0 +1,124 @@
+[
+  {
+    "name": "Open Paint Studio",
+    "source": "docs/branding/open-paint-studio.png",
+    "sha256": "b4063be4375da67e0c048a989ff14217ef8b9a819137e38c17a8e14c59c61cd6",
+    "source_url": "https://dashboard.snapcraft.io/site_media/appmedia/2026/11/open-paint-studio-logo-afgerond.png",
+    "outputs": [
+      {
+        "path": "src-tauri/icons/Square310x310Logo.png",
+        "size": [
+          310,
+          310
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square71x71Logo.png",
+        "size": [
+          71,
+          71
+        ]
+      },
+      {
+        "path": "src-tauri/icons/icon.png",
+        "size": [
+          512,
+          512
+        ]
+      },
+      {
+        "path": "src-tauri/icons/StoreLogo.png",
+        "size": [
+          50,
+          50
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square142x142Logo.png",
+        "size": [
+          142,
+          142
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square44x44Logo.png",
+        "size": [
+          44,
+          44
+        ]
+      },
+      {
+        "path": "src-tauri/icons/32x32.png",
+        "size": [
+          32,
+          32
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square89x89Logo.png",
+        "size": [
+          89,
+          89
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square284x284Logo.png",
+        "size": [
+          284,
+          284
+        ]
+      },
+      {
+        "path": "src-tauri/icons/icon.ico"
+      },
+      {
+        "path": "src-tauri/icons/icon.icns"
+      },
+      {
+        "path": "src-tauri/icons/Square150x150Logo.png",
+        "size": [
+          150,
+          150
+        ]
+      },
+      {
+        "path": "src-tauri/icons/128x128.png",
+        "size": [
+          128,
+          128
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square30x30Logo.png",
+        "size": [
+          30,
+          30
+        ]
+      },
+      {
+        "path": "src-tauri/icons/128x128@2x.png",
+        "size": [
+          256,
+          256
+        ]
+      },
+      {
+        "path": "src-tauri/icons/Square107x107Logo.png",
+        "size": [
+          107,
+          107
+        ]
+      },
+      {
+        "path": "src-tauri/icons/64x64.png",
+        "size": [
+          64,
+          64
+        ]
+      },
+      {
+        "path": "public/app-icon.svg"
+      }
+    ]
+  }
+]
