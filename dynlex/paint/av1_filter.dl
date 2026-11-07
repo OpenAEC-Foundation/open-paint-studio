@@ -1,0 +1,707 @@
+# The AV1 filters after decoding (spec 7.14 the deblocking loop filter,
+# 7.15 CDEF), applied to the whole frame in the order the spec gives.
+import dynlex/paint/av1_block.dl
+
+# --- Deblocking (7.14) ---
+
+function the av1 filter level at {integer:row} {integer:column} plane {integer:plane} pass {integer:pass} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set record to (decoder's adMi) + (((row * (decoder's adMiCols)) + column) * 16)
+        set segment to the item at 4 in record
+        set slot to plane + 1
+        if plane = 0:
+            set slot to pass
+        set delta to the item at 9 in record
+        if (decoder's adDeltaLfMulti) = 1:
+            set delta to the item at (9 + slot) in record
+        set strength to (delta + (the item at slot in (decoder's adLfLevels))) clamped between 0 and 63
+        if (decoder's adSegEnabled) = 1:
+            if (the item at ((segment * 8) + (1 + slot)) in (decoder's adSegFeatureOn)) = 1:
+                set strength to (strength + (the item at ((segment * 8) + (1 + slot)) in (decoder's adSegFeatureData))) clamped between 0 and 63
+        if (decoder's adLfDeltaEnabled) = 1:
+            set shift to strength >> 5
+            set strength to (strength + ((the item at 0 in (decoder's adLfRefDeltas)) << shift)) clamped between 0 and 63
+        return strength
+
+function av1 filter sample at {integer:offset} step {integer:step} of {a pointer to an integer:samples} limits {integer:limit} {integer:blimit} {integer:thresh} size {integer:size} plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set depth to decoder's adBitDepth
+        set q0 to the item at offset in samples
+        set q1 to the item at (offset + step) in samples
+        set p0 to the item at (offset - step) in samples
+        set p1 to the item at (offset - (2 * step)) in samples
+        set shiftBd to depth - 8
+        set length to 16
+        if size = 4:
+            set length to 4
+        else if plane != 0:
+            set length to 6
+        else if size = 8:
+            set length to 8
+        set limitBd to limit << shiftBd
+        set blimitBd to blimit << shiftBd
+        set threshBd to thresh << shiftBd
+        set hev to ((the absolute value of (p1 - p0)) > threshBd) or ((the absolute value of (q1 - q0)) > threshBd)
+        set masked to ((the absolute value of (p1 - p0)) > limitBd) or ((the absolute value of (q1 - q0)) > limitBd)
+        set masked to masked or ((((the absolute value of (p0 - q0)) * 2) + ((the absolute value of (p1 - q1)) / 2)) > blimitBd)
+        set p2 to 0
+        set q2 to 0
+        set p3 to 0
+        set q3 to 0
+        if length >= 6:
+            set p2 to the item at (offset - (3 * step)) in samples
+            set q2 to the item at (offset + (2 * step)) in samples
+            set masked to masked or (((the absolute value of (p2 - p1)) > limitBd) or ((the absolute value of (q2 - q1)) > limitBd))
+        if length >= 8:
+            set p3 to the item at (offset - (4 * step)) in samples
+            set q3 to the item at (offset + (3 * step)) in samples
+            set masked to masked or (((the absolute value of (p3 - p2)) > limitBd) or ((the absolute value of (q3 - q2)) > limitBd))
+        if masked:
+            return nothing
+        set flatLimit to 1 << shiftBd
+        set flat to false
+        if size >= 8:
+            set notFlat to ((the absolute value of (p1 - p0)) > flatLimit) or ((the absolute value of (q1 - q0)) > flatLimit)
+            set notFlat to notFlat or (((the absolute value of (p2 - p0)) > flatLimit) or ((the absolute value of (q2 - q0)) > flatLimit))
+            if length >= 8:
+                set notFlat to notFlat or (((the absolute value of (p3 - p0)) > flatLimit) or ((the absolute value of (q3 - q0)) > flatLimit))
+            set flat to notFlat = false
+        set flatter to false
+        if size >= 16:
+            set notFlat to false
+            loop k from 4 to 7:
+                set pk to the item at (offset - ((k + 1) * step)) in samples
+                set qk to the item at (offset + (k * step)) in samples
+                set notFlat to notFlat or (((the absolute value of (pk - p0)) > flatLimit) or ((the absolute value of (qk - q0)) > flatLimit))
+            set flatter to notFlat = false
+        if (size = 4) or (flat = false):
+            # The narrow filter (7.14.6.3).
+            set low to 0 - (1 << (depth - 1))
+            set high to (1 << (depth - 1)) - 1
+            set middle to 128 << shiftBd
+            set ps1 to p1 - middle
+            set ps0 to p0 - middle
+            set qs0 to q0 - middle
+            set qs1 to q1 - middle
+            set amount to 0
+            if hev:
+                set amount to (ps1 - qs1) clamped between low and high
+            set amount to (amount + (3 * (qs0 - ps0))) clamped between low and high
+            set amount1 to ((amount + 4) clamped between low and high) >> 3
+            set amount2 to ((amount + 3) clamped between low and high) >> 3
+            store (((qs0 - amount1) clamped between low and high) + middle) at (samples + offset)
+            store (((ps0 + amount2) clamped between low and high) + middle) at (samples + (offset - step))
+            if hev = false:
+                set amount to (amount1 + 1) >> 1
+                store (((qs1 - amount) clamped between low and high) + middle) at (samples + (offset + step))
+                store (((ps1 + amount) clamped between low and high) + middle) at (samples + (offset - (2 * step)))
+            return nothing
+        set log2Size to 3
+        if (size >= 16) and flatter:
+            set log2Size to 4
+        set n to 2
+        if log2Size = 4:
+            set n to 6
+        else if plane = 0:
+            set n to 3
+        set n2 to 1
+        if (log2Size = 3) and (plane = 0):
+            set n2 to 0
+        set taps to (decoder's adScratch) + 8400
+        set results to (decoder's adScratch) + 8440
+        loop k from (0 - (n + 1)) to (n + 1):
+            store (the item at (offset + (k * step)) in samples) at (taps + (k + 8))
+        loop i from (0 - n) to n:
+            set total to 0
+            loop j from (0 - n) to (n + 1):
+                set p to (i + j) clamped between (0 - (n + 1)) and n
+                set tap to 1
+                if (the absolute value of j) <= n2:
+                    set tap to 2
+                set total to total + ((the item at (p + 8) in taps) * tap)
+            store (av1 round total down log2Size) at (results + (i + 8))
+        loop i from (0 - n) to n:
+            store (the item at (i + 8) in results) at (samples + (offset + (i * step)))
+
+function av1 loop filter edge of plane {integer:plane} pass {integer:pass} at {integer:miRow} {integer:miColumn} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set subX to 0
+        set subY to 0
+        if plane > 0:
+            set subX to decoder's adSubX
+            set subY to decoder's adSubY
+        set dx to 0
+        set dy to 0
+        if pass = 0:
+            set dx to 1
+        else:
+            set dy to 1
+        set x to miColumn * 4
+        set y to miRow * 4
+        set row to miRow | subY
+        set column to miColumn | subX
+        if (x >= (decoder's adWidth)) or (y >= (decoder's adHeight)):
+            return nothing
+        if ((pass = 0) and (x = 0)) or ((pass = 1) and (y = 0)):
+            return nothing
+        set xP to x >> subX
+        set yP to y >> subY
+        set previousRow to row - (dy << subY)
+        set previousColumn to column - (dx << subX)
+        set columns to decoder's adMiCols
+        set record to (decoder's adMi) + (((row * columns) + column) * 16)
+        set size to the item at 0 in record
+        set planeColumns to (columns + subX) >> subX
+        set sizes to (decoder's adLfTxSizes) + (plane * ((decoder's adMiRows) * columns))
+        set transform to the item at (((row >> subY) * planeColumns) + (column >> subX)) in sizes
+        set previousTransform to the item at (((previousRow >> subY) * planeColumns) + (previousColumn >> subX)) in sizes
+        set planeSize to the av1 residual size of size for plane in decoder
+        set skip to the item at 3 in record
+        set blockEdge to false
+        set txEdge to false
+        if pass = 0:
+            set blockEdge to (the remainder of xP divided by (4 * (av1 blocks wide of planeSize))) = 0
+            set txEdge to (the remainder of xP divided by (av1 tx width of transform)) = 0
+        else:
+            set blockEdge to (the remainder of yP divided by (4 * (av1 blocks high of planeSize))) = 0
+            set txEdge to (the remainder of yP divided by (av1 tx height of transform)) = 0
+        if txEdge = false:
+            return nothing
+        # Inside a skipped intra block only its own edges are filtered.
+        set apply to blockEdge or (skip = 0)
+        if apply = false:
+            return nothing
+        set baseSize to the minimum of (av1 tx width of previousTransform) and (av1 tx width of transform)
+        if pass = 1:
+            set baseSize to the minimum of (av1 tx height of previousTransform) and (av1 tx height of transform)
+        set filterSize to the minimum of 16 and baseSize
+        if plane > 0:
+            set filterSize to the minimum of 8 and baseSize
+        set level to the av1 filter level at row column plane plane pass pass in decoder
+        if level = 0:
+            set level to the av1 filter level at previousRow previousColumn plane plane pass pass in decoder
+        if level = 0:
+            return nothing
+        set sharpness to decoder's adLfSharpness
+        set shift to 0
+        if sharpness > 4:
+            set shift to 2
+        else if sharpness > 0:
+            set shift to 1
+        set limit to the maximum of 1 and (level >> shift)
+        if sharpness > 0:
+            set limit to (level >> shift) clamped between 1 and (9 - sharpness)
+        set blimit to (2 * (level + 2)) + limit
+        set thresh to level >> 4
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        set step to 1
+        if pass = 1:
+            set step to stride
+        loop i from 0 to 4:
+            set sampleX to xP + (dy * i)
+            set sampleY to yP + (dx * i)
+            av1 filter sample at ((sampleY * stride) + sampleX) step step of samples limits limit blimit thresh size filterSize plane plane in decoder
+
+function run av1 deblocking in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set levels to decoder's adLfLevels
+        if ((the item at 0 in levels) = 0) and ((the item at 1 in levels) = 0):
+            return nothing
+        loop plane from 0 to (decoder's adPlanes):
+            if (plane = 0) or ((the item at (1 + plane) in levels) != 0):
+                set rowStep to 1
+                set columnStep to 1
+                if plane > 0:
+                    set rowStep to 1 << (decoder's adSubY)
+                    set columnStep to 1 << (decoder's adSubX)
+                loop pass from 0 to 2:
+                    set row to 0
+                    loop while row < (decoder's adMiRows):
+                        set column to 0
+                        loop while column < (decoder's adMiCols):
+                            av1 loop filter edge of plane plane pass pass at row column in decoder
+                            set column to column + columnStep
+                        set row to row + rowStep
+
+# --- CDEF (7.15) ---
+
+function av1 cdef direction at {integer:row} {integer:column} into {a pointer to an integer:result} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set partial to (decoder's adScratch) + 8500
+        loop index from 0 to 120:
+            store 0 at (partial + index)
+        set cost to (decoder's adScratch) + 8620
+        loop index from 0 to 8:
+            store 0 at (cost + index)
+        set samples to decoder's adPlaneY
+        set stride to decoder's adStrideY
+        set x0 to column << 2
+        set y0 to row << 2
+        set shift to (decoder's adBitDepth) - 8
+        loop i from 0 to 8:
+            loop j from 0 to 8:
+                set x to ((the item at (((y0 + i) * stride) + (x0 + j)) in samples) >> shift) - 128
+                set slot to i + j
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 15 + (i + (j / 2))
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 30 + i
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 45 + ((3 + i) - (j / 2))
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 60 + ((7 + i) - j)
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 75 + ((3 - (i / 2)) + j)
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 90 + j
+                store ((the item at slot in partial) + x) at (partial + slot)
+                set slot to 105 + ((i / 2) + j)
+                store ((the item at slot in partial) + x) at (partial + slot)
+        set divisions to the string form of "0 840 420 280 210 168 140 120 105"
+        set c2 to 0
+        set c6 to 0
+        loop i from 0 to 8:
+            set c2 to c2 + ((the item at (30 + i) in partial) * (the item at (30 + i) in partial))
+            set c6 to c6 + ((the item at (90 + i) in partial) * (the item at (90 + i) in partial))
+        store (c2 * 105) at (cost + 2)
+        store (c6 * 105) at (cost + 6)
+        set c0 to 0
+        set c4 to 0
+        loop i from 0 to 7:
+            set weight to the av1 number (i + 1) in divisions
+            set c0 to c0 + ((((the item at i in partial) * (the item at i in partial)) + ((the item at (14 - i) in partial) * (the item at (14 - i) in partial))) * weight)
+            set c4 to c4 + ((((the item at (60 + i) in partial) * (the item at (60 + i) in partial)) + ((the item at (74 - i) in partial) * (the item at (74 - i) in partial))) * weight)
+        set c0 to c0 + (((the item at 7 in partial) * (the item at 7 in partial)) * 105)
+        set c4 to c4 + (((the item at 67 in partial) * (the item at 67 in partial)) * 105)
+        store c0 at cost
+        store c4 at (cost + 4)
+        set candidate to 1
+        loop while candidate < 8:
+            set base to candidate * 15
+            set total to 0
+            loop j from 0 to 5:
+                set total to total + ((the item at (base + (3 + j)) in partial) * (the item at (base + (3 + j)) in partial))
+            set total to total * 105
+            loop j from 0 to 3:
+                set weight to the av1 number ((2 * j) + 2) in divisions
+                set total to total + ((((the item at (base + j) in partial) * (the item at (base + j) in partial)) + ((the item at (base + (10 - j)) in partial) * (the item at (base + (10 - j)) in partial))) * weight)
+            store total at (cost + candidate)
+            set candidate to candidate + 2
+        set bestCost to 0
+        set bestDirection to 0
+        loop i from 0 to 8:
+            if (the item at i in cost) > bestCost:
+                set bestCost to the item at i in cost
+                set bestDirection to i
+        store bestDirection at result
+        store ((bestCost - (the item at ((bestDirection + 4) & 7) in cost)) >> 10) at (result + 1)
+
+function the av1 constrained {integer:difference} within {integer:threshold} damping {integer:damping}:
+    execute:
+        if threshold = 0:
+            return 0
+        set adjust to the maximum of 0 and (damping - (av1 log of threshold))
+        set magnitude to the absolute value of difference
+        set value to the minimum of magnitude and (the maximum of 0 and (threshold - (magnitude >> adjust)))
+        if difference < 0:
+            return 0 - value
+        return value
+
+function av1 cdef filter of plane {integer:plane} at {integer:row} {integer:column} strengths {integer:primary} {integer:secondary} damping {integer:damping} direction {integer:direction} into {a pointer to an integer:target} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set shift to (decoder's adBitDepth) - 8
+        set subX to 0
+        set subY to 0
+        if plane > 0:
+            set subX to decoder's adSubX
+            set subY to decoder's adSubY
+        set x0 to (column * 4) >> subX
+        set y0 to (row * 4) >> subY
+        set width to 8 >> subX
+        set height to 8 >> subY
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        set directions to the string form of "-1 1 -2 2 0 1 -1 2 0 1 0 2 0 1 1 2 1 1 2 2 1 0 2 1 1 0 2 0 1 0 2 -1"
+        set strengthBit to (primary >> shift) & 1
+        set primaryTaps to the string form of "4 2 3 3"
+        loop i from 0 to height:
+            loop j from 0 to width:
+                set x to the item at (((y0 + i) * stride) + (x0 + j)) in samples
+                set sum to 0
+                set largest to x
+                set smallest to x
+                loop k from 0 to 2:
+                    set sign to -1
+                    loop while sign <= 1:
+                        loop pick from 0 to 3:
+                            set which to direction
+                            if pick = 1:
+                                set which to (direction - 2) & 7
+                            if pick = 2:
+                                set which to (direction + 2) & 7
+                            set dy to the av1 signed number (((which * 2) + k) * 2) in directions
+                            set dx to the av1 signed number ((((which * 2) + k) * 2) + 1) in directions
+                            set sampleY to (y0 + i) + (sign * dy)
+                            set sampleX to (x0 + j) + (sign * dx)
+                            set candidateRow to (sampleY << subY) >> 2
+                            set candidateColumn to (sampleX << subX) >> 2
+                            if (((candidateRow >= 0) and (candidateRow < (decoder's adMiRows))) and ((candidateColumn >= 0) and (candidateColumn < (decoder's adMiCols)))):
+                                set p to the item at ((sampleY * stride) + sampleX) in samples
+                                if pick = 0:
+                                    set sum to sum + ((the av1 number ((strengthBit * 2) + k) in primaryTaps) * (the av1 constrained (p - x) within primary damping damping))
+                                else:
+                                    set tap to 2
+                                    if k = 1:
+                                        set tap to 1
+                                    set sum to sum + (tap * (the av1 constrained (p - x) within secondary damping damping))
+                                set largest to the maximum of largest and p
+                                set smallest to the minimum of smallest and p
+                        set sign to sign + 2
+                set negative to 0
+                if sum < 0:
+                    set negative to 1
+                store ((x + (((8 + sum) - negative) >> 4)) clamped between smallest and largest) at (target + (((y0 + i) * stride) + (x0 + j)))
+
+function the av1 signed number {integer:wanted} in {string:listing}:
+    execute:
+        set index to 0
+        set value to 0
+        set negative to false
+        set inNumber to false
+        loop cursor from 0 to (listing's length + 1):
+            set character to 32
+            if cursor < listing's length:
+                set character to ((the character at cursor in listing) as an integer) & 255
+            if character = 45:
+                set negative to true
+            else if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                if index = wanted:
+                    if negative:
+                        return 0 - value
+                    return value
+                set index to index + 1
+                set value to 0
+                set negative to false
+                set inNumber to false
+        return 0
+
+function run av1 cdef in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (((decoder's adCodedLossless) = 1) or ((decoder's adAllowIntrabc) = 1)) or ((decoder's adCdefEnabled) = 0):
+            return nothing
+        # The filter reads the deblocked frame and writes a copy.
+        set planes to decoder's adPlanes
+        set copies to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 3 as a word sized integer, 8 as a word sized integer)
+        loop plane from 0 to planes:
+            set rows to decoder's adRowsY
+            if plane > 0:
+                set rows to decoder's adRowsC
+            set count to rows * (the av1 stride of plane in decoder)
+            set copy to @intrinsic("call", "libc", "malloc", a pointer to an integer, (count * 4) as a word sized integer)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, the av1 plane plane of decoder, (count * 4) as a word sized integer)
+            store (copy as a C long integer) at (copies + plane)
+        set result to (decoder's adScratch) + 8700
+        set strengths to decoder's adCdefStrengths
+        set coefficientShift to (decoder's adBitDepth) - 8
+        set row to 0
+        loop while row < (decoder's adMiRows):
+            set column to 0
+            loop while column < (decoder's adMiCols):
+                set index to the item at (((row >> 4) * (decoder's adCdefColumns)) + (column >> 4)) in (decoder's adCdefIndex)
+                set allSkip to true
+                loop dy from 0 to 2:
+                    loop dx from 0 to 2:
+                        if ((row + dy) < (decoder's adMiRows)) and ((column + dx) < (decoder's adMiCols)):
+                            if (the av1 mi field 3 at (row + dy) (column + dx) of decoder) = 0:
+                                set allSkip to false
+                if (index != -1) and (allSkip = false):
+                    av1 cdef direction at row column into result in decoder
+                    set lumaDirection to the item at 0 in result
+                    set variance to the item at 1 in result
+                    set primary to (the item at (index * 4) in strengths) << coefficientShift
+                    set secondary to (the item at ((index * 4) + 1) in strengths) << coefficientShift
+                    set direction to lumaDirection
+                    if primary = 0:
+                        set direction to 0
+                    set varianceStrength to 0
+                    if (variance >> 6) > 0:
+                        set varianceStrength to the minimum of (av1 log of (variance >> 6)) and 12
+                    set adjusted to 0
+                    if variance > 0:
+                        set adjusted to ((primary * (4 + varianceStrength)) + 8) >> 4
+                    set damping to (decoder's adCdefDamping) + coefficientShift
+                    av1 cdef filter of plane 0 at row column strengths adjusted secondary damping damping direction direction into ((the item at 0 in copies) as a pointer to an integer) in decoder
+                    if planes > 1:
+                        set primary to (the item at ((index * 4) + 2) in strengths) << coefficientShift
+                        set secondary to (the item at ((index * 4) + 3) in strengths) << coefficientShift
+                        set direction to 0
+                        if primary != 0:
+                            set table to the string form of "0 1 2 3 4 5 6 7 1 2 2 2 3 4 6 0 7 0 2 4 5 6 6 6 0 1 2 3 4 5 6 7"
+                            set direction to the av1 number ((((decoder's adSubX) * 16) + ((decoder's adSubY) * 8)) + lumaDirection) in table
+                        set damping to ((decoder's adCdefDamping) + coefficientShift) - 1
+                        av1 cdef filter of plane 1 at row column strengths primary secondary damping damping direction direction into ((the item at 1 in copies) as a pointer to an integer) in decoder
+                        av1 cdef filter of plane 2 at row column strengths primary secondary damping damping direction direction into ((the item at 2 in copies) as a pointer to an integer) in decoder
+                set column to column + 2
+            set row to row + 2
+        # The filtered copies become the frame.
+        loop plane from 0 to planes:
+            set copy to (the item at plane in copies) as a pointer to an integer
+            if plane = 0:
+                @intrinsic("call", "libc", "free", nothing, decoder's adPlaneY)
+                set decoder's adPlaneY to copy
+            else if plane = 1:
+                @intrinsic("call", "libc", "free", nothing, decoder's adPlaneU)
+                set decoder's adPlaneU to copy
+            else:
+                @intrinsic("call", "libc", "free", nothing, decoder's adPlaneV)
+                set decoder's adPlaneV to copy
+        @intrinsic("call", "libc", "free", nothing, copies)
+
+# --- Loop restoration (7.17) ---
+# The frame after CDEF is the source; rows above and below a unit's 64-row
+# stripe come from the deblocked frame before CDEF (kept in before).
+
+class:
+    patterns:
+        [an|] av1 restoration
+    members:
+        rsPlane as an integer
+        rsSource as a pointer to an integer
+        rsBefore as a pointer to an integer
+        rsStride as an integer
+        rsEndX as an integer
+        rsEndY as an integer
+        rsStripeStart as an integer
+        rsStripeEnd as an integer
+
+function the av1 restoration source at {integer:x} {integer:y} of {a pointer to an av1 restoration:restoration}:
+    execute:
+        set column to (the minimum of (restoration's rsEndX) and x) clamped between 0 and (restoration's rsEndX)
+        set line to (the minimum of (restoration's rsEndY) and y) clamped between 0 and (restoration's rsEndY)
+        set column to the maximum of 0 and column
+        set line to the maximum of 0 and line
+        if line < (restoration's rsStripeStart):
+            set line to the maximum of ((restoration's rsStripeStart) - 2) and line
+            return the item at ((line * (restoration's rsStride)) + column) in (restoration's rsBefore)
+        if line > (restoration's rsStripeEnd):
+            set line to the minimum of ((restoration's rsStripeEnd) + 2) and line
+            return the item at ((line * (restoration's rsStride)) + column) in (restoration's rsBefore)
+        return the item at ((line * (restoration's rsStride)) + column) in (restoration's rsSource)
+
+function av1 wiener filter of {a pointer to an av1 restoration:restoration} with {a pointer to an integer:unit} at {integer:x} {integer:y} sized {integer:width} {integer:height} into {a pointer to an integer:target} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set depth to decoder's adBitDepth
+        set round0 to 3
+        set round1 to 11
+        if depth = 12:
+            set round0 to 5
+            set round1 to 9
+        set vertical to (decoder's adScratch) + 8800
+        set horizontal to (decoder's adScratch) + 8810
+        loop pass from 0 to 2:
+            set taps to vertical
+            if pass = 1:
+                set taps to horizontal
+            store 128 at (taps + 3)
+            loop i from 0 to 3:
+                set c to the item at ((1 + (pass * 3)) + i) in unit
+                store c at (taps + i)
+                store c at (taps + (6 - i))
+                store ((the item at 3 in taps) - (2 * c)) at (taps + 3)
+        set offset to 1 << ((depth + 7) - (round0 + 1))
+        set limit to (1 << ((depth + 8) - round0)) - 1
+        set intermediate to (decoder's adScratch) + 8820
+        loop r from 0 to (height + 6):
+            loop c from 0 to width:
+                set sum to 0
+                loop t from 0 to 7:
+                    set sum to sum + ((the item at t in horizontal) * (the av1 restoration source at (((x + c) + t) - 3) ((y + r) - 3) of restoration))
+                set value to av1 round sum down round0
+                store (value clamped between (0 - offset) and (limit - offset)) at (intermediate + ((r * 4) + c))
+        set largest to (1 << depth) - 1
+        set stride to restoration's rsStride
+        loop r from 0 to height:
+            loop c from 0 to width:
+                set sum to 0
+                loop t from 0 to 7:
+                    set sum to sum + ((the item at t in vertical) * (the item at (((r + t) * 4) + c) in intermediate))
+                store ((av1 round sum down round1) clamped between 0 and largest) at (target + (((y + r) * stride) + (x + c)))
+
+# The box filter of one pass (7.17.3) into result (4x4 at most).
+function av1 box filter of {a pointer to an av1 restoration:restoration} at {integer:x} {integer:y} sized {integer:width} {integer:height} radius {integer:radius} epsilon {integer:epsilon} pass {integer:pass} into {a pointer to an integer:result} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set depth to decoder's adBitDepth
+        set n to ((2 * radius) + 1) * ((2 * radius) + 1)
+        # The table's second value is the scale s itself (as libaom and rav1e use it).
+        set scale to epsilon
+        set oneOverN to ((1 << 12) + (n / 2)) / n
+        set aValues to (decoder's adScratch) + 8860
+        set bValues to (decoder's adScratch) + 8900
+        loop i from -1 to (height + 1):
+            loop j from -1 to (width + 1):
+                set a to 0 as a C long integer
+                set b to 0
+                loop dy from (0 - radius) to (radius + 1):
+                    loop dx from (0 - radius) to (radius + 1):
+                        set c to the av1 restoration source at ((x + j) + dx) ((y + i) + dy) of restoration
+                        set a to a + ((c * c) as a C long integer)
+                        set b to b + c
+                set aRounded to a
+                if depth > 8:
+                    set aRounded to (a + ((1 << ((2 * (depth - 8)) - 1)) as a C long integer)) >> (2 * (depth - 8))
+                set d to av1 round b down (depth - 8)
+                set p to (aRounded * (n as a C long integer)) - ((d * d) as a C long integer)
+                if p < (0 as a C long integer):
+                    set p to 0 as a C long integer
+                set z to ((p * (scale as a C long integer)) + ((1 << 19) as a C long integer)) >> 20
+                set a2 to 0
+                if z >= (255 as a C long integer):
+                    set a2 to 256
+                else if z = (0 as a C long integer):
+                    set a2 to 1
+                else:
+                    set zi to z as an integer
+                    set a2 to ((zi << 8) + (zi / 2)) / (zi + 1)
+                set b2 to (((256 - a2) as a C long integer) * (b as a C long integer)) * (oneOverN as a C long integer)
+                store a2 at (aValues + (((i + 1) * 6) + (j + 1)))
+                store (((b2 + (2048 as a C long integer)) >> 12) as an integer) at (bValues + (((i + 1) * 6) + (j + 1)))
+        set stride to restoration's rsStride
+        loop i from 0 to height:
+            set shift to 5
+            if (pass = 0) and ((i & 1) = 1):
+                set shift to 4
+            loop j from 0 to width:
+                set a to 0
+                set b to 0
+                loop dy from -1 to 2:
+                    loop dx from -1 to 2:
+                        set weight to 3
+                        if pass = 0:
+                            set weight to 0
+                            if ((i + dy) & 1) = 1:
+                                set weight to 5
+                                if dx = 0:
+                                    set weight to 6
+                        else if (dx = 0) or (dy = 0):
+                            set weight to 4
+                        set a to a + (weight * (the item at ((((i + dy) + 1) * 6) + ((j + dx) + 1)) in aValues))
+                        set b to b + (weight * (the item at ((((i + dy) + 1) * 6) + ((j + dx) + 1)) in bValues))
+                set v to (a * (the item at (((y + i) * stride) + (x + j)) in (restoration's rsSource))) + b
+                store (av1 round v down ((8 + shift) - 4)) at (result + ((i * 4) + j))
+
+function av1 self guided filter of {a pointer to an av1 restoration:restoration} with {a pointer to an integer:unit} at {integer:x} {integer:y} sized {integer:width} {integer:height} into {a pointer to an integer:target} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set params to the string form of "2 140 1 3236 2 112 1 2158 2 93 1 1618 2 80 1 1438 2 70 1 1295 2 58 1 1177 2 47 1 1079 2 37 1 996 2 30 1 925 2 25 1 863 0 0 1 2589 0 0 1 1618 0 0 1 1177 0 0 1 925 2 56 0 0 2 22 0 0"
+        set chosen to the item at 7 in unit
+        set r0 to the av1 number (chosen * 4) in params
+        set e0 to the av1 number ((chosen * 4) + 1) in params
+        set r1 to the av1 number ((chosen * 4) + 2) in params
+        set e1 to the av1 number ((chosen * 4) + 3) in params
+        set first to (decoder's adScratch) + 8940
+        set second to (decoder's adScratch) + 8960
+        if r0 > 0:
+            av1 box filter of restoration at x y sized width height radius r0 epsilon e0 pass 0 into first in decoder
+        if r1 > 0:
+            av1 box filter of restoration at x y sized width height radius r1 epsilon e1 pass 1 into second in decoder
+        set w0 to the item at 8 in unit
+        set w1 to the item at 9 in unit
+        set w2 to (128 - w0) - w1
+        set largest to (1 << (decoder's adBitDepth)) - 1
+        set stride to restoration's rsStride
+        loop i from 0 to height:
+            loop j from 0 to width:
+                set u to (the item at (((y + i) * stride) + (x + j)) in (restoration's rsSource)) << 4
+                set v to w1 * u
+                if r0 > 0:
+                    set v to v + (w0 * (the item at ((i * 4) + j) in first))
+                else:
+                    set v to v + (w0 * u)
+                if r1 > 0:
+                    set v to v + (w2 * (the item at ((i * 4) + j) in second))
+                else:
+                    set v to v + (w2 * u)
+                store ((av1 round v down 11) clamped between 0 and largest) at (target + (((y + i) * stride) + (x + j)))
+
+function run av1 restoration with {a pointer to a C long integer:before} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set planes to decoder's adPlanes
+        loop plane from 0 to planes:
+            if (the item at plane in (decoder's adLrTypes)) != 0:
+                set subX to 0
+                set subY to 0
+                if plane > 0:
+                    set subX to decoder's adSubX
+                    set subY to decoder's adSubY
+                set source to the av1 plane plane of decoder
+                set stride to the av1 stride of plane in decoder
+                set rows to decoder's adRowsY
+                if plane > 0:
+                    set rows to decoder's adRowsC
+                set target to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((rows * stride) * 4) as a word sized integer)
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, target, source, ((rows * stride) * 4) as a word sized integer)
+                set endX to ((((decoder's adUpscaledWidth) + subX) >> subX)) - 1
+                set endY to ((((decoder's adHeight) + subY) >> subY)) - 1
+                set state to @intrinsic("construct", an av1 restoration, plane, source, (the item at plane in before) as a pointer to an integer, stride, endX, endY, 0, 0)
+                set context to the address of state
+                set unitSize to the item at plane in (decoder's adLrSizes)
+                set unitRows to the av1 units of unitSize in (endY + 1)
+                set unitCols to the av1 units of unitSize in (endX + 1)
+                set y to 0
+                loop while y < (decoder's adHeight):
+                    set x to 0
+                    loop while x < (decoder's adUpscaledWidth):
+                        set row to y >> 2
+                        set column to x >> 2
+                        set stripe to ((row * 4) + 8) / 64
+                        set state's rsStripeStart to ((0 - 8) + (stripe * 64)) >> subY
+                        set state's rsStripeEnd to ((state's rsStripeStart) + (64 >> subY)) - 1
+                        set unitRow to the minimum of (unitRows - 1) and ((((row * 4) + 8) >> subY) / unitSize)
+                        set unitCol to the minimum of (unitCols - 1) and (((column * 4) >> subX) / unitSize)
+                        set planeX to (column * 4) >> subX
+                        set planeY to (row * 4) >> subY
+                        set width to the minimum of (4 >> subX) and ((endX - planeX) + 1)
+                        set height to the minimum of (4 >> subY) and ((endY - planeY) + 1)
+                        set unit to (decoder's adLrUnits) + ((plane * 65536) + (((unitRow * unitCols) + unitCol) * 10))
+                        set kind to the item at 0 in unit
+                        if (width > 0) and (height > 0):
+                            if kind = 1:
+                                av1 wiener filter of context with unit at planeX planeY sized width height into target in decoder
+                            else if kind = 2:
+                                av1 self guided filter of context with unit at planeX planeY sized width height into target in decoder
+                        set x to x + 4
+                    set y to y + 4
+                if plane = 0:
+                    @intrinsic("call", "libc", "free", nothing, decoder's adPlaneY)
+                    set decoder's adPlaneY to target
+                else if plane = 1:
+                    @intrinsic("call", "libc", "free", nothing, decoder's adPlaneU)
+                    set decoder's adPlaneU to target
+                else:
+                    @intrinsic("call", "libc", "free", nothing, decoder's adPlaneV)
+                    set decoder's adPlaneV to target
+
+function run av1 filters in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adAllowIntrabc) = 0:
+            run av1 deblocking in decoder
+        # The deblocked frame, kept for loop restoration's stripe edges.
+        set before to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 3 as a word sized integer, 8 as a word sized integer)
+        if (decoder's adUsesLr) = 1:
+            loop plane from 0 to (decoder's adPlanes):
+                set rows to decoder's adRowsY
+                if plane > 0:
+                    set rows to decoder's adRowsC
+                set count to rows * (the av1 stride of plane in decoder)
+                set copy to @intrinsic("call", "libc", "malloc", a pointer to an integer, (count * 4) as a word sized integer)
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, the av1 plane plane of decoder, (count * 4) as a word sized integer)
+                store (copy as a C long integer) at (before + plane)
+        run av1 cdef in decoder
+        if (decoder's adUsesLr) = 1:
+            run av1 restoration with before in decoder
+            loop plane from 0 to (decoder's adPlanes):
+                @intrinsic("call", "libc", "free", nothing, (the item at plane in before) as a pointer to an integer)
+        @intrinsic("call", "libc", "free", nothing, before)
