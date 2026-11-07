@@ -1,0 +1,644 @@
+# AV1 intra prediction (spec 7.11.2, 7.11.4, 7.11.5) and reconstruction
+# (7.12.3, 7.13.3): the edges, the directional, smooth, DC and Paeth
+# predictors, the recursive filter-intra predictor, chroma from luma,
+# palettes, and the inverse transforms added to the prediction.
+import dynlex/paint/av1.dl
+
+# The plane's samples (one integer each) and its stride.
+function the av1 plane {integer:plane} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        if plane = 0:
+            return decoder's adPlaneY
+        if plane = 1:
+            return decoder's adPlaneU
+        return decoder's adPlaneV
+
+function the av1 stride of {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if plane = 0:
+            return decoder's adStrideY
+        return decoder's adStrideC
+
+function av1 round {integer:value} down {integer:bits}:
+    execute:
+        if bits = 0:
+            return value
+        return (value + (1 << (bits - 1))) >> bits
+
+function av1 round signed {integer:value} down {integer:bits}:
+    execute:
+        if value >= 0:
+            return av1 round value down bits
+        return 0 - (av1 round (0 - value) down bits)
+
+# --- Edges (7.11.2) ---
+# The edge buffer: AboveRow[-16..] from offset 16, LeftCol[-16..] from
+# offset 16 + 288 (each up to 2 * (64 + 64) + 16 entries).
+
+function av1 filter type of plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set row to the item at 0 in (decoder's adBlock)
+        set column to the item at 1 in (decoder's adBlock)
+        set aboveAvailable to the item at 4 in (decoder's adBlock)
+        set leftAvailable to the item at 5 in (decoder's adBlock)
+        if plane > 0:
+            set aboveAvailable to the item at 6 in (decoder's adBlock)
+            set leftAvailable to the item at 7 in (decoder's adBlock)
+        set smooth to false
+        if aboveAvailable = 1:
+            set r to row - 1
+            set c to column
+            if plane > 0:
+                if ((decoder's adSubX) = 1) and ((column & 1) = 0):
+                    set c to c + 1
+                if ((decoder's adSubY) = 1) and ((row & 1) = 1):
+                    set r to r - 1
+            set smooth to smooth or (av1 is smooth at r c plane plane in decoder)
+        if leftAvailable = 1:
+            set r to row
+            set c to column - 1
+            if plane > 0:
+                if ((decoder's adSubX) = 1) and ((column & 1) = 1):
+                    set c to c - 1
+                if ((decoder's adSubY) = 1) and ((row & 1) = 0):
+                    set r to r + 1
+            set smooth to smooth or (av1 is smooth at r c plane plane in decoder)
+        if smooth:
+            return 1
+        return 0
+
+function av1 is smooth at {integer:row} {integer:column} plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set record to (decoder's adMi) + ((((row * (decoder's adMiCols)) + column) * 16))
+        set mode to the item at 1 in record
+        if plane > 0:
+            set mode to the item at 2 in record
+        return (mode >= 9) and (mode <= 11)
+
+function the av1 edge strength for {integer:width} {integer:height} type {integer:kind} delta {integer:delta}:
+    execute:
+        set d to the absolute value of delta
+        set size to width + height
+        set result to 0
+        if kind = 0:
+            if size <= 8:
+                if d >= 56:
+                    set result to 1
+            else if size <= 16:
+                if d >= 40:
+                    set result to 1
+            else if size <= 24:
+                if d >= 8:
+                    set result to 1
+                if d >= 16:
+                    set result to 2
+                if d >= 32:
+                    set result to 3
+            else if size <= 32:
+                if d >= 1:
+                    set result to 1
+                if d >= 4:
+                    set result to 2
+                if d >= 32:
+                    set result to 3
+            else if d >= 1:
+                set result to 3
+        else:
+            if size <= 8:
+                if d >= 40:
+                    set result to 1
+                if d >= 64:
+                    set result to 2
+            else if size <= 16:
+                if d >= 20:
+                    set result to 1
+                if d >= 48:
+                    set result to 2
+            else if size <= 24:
+                if d >= 4:
+                    set result to 3
+            else if d >= 1:
+                set result to 3
+        return result
+
+# Filters the first count samples of the edge starting at edge (index -1
+# of the row or column is at edge).
+function filter av1 edge {a pointer to an integer:edge} of {integer:count} at strength {integer:strength}:
+    execute:
+        if strength = 0:
+            return nothing
+        set copy to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((count + 1) * 4) as a word sized integer)
+        loop i from 0 to count:
+            store (the item at i in edge) at (copy + i)
+        set kernel to the string form of "0 4 8 4 0 0 5 6 5 0 2 4 4 4 2"
+        loop i from 1 to count:
+            set sum to 0
+            loop j from 0 to 5:
+                set k to ((i - 2) + j) clamped between 0 and (count - 1)
+                set sum to sum + ((the av1 number (((strength - 1) * 5) + j) in kernel) * (the item at k in copy))
+            store ((sum + 8) >> 4) at (edge + i)
+        @intrinsic("call", "libc", "free", nothing, copy)
+
+function av1 uses upsampling for {integer:width} {integer:height} type {integer:kind} delta {integer:delta}:
+    execute:
+        set d to the absolute value of delta
+        if (d <= 0) or (d >= 40):
+            return false
+        if kind = 0:
+            return (width + height) <= 16
+        return (width + height) <= 8
+
+# Doubles the edge's resolution: edge points at index -1, count samples
+# from index 0 (7.11.2.11).
+function upsample av1 edge {a pointer to an integer:edge} of {integer:count} at depth {integer:depth}:
+    execute:
+        set duplicate to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((count + 4) * 4) as a word sized integer)
+        store (the item at 0 in edge) at duplicate
+        loop i from -1 to count:
+            store (the item at (i + 1) in edge) at (duplicate + (i + 2))
+        store (the item at count in edge) at (duplicate + (count + 2))
+        set largest to (1 << depth) - 1
+        # buf[-2] = dup[0]: index -2 is one before edge.
+        store (the item at 0 in duplicate) at (edge - 1)
+        loop i from 0 to count:
+            set sum to (((0 - (the item at i in duplicate)) + (9 * (the item at (i + 1) in duplicate))) + (9 * (the item at (i + 2) in duplicate))) - (the item at (i + 3) in duplicate)
+            set sum to ((sum + 8) >> 4) clamped between 0 and largest
+            store sum at (edge + (2 * i))
+            store (the item at (i + 2) in duplicate) at (edge + ((2 * i) + 1))
+        @intrinsic("call", "libc", "free", nothing, duplicate)
+
+# predict_intra() for one transform block (7.11.2).
+function predict av1 intra of plane {integer:plane} at {integer:x} {integer:y} left {boolean:haveLeft} above {boolean:haveAbove} right {boolean:haveAboveRight} below {boolean:haveBelowLeft} mode {integer:mode} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set width to av1 tx width of transform
+        set height to av1 tx height of transform
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        set subX to 0
+        set subY to 0
+        if plane > 0:
+            set subX to decoder's adSubX
+            set subY to decoder's adSubY
+        set maxX to (((decoder's adMiCols) * 4) >> subX) - 1
+        set maxY to (((decoder's adMiRows) * 4) >> subY) - 1
+        set depth to decoder's adBitDepth
+        set buffer to decoder's adScratch
+        set aboveRow to buffer + 16
+        set leftColumn to buffer + 320
+        set count to width + height
+        set base to (y * stride) + x
+        if (haveAbove = false) and haveLeft:
+            set value to the item at (base - 1) in samples
+            loop i from 0 to count:
+                store value at (aboveRow + i)
+        else if (haveAbove = false) and (haveLeft = false):
+            loop i from 0 to count:
+                store ((1 << (depth - 1)) - 1) at (aboveRow + i)
+        else:
+            set reach to width
+            if haveAboveRight:
+                set reach to 2 * width
+            set limit to the minimum of maxX and ((x + reach) - 1)
+            loop i from 0 to count:
+                store (the item at ((((y - 1) * stride) + (the minimum of limit and (x + i)))) in samples) at (aboveRow + i)
+        if (haveLeft = false) and haveAbove:
+            set value to the item at (base - stride) in samples
+            loop i from 0 to count:
+                store value at (leftColumn + i)
+        else if (haveLeft = false) and (haveAbove = false):
+            loop i from 0 to count:
+                store ((1 << (depth - 1)) + 1) at (leftColumn + i)
+        else:
+            set reach to height
+            if haveBelowLeft:
+                set reach to 2 * height
+            set limit to the minimum of maxY and ((y + reach) - 1)
+            loop i from 0 to count:
+                store (the item at ((((the minimum of limit and (y + i)) * stride) + (x - 1))) in samples) at (leftColumn + i)
+        set corner to 1 << (depth - 1)
+        if haveAbove and haveLeft:
+            set corner to the item at ((base - stride) - 1) in samples
+        else if haveAbove:
+            set corner to the item at (base - stride) in samples
+        else if haveLeft:
+            set corner to the item at (base - 1) in samples
+        store corner at (aboveRow - 1)
+        store corner at (leftColumn - 1)
+        set prediction to (decoder's adScratch) + 640
+        set log2Width to av1 log of width
+        set log2Height to av1 log of height
+        if (plane = 0) and ((the item at 14 in (decoder's adBlock)) = 1):
+            predict av1 filter intra into prediction sized width height above aboveRow left leftColumn in decoder
+        else if av1 mode is directional mode:
+            set delta to the item at 10 in (decoder's adBlock)
+            if plane > 0:
+                set delta to the item at 11 in (decoder's adBlock)
+            set angle to (the av1 number mode in (the string form of "0 90 180 45 135 113 157 203 67")) + (delta * 3)
+            predict av1 directional into prediction sized width height angle angle above aboveRow left leftColumn plane plane at x y left haveLeft above haveAbove limits maxX maxY in decoder
+        else if mode = 0:
+            set average to 1 << (depth - 1)
+            if haveLeft and haveAbove:
+                set sum to 0
+                loop i from 0 to width:
+                    set sum to sum + (the item at i in aboveRow)
+                loop i from 0 to height:
+                    set sum to sum + (the item at i in leftColumn)
+                set average to (sum + ((width + height) >> 1)) / (width + height)
+            else if haveLeft:
+                set sum to 0
+                loop i from 0 to height:
+                    set sum to sum + (the item at i in leftColumn)
+                set average to (sum + (height >> 1)) >> log2Height
+            else if haveAbove:
+                set sum to 0
+                loop i from 0 to width:
+                    set sum to sum + (the item at i in aboveRow)
+                set average to (sum + (width >> 1)) >> log2Width
+            loop i from 0 to (width * height):
+                store average at (prediction + i)
+        else if (mode >= 9) and (mode <= 11):
+            set weights to decoder's adSmoothWeights
+            loop i from 0 to height:
+                loop j from 0 to width:
+                    set value to 0
+                    if mode = 9:
+                        set weightY to the item at (height + i) in weights
+                        set weightX to the item at (width + j) in weights
+                        set value to (((weightY * (the item at j in aboveRow)) + ((256 - weightY) * (the item at (height - 1) in leftColumn))) + ((weightX * (the item at i in leftColumn)) + ((256 - weightX) * (the item at (width - 1) in aboveRow))))
+                        set value to av1 round value down 9
+                    else if mode = 10:
+                        set weightY to the item at (height + i) in weights
+                        set value to av1 round ((weightY * (the item at j in aboveRow)) + ((256 - weightY) * (the item at (height - 1) in leftColumn))) down 8
+                    else:
+                        set weightX to the item at (width + j) in weights
+                        set value to av1 round ((weightX * (the item at i in leftColumn)) + ((256 - weightX) * (the item at (width - 1) in aboveRow))) down 8
+                    store value at (prediction + ((i * width) + j))
+        else:
+            loop i from 0 to height:
+                loop j from 0 to width:
+                    set estimate to ((the item at j in aboveRow) + (the item at i in leftColumn)) - corner
+                    set toLeft to the absolute value of (estimate - (the item at i in leftColumn))
+                    set toTop to the absolute value of (estimate - (the item at j in aboveRow))
+                    set toCorner to the absolute value of (estimate - corner)
+                    set value to corner
+                    if (toLeft <= toTop) and (toLeft <= toCorner):
+                        set value to the item at i in leftColumn
+                    else if toTop <= toCorner:
+                        set value to the item at j in aboveRow
+                    store value at (prediction + ((i * width) + j))
+        loop i from 0 to height:
+            loop j from 0 to width:
+                store (the item at ((i * width) + j) in prediction) at (samples + (base + ((i * stride) + j)))
+
+function predict av1 directional into {a pointer to an integer:prediction} sized {integer:width} {integer:height} angle {integer:angle} above {a pointer to an integer:aboveRow} left {a pointer to an integer:leftColumn} plane {integer:plane} at {integer:x} {integer:y} left {boolean:haveLeft} above {boolean:haveAbove} limits {integer:maxX} {integer:maxY} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set upsampleAbove to 0
+        set upsampleLeft to 0
+        if (decoder's adEdgeFilter) = 1:
+            if (angle != 90) and (angle != 180):
+                if ((angle > 90) and (angle < 180)) and ((width + height) >= 24):
+                    set corner to av1 round ((((the item at 0 in leftColumn) * 5) + ((the item at -1 in aboveRow) * 6)) + ((the item at 0 in aboveRow) * 5)) down 4
+                    store corner at (aboveRow - 1)
+                    store corner at (leftColumn - 1)
+            set kind to av1 filter type of plane plane in decoder
+            if haveAbove:
+                set strength to the av1 edge strength for width height type kind delta (angle - 90)
+                set count to (the minimum of width and ((maxX - x) + 1)) + 1
+                if angle < 90:
+                    set count to count + height
+                filter av1 edge (aboveRow - 1) of count at strength strength
+            if haveLeft:
+                set strength to the av1 edge strength for width height type kind delta (angle - 180)
+                set count to (the minimum of height and ((maxY - y) + 1)) + 1
+                if angle > 180:
+                    set count to count + width
+                filter av1 edge (leftColumn - 1) of count at strength strength
+            if av1 uses upsampling for width height type kind delta (angle - 90):
+                set upsampleAbove to 1
+                set count to width
+                if angle < 90:
+                    set count to count + height
+                upsample av1 edge (aboveRow - 1) of count at depth (decoder's adBitDepth)
+            if av1 uses upsampling for width height type kind delta (angle - 180):
+                set upsampleLeft to 1
+                set count to height
+                if angle > 180:
+                    set count to count + width
+                upsample av1 edge (leftColumn - 1) of count at depth (decoder's adBitDepth)
+        set derivatives to decoder's adDerivatives
+        set dx to 0
+        set dy to 0
+        if angle < 90:
+            set dx to the item at angle in derivatives
+        else if (angle > 90) and (angle < 180):
+            set dx to the item at (180 - angle) in derivatives
+        if (angle > 90) and (angle < 180):
+            set dy to the item at (angle - 90) in derivatives
+        else if angle > 180:
+            set dy to the item at (270 - angle) in derivatives
+        loop i from 0 to height:
+            loop j from 0 to width:
+                set value to 0
+                if angle < 90:
+                    set index to (i + 1) * dx
+                    set base to (index >> (6 - upsampleAbove)) + (j << upsampleAbove)
+                    set shift to ((index << upsampleAbove) >> 1) & 31
+                    set maxBase to ((width + height) - 1) << upsampleAbove
+                    if base < maxBase:
+                        set value to av1 round (((the item at base in aboveRow) * (32 - shift)) + ((the item at (base + 1) in aboveRow) * shift)) down 5
+                    else:
+                        set value to the item at maxBase in aboveRow
+                else if (angle > 90) and (angle < 180):
+                    set index to (j << 6) - ((i + 1) * dx)
+                    set base to index >> (6 - upsampleAbove)
+                    if base >= (0 - (1 << upsampleAbove)):
+                        set shift to ((index << upsampleAbove) >> 1) & 31
+                        set value to av1 round (((the item at base in aboveRow) * (32 - shift)) + ((the item at (base + 1) in aboveRow) * shift)) down 5
+                    else:
+                        set index to (i << 6) - ((j + 1) * dy)
+                        set base to index >> (6 - upsampleLeft)
+                        set shift to ((index << upsampleLeft) >> 1) & 31
+                        set value to av1 round (((the item at base in leftColumn) * (32 - shift)) + ((the item at (base + 1) in leftColumn) * shift)) down 5
+                else if angle > 180:
+                    set index to (j + 1) * dy
+                    set base to (index >> (6 - upsampleLeft)) + (i << upsampleLeft)
+                    set shift to ((index << upsampleLeft) >> 1) & 31
+                    set value to av1 round (((the item at base in leftColumn) * (32 - shift)) + ((the item at (base + 1) in leftColumn) * shift)) down 5
+                else if angle = 90:
+                    set value to the item at j in aboveRow
+                else:
+                    set value to the item at i in leftColumn
+                store value at (prediction + ((i * width) + j))
+
+# The recursive filter-intra predictor (7.11.2.3); taps from libaom.
+function the av1 filter tap {integer:index}:
+    execute:
+        set taps to the string form of "-6 10 0 0 0 12 0 -5 2 10 0 0 9 0 -3 1 1 10 0 7 0 -3 1 1 2 10 5 0 -4 6 0 0 0 2 12 -3 2 6 0 0 2 9 -3 2 2 6 0 2 7 -3 1 2 2 6 3 5 -10 16 0 0 0 10 0 -6 0 16 0 0 6 0 -4 0 0 16 0 4 0 -2 0 0 0 16 2 0 -10 16 0 0 0 0 10 -6 0 16 0 0 0 6 -4 0 0 16 0 0 4 -2 0 0 0 16 0 2 -8 8 0 0 0 16 0 -8 0 8 0 0 16 0 -8 0 0 8 0 16 0 -8 0 0 0 8 16 0 -4 4 0 0 0 0 16 -4 0 4 0 0 0 16 -4 0 0 4 0 0 16 -4 0 0 0 4 0 16 -2 8 0 0 0 10 0 -1 3 8 0 0 6 0 -1 2 3 8 0 4 0 0 1 2 3 8 2 0 -1 4 0 0 0 3 10 -1 3 4 0 0 4 6 -1 2 3 4 0 4 4 -1 2 2 3 4 3 3 -12 14 0 0 0 14 0 -10 0 14 0 0 12 0 -9 0 0 14 0 11 0 -8 0 0 0 14 10 0 -10 12 0 0 0 0 14 -9 1 12 0 0 0 12 -8 0 0 12 0 1 11 -7 0 0 1 12 1 9"
+        set count to 0
+        set value to 0
+        set negative to false
+        set inNumber to false
+        loop cursor from 0 to (taps' length + 1):
+            set character to 32
+            if cursor < taps' length:
+                set character to ((the character at cursor in taps) as an integer) & 255
+            if character = 45:
+                set negative to true
+            else if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                if count = index:
+                    if negative:
+                        return 0 - value
+                    return value
+                set count to count + 1
+                set value to 0
+                set negative to false
+                set inNumber to false
+        return 0
+
+function predict av1 filter intra into {a pointer to an integer:prediction} sized {integer:width} {integer:height} above {a pointer to an integer:aboveRow} left {a pointer to an integer:leftColumn} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set mode to the item at 15 in (decoder's adBlock)
+        set largest to (1 << (decoder's adBitDepth)) - 1
+        set taps to @intrinsic("call", "libc", "malloc", a pointer to an integer, (56 * 4) as a word sized integer)
+        loop index from 0 to 56:
+            store (the av1 filter tap ((mode * 56) + index)) at (taps + index)
+        set p to @intrinsic("call", "libc", "malloc", a pointer to an integer, (8 * 4) as a word sized integer)
+        loop i2 from 0 to (height >> 1):
+            loop j4 from 0 to (width >> 2):
+                loop i from 0 to 7:
+                    set value to 0
+                    if i < 5:
+                        if i2 = 0:
+                            set value to the item at (((j4 << 2) + i) - 1) in aboveRow
+                        else if (j4 = 0) and (i = 0):
+                            set value to the item at ((i2 << 1) - 1) in leftColumn
+                        else:
+                            set value to the item at (((((i2 << 1) - 1) * width) + (((j4 << 2) + i) - 1))) in prediction
+                    else:
+                        if j4 = 0:
+                            set value to the item at (((i2 << 1) + i) - 5) in leftColumn
+                        else:
+                            set value to the item at ((((((i2 << 1) + i) - 5) * width) + ((j4 << 2) - 1))) in prediction
+                    store value at (p + i)
+                loop i from 0 to 8:
+                    set sum to 0
+                    loop j from 0 to 7:
+                        set sum to sum + ((the item at ((i * 7) + j) in taps) * (the item at j in p))
+                    set value to (av1 round signed sum down 4) clamped between 0 and largest
+                    store value at (prediction + ((((i2 << 1) + (i >> 2)) * width) + ((j4 << 2) + (i & 3))))
+        @intrinsic("call", "libc", "free", nothing, taps)
+        @intrinsic("call", "libc", "free", nothing, p)
+
+# Chroma from luma (7.11.5).
+function predict av1 chroma from luma of plane {integer:plane} at {integer:startX} {integer:startY} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set width to av1 tx width of transform
+        set height to av1 tx height of transform
+        set subX to decoder's adSubX
+        set subY to decoder's adSubY
+        set alpha to the item at 12 in (decoder's adBlock)
+        if plane = 2:
+            set alpha to the item at 13 in (decoder's adBlock)
+        set maxLumaW to the item at 28 in (decoder's adBlock)
+        set maxLumaH to the item at 29 in (decoder's adBlock)
+        set lumaPlane to decoder's adPlaneY
+        set lumaStride to decoder's adStrideY
+        set values to (decoder's adScratch) + 640
+        set total to 0
+        loop i from 0 to height:
+            set lumaY to the minimum of ((startY + i) << subY) and (maxLumaH - (1 << subY))
+            loop j from 0 to width:
+                set lumaX to the minimum of ((startX + j) << subX) and (maxLumaW - (1 << subX))
+                set sum to 0
+                loop dy from 0 to (subY + 1):
+                    loop dx from 0 to (subX + 1):
+                        set sum to sum + (the item at (((lumaY + dy) * lumaStride) + (lumaX + dx)) in lumaPlane)
+                set value to sum << ((3 - subX) - subY)
+                store value at (values + ((i * width) + j))
+                set total to total + value
+        set average to av1 round total down ((av1 log of width) + (av1 log of height))
+        set samples to the av1 plane plane of decoder
+        set stride to decoder's adStrideC
+        set largest to (1 << (decoder's adBitDepth)) - 1
+        loop i from 0 to height:
+            loop j from 0 to width:
+                set spot to ((startY + i) * stride) + (startX + j)
+                set scaled to av1 round signed (alpha * ((the item at ((i * width) + j) in values) - average)) down 6
+                store (((the item at spot in samples) + scaled) clamped between 0 and largest) at (samples + spot)
+
+function predict av1 palette of plane {integer:plane} at {integer:startX} {integer:startY} offset {integer:x} {integer:y} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set width to av1 tx width of transform
+        set height to av1 tx height of transform
+        set colours to (decoder's adPalette) + (plane * 8)
+        set map to decoder's adColorMap
+        if plane > 0:
+            set map to (decoder's adColorMap) + 4096
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        loop i from 0 to height:
+            loop j from 0 to width:
+                set index to the item at ((((y * 4) + i) * 64) + ((x * 4) + j)) in map
+                store (the item at index in colours) at (samples + (((startY + i) * stride) + (startX + j)))
+
+# --- Reconstruction (7.12.3, 7.13.3) ---
+
+function the av1 dc quantiser of plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set qindex to the av1 quantiser of (the item at 19 in (decoder's adBlock)) plain false in decoder
+        set delta to the item at 0 in (decoder's adDeltaQ)
+        if plane = 1:
+            set delta to the item at 1 in (decoder's adDeltaQ)
+        if plane = 2:
+            set delta to the item at 3 in (decoder's adDeltaQ)
+        return the item at ((qindex + delta) clamped between 0 and 255) in (decoder's adDcSteps)
+
+function the av1 ac quantiser of plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set qindex to the av1 quantiser of (the item at 19 in (decoder's adBlock)) plain false in decoder
+        set delta to 0
+        if plane = 1:
+            set delta to the item at 2 in (decoder's adDeltaQ)
+        if plane = 2:
+            set delta to the item at 4 in (decoder's adDeltaQ)
+        return the item at ((qindex + delta) clamped between 0 and 255) in (decoder's adAcSteps)
+
+# 1D transform kinds: DCT 0, ADST 1, FLIPADST 2, identity 3, WHT 4.
+function the av1 column kind of {integer:kind}:
+    execute:
+        return the av1 number kind in (the string form of "0 1 0 1 2 0 2 1 2 3 0 3 1 3 2 3")
+
+function the av1 row kind of {integer:kind}:
+    execute:
+        return the av1 number kind in (the string form of "0 0 1 1 0 2 2 2 1 3 3 0 3 1 3 2")
+
+function run av1 transform {integer:kind} of {integer:size} from {a pointer to an integer:input} into {a pointer to an integer:output} within {integer:low} {integer:high}:
+    execute:
+        if kind = 4:
+            set a to the item at 0 in input
+            set b to the item at 1 in input
+            set c to the item at 2 in input
+            set d to the item at 3 in input
+            set s0 to a + b
+            set s2 to c - d
+            set s4 to (s0 - s2) >> 1
+            set s3 to s4 - d
+            set s1 to s4 - b
+            store (s0 - s3) at output
+            store s3 at (output + 1)
+            store s1 at (output + 2)
+            store (s2 + s1) at (output + 3)
+            return nothing
+        if kind = 3:
+            loop i from 0 to size:
+                set value to the item at i in input
+                if size = 4:
+                    store (av1 round (value * 5793) by 12) at (output + i)
+                else if size = 8:
+                    store (2 * value) at (output + i)
+                else if size = 16:
+                    store (av1 round (value * 11586) by 12) at (output + i)
+                else:
+                    store (4 * value) at (output + i)
+            return nothing
+        if kind = 0:
+            if size = 4:
+                av1 idct4 from input into output within low high
+            else if size = 8:
+                av1 idct8 from input into output within low high
+            else if size = 16:
+                av1 idct16 from input into output within low high
+            else if size = 32:
+                av1 idct32 from input into output within low high
+            else:
+                av1 idct64 from input into output within low high
+            return nothing
+        if size = 4:
+            av1 iadst4 from input into output within low high
+        else if size = 8:
+            av1 iadst8 from input into output within low high
+        else:
+            av1 iadst16 from input into output within low high
+        if kind = 2:
+            loop i from 0 to (size / 2):
+                set swap to the item at i in output
+                store (the item at ((size - 1) - i) in output) at (output + i)
+                store swap at (output + ((size - 1) - i))
+
+function reconstruct av1 plane {integer:plane} at {integer:x} {integer:y} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set width to av1 tx width of transform
+        set height to av1 tx height of transform
+        set tw to the minimum of 32 and width
+        set th to the minimum of 32 and height
+        set depth to decoder's adBitDepth
+        set lossless to (the item at 20 in (decoder's adBlock)) = 1
+        set kind to the item at 30 in (decoder's adBlock)
+        set pels to width * height
+        set scale to 0
+        if pels > 256:
+            set scale to 1
+        if pels > 1024:
+            set scale to 2
+        set dcStep to the av1 dc quantiser of plane plane in decoder
+        set acStep to the av1 ac quantiser of plane plane in decoder
+        set quant to decoder's adQuant
+        set dequant to decoder's adDequant
+        set limit to 1 << (7 + depth)
+        loop i from 0 to th:
+            loop j from 0 to tw:
+                set level to the item at ((i * tw) + j) in quant
+                set step to acStep
+                if (i = 0) and (j = 0):
+                    set step to dcStep
+                set magnitude to ((((the absolute value of level) as a C long integer) * (step as a C long integer)) & (16777215 as a C long integer)) as an integer
+                set magnitude to magnitude >> scale
+                if level < 0:
+                    set magnitude to 0 - magnitude
+                store (magnitude clamped between (0 - limit) and (limit - 1)) at (dequant + ((i * tw) + j))
+        # Rows (the first 32), then columns.
+        set buffer to (decoder's adScratch) + 4096
+        set input to (decoder's adScratch) + 8192
+        set output to (decoder's adScratch) + 8320
+        loop i from 0 to (width * height):
+            store 0 at (buffer + i)
+        set rowKind to the av1 row kind of kind
+        set columnKind to the av1 column kind of kind
+        if lossless:
+            set rowKind to 4
+            set columnKind to 4
+        set rangeBits to depth + 8
+        set low to 0 - (1 << (rangeBits - 1))
+        set high to (1 << (rangeBits - 1)) - 1
+        set ratio to (av1 log of width) - (av1 log of height)
+        loop i from 0 to th:
+            loop j from 0 to width:
+                set value to 0
+                if j < tw:
+                    set value to the item at ((i * tw) + j) in dequant
+                if (ratio = 1) or (ratio = -1):
+                    set value to av1 round (value * 2896) by 12
+                else if lossless:
+                    set value to value >> 2
+                store (value clamped between low and high) at (input + j)
+            run av1 transform rowKind of width from input into (buffer + (i * width)) within low high
+        set rangeBits to the maximum of (depth + 6) and 16
+        set low to 0 - (1 << (rangeBits - 1))
+        set high to (1 << (rangeBits - 1)) - 1
+        set shift to the av1 number transform in (the string form of "0 1 2 2 2 0 0 1 1 1 1 1 1 1 1 2 2 2 2")
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        set largest to (1 << depth) - 1
+        loop j from 0 to width:
+            loop i from 0 to height:
+                store ((av1 round (the item at ((i * width) + j) in buffer) down shift) clamped between low and high) at (input + i)
+            run av1 transform columnKind of height from input into output within low high
+            loop i from 0 to height:
+                set residual to the item at i in output
+                if lossless = false:
+                    set residual to av1 round residual down 4
+                set spot to ((y + i) * stride) + (x + j)
+                store (((the item at spot in samples) + residual) clamped between 0 and largest) at (samples + spot)

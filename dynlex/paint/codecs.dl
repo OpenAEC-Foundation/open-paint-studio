@@ -16,6 +16,7 @@ import dynlex/paint/webp.dl
 import dynlex/paint/inflate.dl
 import dynlex/paint/ifcimage.dl
 import dynlex/paint/jpeg2000.dl
+import dynlex/paint/avif.dl
 import lib/string.dl
 
 local function store paint address {pointer:address} in {pointer:out}:
@@ -84,6 +85,10 @@ local function the paint raster from {pointer:data} spanning {integer:count} hin
         if footer > 0:
             if ((the byte footer in data) = 84) and (((the byte (footer + 1) in data) = 82) and ((the byte (footer + 2) in data) = 85)):
                 return a paint raster attempt of (the paint tga from data spanning count)
+        # AVIF: an ISOBMFF file type box naming avif or avis.
+        if count >= 12:
+            if (the bytes 4 in data spell "ftyp") and ((the bytes 8 in data spell "avif") or (the bytes 8 in data spell "avis")):
+                return a paint raster attempt of (the paint avif from data spanning count)
         # JPEG 2000: the JP2 signature box, or a bare codestream (SOC, SIZ).
         if ((first = 0) and (second = 0)) and ((third = 0) and (fourth = 12)):
             if count >= 8:

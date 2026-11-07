@@ -1,0 +1,1569 @@
+# The block syntax of AV1 intra frames (spec 5.11, 6.10 and the context
+# derivations of 8.3.2): tiles, superblocks, partitions, modes, palettes,
+# transform sizes and types, and the coefficients with their dequantisation.
+import dynlex/paint/av1_predict.dl
+
+# --- The CDFs: the defaults, sliced to the frame's quantiser context ---
+
+# Table numbers in the working set (av1_tables.dl order); the coefficient
+# tables from 30 on keep one quantiser context.
+function av1 cdf base {integer:table} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        return the item at table in (decoder's adCdfOffsets)
+
+local function add av1 cdf table {string:values} to {a pointer to an integer:pool} at {a pointer to an integer:filled} sliced {integer:part}:
+    execute:
+        set numbers to a new av1 table from values
+        set count to fill av1 numbers numbers from values
+        set first to 0
+        if part >= 0:
+            set count to count / 4
+            set first to part * count
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, pool + (the item at 0 in filled), numbers + first, (count * 4) as a word sized integer)
+        store ((the item at 0 in filled) + count) at filled
+        @intrinsic("call", "libc", "free", nothing, numbers)
+
+function load av1 cdfs into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set part to 3
+        if (decoder's adBaseQ) <= 20:
+            set part to 0
+        else if (decoder's adBaseQ) <= 60:
+            set part to 1
+        else if (decoder's adBaseQ) <= 120:
+            set part to 2
+        set pool to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16384 as a word sized integer, 4 as a word sized integer)
+        set offsets to @intrinsic("call", "libc", "calloc", a pointer to an integer, 48 as a word sized integer, 4 as a word sized integer)
+        set filled to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set tables to an empty list of a string
+        append (the av1 kf y mode table) to tables
+        append (the av1 angle delta table) to tables
+        append (the av1 uv mode table) to tables
+        append (the av1 uv mode cfl table) to tables
+        append (the av1 partition 8 table) to tables
+        append (the av1 partition table) to tables
+        append (the av1 partition 128 table) to tables
+        append (the av1 intra tx 1 table) to tables
+        append (the av1 intra tx 2 table) to tables
+        append (the av1 cfl sign table) to tables
+        append (the av1 cfl alpha table) to tables
+        append (the av1 palette y size table) to tables
+        append (the av1 palette uv size table) to tables
+        append (the av1 palette y mode table) to tables
+        append (the av1 palette uv mode table) to tables
+        append (the av1 palette y colour table) to tables
+        append (the av1 palette uv colour table) to tables
+        append (the av1 skip table) to tables
+        append (the av1 intrabc table) to tables
+        append (the av1 filter intra mode table) to tables
+        append (the av1 filter intra table) to tables
+        append (the av1 switchable restore table) to tables
+        append (the av1 wiener restore table) to tables
+        append (the av1 sgrproj restore table) to tables
+        append (the av1 delta q table) to tables
+        append (the av1 delta lf multi table) to tables
+        append (the av1 delta lf table) to tables
+        append (the av1 segment id table) to tables
+        append (the av1 tx size 8 table) to tables
+        append (the av1 tx size table) to tables
+        append (the av1 all zero table) to tables
+        append (the av1 eob extra table) to tables
+        append (the av1 eob 16 table) to tables
+        append (the av1 eob 32 table) to tables
+        append (the av1 eob 64 table) to tables
+        append (the av1 eob 128 table) to tables
+        append (the av1 eob 256 table) to tables
+        append (the av1 eob 512 table) to tables
+        append (the av1 eob 1024 table) to tables
+        append (the av1 coeff base eob table) to tables
+        append (the av1 coeff base table) to tables
+        append (the av1 coeff br table) to tables
+        append (the av1 dc sign table) to tables
+        loop table from 0 to (the length of tables):
+            store (the item at 0 in filled) at (offsets + table)
+            set sliced to -1
+            if table >= 30:
+                set sliced to part
+            add av1 cdf table (the item at table in tables) to pool at filled sliced sliced
+        free tables
+        set decoder's adCdfSize to the item at 0 in filled
+        set decoder's adCdfStart to pool
+        set decoder's adCdfOffsets to offsets
+        set decoder's adCdf to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((decoder's adCdfSize) + 1) as a word sized integer, 4 as a word sized integer)
+        @intrinsic("call", "libc", "free", nothing, filled)
+
+# --- The frame's per-block store ---
+# Per 4x4 block, 16 fields: 0 size, 1 luma mode, 2 chroma mode, 3 skip,
+# 4 segment, 5 transform size, 6 is inter (intra block copy), 7 palette
+# size Y, 8 palette size UV, 9..12 loop filter deltas, 13 reference frame
+# (0 intra), 14 decoded.
+function the av1 mi field {integer:field} at {integer:row} {integer:column} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        return the item at ((((row * (decoder's adMiCols)) + column) * 16) + field) in (decoder's adMi)
+
+# The block being decoded (adBlock): 0 MiRow, 1 MiCol, 2 MiSize, 3
+# HasChroma, 4 AvailU, 5 AvailL, 6 AvailUChroma, 7 AvailLChroma, 8 YMode,
+# 9 UVMode, 10 AngleDeltaY, 11 AngleDeltaUV, 12 CflAlphaU, 13 CflAlphaV,
+# 14 use_filter_intra, 15 filter_intra_mode, 16 PaletteSizeY, 17
+# PaletteSizeUV, 18 skip, 19 segment_id, 20 Lossless, 21 TxSize, 22
+# is_inter, 23 use_intrabc, 26 bw4, 27 bh4, 28 MaxLumaW, 29 MaxLumaH, 30
+# PlaneTxType, 40 MiRowStart, 41 MiRowEnd, 42 MiColStart, 43 MiColEnd.
+function the av1 block field {integer:field} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        return the item at field in (decoder's adBlock)
+
+function set av1 block field {integer:field} to {integer:value} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        store value at ((decoder's adBlock) + field)
+
+function av1 is inside {integer:row} {integer:column} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        set block to decoder's adBlock
+        if (column < (the item at 42 in block)) or (column >= (the item at 43 in block)):
+            return false
+        if (row < (the item at 40 in block)) or (row >= (the item at 41 in block)):
+            return false
+        return true
+
+# --- Loop restoration coefficients per unit (5.11.57) ---
+# Units, 10 fields each: type, Wiener taps (2 passes of 3), set, 2 xqd.
+
+function the av1 bounded bools {integer:limit} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set width to (av1 log of limit) + 1
+        set extra to (1 << width) - limit
+        set value to the av1 literal of (width - 1) in decoder
+        if value < extra:
+            return value
+        return ((value << 1) - extra) + (the av1 literal of 1 in decoder)
+
+function the av1 subexp of {integer:symbols} order {integer:k} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set i to 0
+        set mk to 0
+        loop while true:
+            set b2 to k
+            if i > 0:
+                set b2 to (k + i) - 1
+            set a to 1 << b2
+            if symbols <= (mk + (3 * a)):
+                return (the av1 bounded bools (symbols - mk) in decoder) + mk
+            if (the av1 literal of 1 in decoder) = 1:
+                set i to i + 1
+                set mk to mk + a
+            else:
+                return (the av1 literal of b2 in decoder) + mk
+
+function the av1 recentred {integer:reference} from {integer:value}:
+    execute:
+        if value > (2 * reference):
+            return value
+        if (value & 1) = 1:
+            return reference - ((value + 1) >> 1)
+        return reference + (value >> 1)
+
+function the av1 subexp from {integer:low} below {integer:high} order {integer:k} near {integer:reference} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set most to high - low
+        set nearby to reference - low
+        set value to the av1 subexp of most order k in decoder
+        set result to 0
+        if (nearby << 1) <= most:
+            set result to the av1 recentred nearby from value
+        else:
+            set result to (most - 1) - (the av1 recentred ((most - 1) - nearby) from value)
+        return result + low
+
+function read av1 restoration unit of plane {integer:plane} at {integer:unit} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set frameType to the item at plane in (decoder's adLrTypes)
+        set kind to 0
+        if frameType = 1:
+            if (the av1 symbol of 2 at (av1 cdf base 22 of decoder) in decoder) = 1:
+                set kind to 1
+        else if frameType = 2:
+            if (the av1 symbol of 2 at (av1 cdf base 23 of decoder) in decoder) = 1:
+                set kind to 2
+        else:
+            set kind to the av1 symbol of 3 at (av1 cdf base 21 of decoder) in decoder
+        set record to (decoder's adLrUnits) + ((plane * 65536) + (unit * 10))
+        set refs to (decoder's adLrRefs) + (plane * 8)
+        store kind at record
+        if kind = 1:
+            set lows to the string form of "5 23 17"
+            set highs to the string form of "10 8 46"
+            loop pass from 0 to 2:
+                set firstCoefficient to 0
+                if plane > 0:
+                    set firstCoefficient to 1
+                    store 0 at (record + (1 + (pass * 3)))
+                loop tap from firstCoefficient to 3:
+                    set low to 0 - (the av1 number tap in lows)
+                    set high to the av1 number tap in highs
+                    set value to the av1 subexp from low below (high + 1) order (tap + 1) near (the item at ((pass * 3) + tap) in refs) in decoder
+                    store value at (record + ((1 + (pass * 3)) + tap))
+                    store value at (refs + ((pass * 3) + tap))
+        else if kind = 2:
+            set set to the av1 literal of 4 in decoder
+            store set at (record + 7)
+            set radii to the string form of "2 1 2 1 2 1 2 1 2 1 2 1 2 1 2 1 2 1 2 1 0 2 0 2 0 2 0 2 2 0 2 0"
+            loop index from 0 to 2:
+                set radius to the av1 number ((set * 2) + index) in radii
+                set low to -96
+                set high to 31
+                if index = 1:
+                    set low to -32
+                    set high to 95
+                set value to 0
+                if radius > 0:
+                    set value to the av1 subexp from low below (high + 1) order 4 near (the item at (6 + index) in refs) in decoder
+                else if index = 1:
+                    set value to (128 - (the item at 6 in refs)) clamped between low and high
+                store value at (record + (8 + index))
+                store value at (refs + (6 + index))
+
+function the av1 units of {integer:size} in {integer:extent}:
+    execute:
+        return the maximum of ((extent + (size >> 1)) / size) and 1
+
+function read av1 restoration at {integer:row} {integer:column} sized {integer:size} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adAllowIntrabc) = 1:
+            return nothing
+        set across to av1 blocks wide of size
+        set down to av1 blocks high of size
+        loop plane from 0 to (decoder's adPlanes):
+            if (the item at plane in (decoder's adLrTypes)) != 0:
+                set subX to 0
+                set subY to 0
+                if plane > 0:
+                    set subX to decoder's adSubX
+                    set subY to decoder's adSubY
+                set unitSize to the item at plane in (decoder's adLrSizes)
+                set unitRows to the av1 units of unitSize in (((decoder's adHeight) + ((1 << subY) >> 1)) >> subY)
+                set unitCols to the av1 units of unitSize in (((decoder's adUpscaledWidth) + ((1 << subX) >> 1)) >> subX)
+                store unitCols at ((decoder's adLrUnitCols) + plane)
+                store unitRows at ((decoder's adLrUnitRows) + plane)
+                set rowStart to ((row * (4 >> subY)) + (unitSize - 1)) / unitSize
+                set rowEnd to the minimum of unitRows and ((((row + down) * (4 >> subY)) + (unitSize - 1)) / unitSize)
+                set numerator to 4 >> subX
+                set denominator to unitSize
+                if (decoder's adWidth) != (decoder's adUpscaledWidth):
+                    set numerator to (4 >> subX) * ((((decoder's adUpscaledWidth) * 8) + ((decoder's adWidth) / 2)) / (decoder's adWidth))
+                    set denominator to unitSize * 8
+                set colStart to ((column * numerator) + (denominator - 1)) / denominator
+                set colEnd to the minimum of unitCols and ((((column + across) * numerator) + (denominator - 1)) / denominator)
+                loop unitRow from rowStart to rowEnd:
+                    loop unitCol from colStart to colEnd:
+                        read av1 restoration unit of plane plane at ((unitRow * unitCols) + unitCol) in decoder
+
+# --- Partitions (5.11.4) ---
+
+# The size a partition of a square block gives its parts: NONE 0, HORZ 1,
+# VERT 2, SPLIT 3, HORZ_A 4, HORZ_B 5, VERT_A 6, VERT_B 7, HORZ_4 8,
+# VERT_4 9.
+function the av1 part size of {integer:partition} for {integer:size}:
+    execute:
+        set side to av1 blocks wide of size
+        if partition = 0:
+            return size
+        if (partition = 1) or ((partition = 4) or (partition = 5)):
+            return av1 block size of side by (side / 2)
+        if (partition = 2) or ((partition = 6) or (partition = 7)):
+            return av1 block size of (side / 2) by side
+        if partition = 3:
+            return av1 block size of (side / 2) by (side / 2)
+        if partition = 8:
+            return av1 block size of side by (side / 4)
+        return av1 block size of (side / 4) by side
+
+function the av1 partition probability of {integer:symbol} in {a pointer to an integer:cdf} of {integer:count}:
+    execute:
+        if symbol >= count:
+            return 0
+        set below to 0
+        if symbol > 0:
+            set below to the item at (symbol - 1) in cdf
+        return (the item at symbol in cdf) - below
+
+function decode av1 partition at {integer:row} {integer:column} sized {integer:size} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (row >= (decoder's adMiRows)) or (column >= (decoder's adMiCols)):
+            return nothing
+        if (decoder's adFailed) != 0:
+            return nothing
+        set availableUp to av1 is inside (row - 1) column of decoder
+        set availableLeft to av1 is inside row (column - 1) of decoder
+        set blocks to av1 blocks wide of size
+        set half to blocks >> 1
+        set quarter to half >> 1
+        set hasRows to (row + half) < (decoder's adMiRows)
+        set hasCols to (column + half) < (decoder's adMiCols)
+        set chosen to 3
+        if size < 3:
+            set chosen to 0
+        else:
+            set level to av1 log of blocks
+            set above to 0
+            set left to 0
+            if availableUp:
+                if (av1 log of (av1 blocks wide of (the av1 mi field 0 at (row - 1) column of decoder))) < level:
+                    set above to 1
+            if availableLeft:
+                if (av1 log of (av1 blocks high of (the av1 mi field 0 at row (column - 1) of decoder))) < level:
+                    set left to 1
+            set context to (left * 2) + above
+            set count to 10
+            set cdf to (decoder's adCdf) + ((av1 cdf base 5 of decoder) + ((((level - 2) * 4) + context) * 11))
+            if level = 1:
+                set count to 4
+                set cdf to (decoder's adCdf) + ((av1 cdf base 4 of decoder) + (context * 5))
+            else if level = 5:
+                set count to 8
+                set cdf to (decoder's adCdf) + ((av1 cdf base 6 of decoder) + (context * 9))
+            if hasRows and hasCols:
+                set chosen to the av1 decoded symbol of count with cdf adapting ((decoder's adDisableUpdate) = 0) in decoder
+            else if hasCols:
+                # split_or_horz: the chance of the partitions that split
+                # vertically somewhere.
+                set sum to 0
+                loop symbol from 0 to 10:
+                    if (((symbol = 2) or (symbol = 3)) or ((symbol = 4) or (symbol = 6))) or ((symbol = 7) or ((symbol = 9) and (size != 15))):
+                        set sum to sum + (the av1 partition probability of symbol in cdf of count)
+                set made to (decoder's adBoolCdf)
+                store (32768 - sum) at made
+                store 32768 at (made + 1)
+                set chosen to 1
+                if (the av1 symbol of 2 from made in decoder) = 1:
+                    set chosen to 3
+            else if hasRows:
+                set sum to 0
+                loop symbol from 0 to 10:
+                    if (((symbol = 1) or (symbol = 3)) or ((symbol = 4) or (symbol = 5))) or ((symbol = 6) or ((symbol = 8) and (size != 15))):
+                        set sum to sum + (the av1 partition probability of symbol in cdf of count)
+                set made to (decoder's adBoolCdf)
+                store (32768 - sum) at made
+                store 32768 at (made + 1)
+                set chosen to 2
+                if (the av1 symbol of 2 from made in decoder) = 1:
+                    set chosen to 3
+        set part to the av1 part size of chosen for size
+        set split to the av1 part size of 3 for size
+        if chosen = 0:
+            decode av1 block at row column sized part in decoder
+        else if chosen = 1:
+            decode av1 block at row column sized part in decoder
+            if hasRows:
+                decode av1 block at (row + half) column sized part in decoder
+        else if chosen = 2:
+            decode av1 block at row column sized part in decoder
+            if hasCols:
+                decode av1 block at row (column + half) sized part in decoder
+        else if chosen = 3:
+            decode av1 partition at row column sized part in decoder
+            decode av1 partition at row (column + half) sized part in decoder
+            decode av1 partition at (row + half) column sized part in decoder
+            decode av1 partition at (row + half) (column + half) sized part in decoder
+        else if chosen = 4:
+            decode av1 block at row column sized split in decoder
+            decode av1 block at row (column + half) sized split in decoder
+            decode av1 block at (row + half) column sized part in decoder
+        else if chosen = 5:
+            decode av1 block at row column sized part in decoder
+            decode av1 block at (row + half) column sized split in decoder
+            decode av1 block at (row + half) (column + half) sized split in decoder
+        else if chosen = 6:
+            decode av1 block at row column sized split in decoder
+            decode av1 block at (row + half) column sized split in decoder
+            decode av1 block at row (column + half) sized part in decoder
+        else if chosen = 7:
+            decode av1 block at row column sized part in decoder
+            decode av1 block at row (column + half) sized split in decoder
+            decode av1 block at (row + half) (column + half) sized split in decoder
+        else if chosen = 8:
+            loop step from 0 to 4:
+                if (step < 3) or ((row + (quarter * 3)) < (decoder's adMiRows)):
+                    decode av1 block at (row + (quarter * step)) column sized part in decoder
+        else:
+            loop step from 0 to 4:
+                if (step < 3) or ((column + (quarter * 3)) < (decoder's adMiCols)):
+                    decode av1 block at row (column + (quarter * step)) sized part in decoder
+
+# --- Mode info of a block in an intra frame (5.11.7) ---
+
+function the av1 intra mode context of {integer:mode}:
+    execute:
+        return the av1 number mode in (the string form of "0 1 2 3 4 4 4 4 3 0 1 2 0")
+
+function the av1 negative deinterleave of {integer:difference} near {integer:reference} below {integer:most}:
+    execute:
+        if reference = 0:
+            return difference
+        if reference >= (most - 1):
+            return (most - difference) - 1
+        if (2 * reference) < most:
+            if difference <= (2 * reference):
+                if (difference & 1) = 1:
+                    return reference + ((difference + 1) >> 1)
+                return reference - (difference >> 1)
+            return difference
+        if difference <= (2 * ((most - reference) - 1)):
+            if (difference & 1) = 1:
+                return reference + ((difference + 1) >> 1)
+            return reference - (difference >> 1)
+        return most - (difference + 1)
+
+function read av1 segment id in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        set availableUp to (the av1 block field 4 of decoder) = 1
+        set availableLeft to (the av1 block field 5 of decoder) = 1
+        set aboveLeft to -1
+        set above to -1
+        set left to -1
+        if availableUp and availableLeft:
+            set aboveLeft to the av1 mi field 4 at (row - 1) (column - 1) of decoder
+        if availableUp:
+            set above to the av1 mi field 4 at (row - 1) column of decoder
+        if availableLeft:
+            set left to the av1 mi field 4 at row (column - 1) of decoder
+        set predicted to 0
+        if above = -1:
+            if left != -1:
+                set predicted to left
+        else if left = -1:
+            set predicted to above
+        else if aboveLeft = above:
+            set predicted to above
+        else:
+            set predicted to left
+        if (the av1 block field 18 of decoder) = 1:
+            set av1 block field 19 to predicted in decoder
+            return nothing
+        set context to 0
+        if aboveLeft >= 0:
+            if (aboveLeft = above) and (aboveLeft = left):
+                set context to 2
+            else if ((aboveLeft = above) or (aboveLeft = left)) or (above = left):
+                set context to 1
+        set coded to the av1 symbol of 8 at ((av1 cdf base 27 of decoder) + (context * 9)) in decoder
+        set chosenSegment to the av1 negative deinterleave of coded near predicted below ((decoder's adLastActiveSeg) + 1)
+        set av1 block field 19 to (chosenSegment clamped between 0 and (decoder's adLastActiveSeg)) in decoder
+
+function read av1 intra segment in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adSegEnabled) = 1:
+            read av1 segment id in decoder
+        else:
+            set av1 block field 19 to 0 in decoder
+        set av1 block field 20 to (the item at (the av1 block field 19 of decoder) in (decoder's adLosslessSegments)) in decoder
+
+function read av1 skip in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set segment to the av1 block field 19 of decoder
+        if ((decoder's adSegPreSkip) = 1) and ((the item at ((segment * 8) + 6) in (decoder's adSegFeatureOn)) = 1):
+            set av1 block field 18 to 1 in decoder
+            return nothing
+        set context to 0
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        if (the av1 block field 4 of decoder) = 1:
+            set context to context + (the av1 mi field 3 at (row - 1) column of decoder)
+        if (the av1 block field 5 of decoder) = 1:
+            set context to context + (the av1 mi field 3 at row (column - 1) of decoder)
+        set av1 block field 18 to (the av1 symbol of 2 at ((av1 cdf base 17 of decoder) + (context * 3)) in decoder) in decoder
+
+function read av1 cdef index in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (((the av1 block field 18 of decoder) = 1) or ((decoder's adCodedLossless) = 1)) or (((decoder's adCdefEnabled) = 0) or ((decoder's adAllowIntrabc) = 1)):
+            return nothing
+        set row to (the av1 block field 0 of decoder) >> 4
+        set column to (the av1 block field 1 of decoder) >> 4
+        set stride to decoder's adCdefColumns
+        set cdefIndex to decoder's adCdefIndex
+        if (the item at ((row * stride) + column) in cdefIndex) = -1:
+            set value to the av1 literal of (decoder's adCdefBits) in decoder
+            set size to the av1 block field 2 of decoder
+            set across to ((av1 blocks wide of size) + 15) >> 4
+            set down to ((av1 blocks high of size) + 15) >> 4
+            loop y from 0 to down:
+                loop x from 0 to across:
+                    store value at (cdefIndex + (((row + y) * stride) + (column + x)))
+
+function read av1 delta q in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set superblock to 12
+        if (decoder's adSb128) = 1:
+            set superblock to 15
+        if ((the av1 block field 2 of decoder) = superblock) and ((the av1 block field 18 of decoder) = 1):
+            return nothing
+        if (decoder's adReadDeltas) = 1:
+            set absolute to the av1 symbol of 4 at (av1 cdf base 24 of decoder) in decoder
+            if absolute = 3:
+                set bits to (the av1 literal of 3 in decoder) + 1
+                set absolute to ((the av1 literal of bits in decoder) + (1 << bits)) + 1
+            if absolute > 0:
+                set reduced to absolute
+                if (the av1 literal of 1 in decoder) = 1:
+                    set reduced to 0 - absolute
+                set decoder's adCurrentQ to ((decoder's adCurrentQ) + (reduced << (decoder's adDeltaQRes))) clamped between 1 and 255
+
+function read av1 delta lf in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set superblock to 12
+        if (decoder's adSb128) = 1:
+            set superblock to 15
+        if ((the av1 block field 2 of decoder) = superblock) and ((the av1 block field 18 of decoder) = 1):
+            return nothing
+        if ((decoder's adReadDeltas) = 1) and ((decoder's adDeltaLfPresent) = 1):
+            set count to 1
+            if (decoder's adDeltaLfMulti) = 1:
+                set count to 2
+                if (decoder's adPlanes) > 1:
+                    set count to 4
+            loop index from 0 to count:
+                set offset to av1 cdf base 26 of decoder
+                if (decoder's adDeltaLfMulti) = 1:
+                    set offset to (av1 cdf base 25 of decoder) + (index * 5)
+                set absolute to the av1 symbol of 4 at offset in decoder
+                if absolute = 3:
+                    set bits to (the av1 literal of 3 in decoder) + 1
+                    set absolute to ((the av1 literal of bits in decoder) + (1 << bits)) + 1
+                if absolute > 0:
+                    set reduced to absolute
+                    if (the av1 literal of 1 in decoder) = 1:
+                        set reduced to 0 - absolute
+                    set current to the item at index in (decoder's adDeltaLf)
+                    store ((current + (reduced << (decoder's adDeltaLfRes))) clamped between -63 and 63) at ((decoder's adDeltaLf) + index)
+
+function read av1 cfl alphas in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set signs to the av1 symbol of 8 at (av1 cdf base 9 of decoder) in decoder
+        set signU to (signs + 1) / 3
+        set signV to the remainder of (signs + 1) divided by 3
+        set av1 block field 12 to 0 in decoder
+        set av1 block field 13 to 0 in decoder
+        if signU != 0:
+            set context to ((signU - 1) * 3) + signV
+            set alpha to 1 + (the av1 symbol of 16 at ((av1 cdf base 10 of decoder) + (context * 17)) in decoder)
+            if signU = 1:
+                set alpha to 0 - alpha
+            set av1 block field 12 to alpha in decoder
+        if signV != 0:
+            set context to ((signV - 1) * 3) + signU
+            set alpha to 1 + (the av1 symbol of 16 at ((av1 cdf base 10 of decoder) + (context * 17)) in decoder)
+            if signV = 1:
+                set alpha to 0 - alpha
+            set av1 block field 13 to alpha in decoder
+
+# --- Palettes (5.11.46, 7.11.4.?) ---
+# adPalette: colours of Y at 0, U at 8, V at 16; the palette of the block
+# above (24..47) and left (48..71) come from the line stores.
+
+function the av1 palette cache for {integer:plane} into {a pointer to an integer:cache} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        set aboveCount to 0
+        if ((the remainder of (row * 4) divided by 64) != 0) and ((the av1 block field 4 of decoder) = 1):
+            set aboveCount to the av1 mi field (7 + plane) at (row - 1) column of decoder
+        set leftCount to 0
+        if (the av1 block field 5 of decoder) = 1:
+            set leftCount to the av1 mi field (7 + plane) at row (column - 1) of decoder
+        set above to (decoder's adPalette) + (24 + (plane * 8))
+        set left to (decoder's adPalette) + (48 + (plane * 8))
+        set aboveIndex to 0
+        set leftIndex to 0
+        set count to 0
+        loop while (aboveIndex < aboveCount) and (leftIndex < leftCount):
+            set aboveColour to the item at aboveIndex in above
+            set leftColour to the item at leftIndex in left
+            if leftColour < aboveColour:
+                if (count = 0) or (leftColour != (the item at (count - 1) in cache)):
+                    store leftColour at (cache + count)
+                    set count to count + 1
+                set leftIndex to leftIndex + 1
+            else:
+                if (count = 0) or (aboveColour != (the item at (count - 1) in cache)):
+                    store aboveColour at (cache + count)
+                    set count to count + 1
+                set aboveIndex to aboveIndex + 1
+                if leftColour = aboveColour:
+                    set leftIndex to leftIndex + 1
+        loop while aboveIndex < aboveCount:
+            set colour to the item at aboveIndex in above
+            set aboveIndex to aboveIndex + 1
+            if (count = 0) or (colour != (the item at (count - 1) in cache)):
+                store colour at (cache + count)
+                set count to count + 1
+        loop while leftIndex < leftCount:
+            set colour to the item at leftIndex in left
+            set leftIndex to leftIndex + 1
+            if (count = 0) or (colour != (the item at (count - 1) in cache)):
+                store colour at (cache + count)
+                set count to count + 1
+        return count
+
+function the av1 ceiling log of {integer:value}:
+    execute:
+        if value < 2:
+            return 0
+        set result to 0
+        set power to 1
+        loop while power < value:
+            set power to power << 1
+            set result to result + 1
+        return result
+
+function sort av1 colours {a pointer to an integer:colours} counting {integer:count}:
+    execute:
+        loop i from 1 to count:
+            set j to i
+            loop while j > 0:
+                if (the item at (j - 1) in colours) > (the item at j in colours):
+                    set swap to the item at j in colours
+                    store (the item at (j - 1) in colours) at (colours + j)
+                    store swap at (colours + (j - 1))
+                    set j to j - 1
+                else:
+                    set j to 0
+
+# Reads a palette's colours (Y or U) with the cache; luma deltas add one.
+function read av1 palette colours for {integer:plane} counting {integer:count} into {a pointer to an integer:colours} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set cache to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set cached to the av1 palette cache for plane into cache in decoder
+        set depth to decoder's adBitDepth
+        set index to 0
+        set slot to 0
+        loop while (slot < cached) and (index < count):
+            if (the av1 literal of 1 in decoder) = 1:
+                store (the item at slot in cache) at (colours + index)
+                set index to index + 1
+            set slot to slot + 1
+        if index < count:
+            store (the av1 literal of depth in decoder) at (colours + index)
+            set index to index + 1
+        set paletteBits to 0
+        if index < count:
+            set paletteBits to (depth - 3) + (the av1 literal of 2 in decoder)
+        loop while index < count:
+            set delta to the av1 literal of paletteBits in decoder
+            if plane = 0:
+                set delta to delta + 1
+            set colour to ((the item at (index - 1) in colours) + delta) clamped between 0 and ((1 << depth) - 1)
+            store colour at (colours + index)
+            set range to ((1 << depth) - colour) - plane
+            if plane = 0:
+                set range to ((1 << depth) - colour) - 1
+            set paletteBits to the minimum of paletteBits and (the av1 ceiling log of range)
+            set index to index + 1
+        sort av1 colours colours counting count
+        @intrinsic("call", "libc", "free", nothing, cache)
+
+function read av1 palette mode info in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set size to the av1 block field 2 of decoder
+        set sizeContext to ((av1 log of (av1 blocks wide of size)) + (av1 log of (av1 blocks high of size))) - 2
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        set colours to decoder's adPalette
+        if (the av1 block field 8 of decoder) = 0:
+            set context to 0
+            if (the av1 block field 4 of decoder) = 1:
+                if (the av1 mi field 7 at (row - 1) column of decoder) > 0:
+                    set context to context + 1
+            if (the av1 block field 5 of decoder) = 1:
+                if (the av1 mi field 7 at row (column - 1) of decoder) > 0:
+                    set context to context + 1
+            if (the av1 symbol of 2 at ((av1 cdf base 13 of decoder) + (((sizeContext * 3) + context) * 3)) in decoder) = 1:
+                set count to (the av1 symbol of 7 at ((av1 cdf base 11 of decoder) + (sizeContext * 8)) in decoder) + 2
+                set av1 block field 16 to count in decoder
+                read av1 palette colours for 0 counting count into colours in decoder
+        if ((the av1 block field 3 of decoder) = 1) and ((the av1 block field 9 of decoder) = 0):
+            set context to 0
+            if (the av1 block field 16 of decoder) > 0:
+                set context to 1
+            if (the av1 symbol of 2 at ((av1 cdf base 14 of decoder) + (context * 3)) in decoder) = 1:
+                set count to (the av1 symbol of 7 at ((av1 cdf base 12 of decoder) + (sizeContext * 8)) in decoder) + 2
+                set av1 block field 17 to count in decoder
+                read av1 palette colours for 1 counting count into (colours + 8) in decoder
+                set depth to decoder's adBitDepth
+                if (the av1 literal of 1 in decoder) = 1:
+                    set paletteBits to (depth - 4) + (the av1 literal of 2 in decoder)
+                    set most to 1 << depth
+                    store (the av1 literal of depth in decoder) at (colours + 16)
+                    loop index from 1 to count:
+                        set delta to the av1 literal of paletteBits in decoder
+                        if delta > 0:
+                            if (the av1 literal of 1 in decoder) = 1:
+                                set delta to 0 - delta
+                        set value to (the item at (15 + index) in colours) + delta
+                        if value < 0:
+                            set value to value + most
+                        if value >= most:
+                            set value to value - most
+                        store (value clamped between 0 and (most - 1)) at (colours + (16 + index))
+                else:
+                    loop index from 0 to count:
+                        store (the av1 literal of depth in decoder) at (colours + (16 + index))
+
+# The colour order and context for a colour map entry (7.11.4.?): order
+# into order[0..7], the context returned.
+function the av1 colour context of {a pointer to an integer:map} stride {integer:stride} at {integer:row} {integer:column} with {integer:count} into {a pointer to an integer:order}:
+    execute:
+        set scores to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 8:
+            store index at (order + index)
+        if column > 0:
+            set neighbour to the item at ((row * stride) + (column - 1)) in map
+            store ((the item at neighbour in scores) + 2) at (scores + neighbour)
+        if (row > 0) and (column > 0):
+            set neighbour to the item at (((row - 1) * stride) + (column - 1)) in map
+            store ((the item at neighbour in scores) + 1) at (scores + neighbour)
+        if row > 0:
+            set neighbour to the item at (((row - 1) * stride) + column) in map
+            store ((the item at neighbour in scores) + 2) at (scores + neighbour)
+        loop i from 0 to 3:
+            set best to the item at i in scores
+            set bestIndex to i
+            loop j from (i + 1) to count:
+                if (the item at j in scores) > best:
+                    set best to the item at j in scores
+                    set bestIndex to j
+            if bestIndex != i:
+                set bestOrder to the item at bestIndex in order
+                set k to bestIndex
+                loop while k > i:
+                    store (the item at (k - 1) in scores) at (scores + k)
+                    store (the item at (k - 1) in order) at (order + k)
+                    set k to k - 1
+                store best at (scores + i)
+                store bestOrder at (order + i)
+        set hash to ((the item at 0 in scores) + (2 * (the item at 1 in scores))) + (2 * (the item at 2 in scores))
+        @intrinsic("call", "libc", "free", nothing, scores)
+        return the av1 number hash in (the string form of "9 9 0 9 9 4 3 2 1")
+
+# Reads a colour map in diagonal order (5.11.49) into map (64 wide).
+function read av1 colour map for {integer:plane} counting {integer:count} sized {integer:blockWidth} {integer:blockHeight} showing {integer:visibleWidth} {integer:visibleHeight} into {a pointer to an integer:map} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set order to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        store (the av1 bounded bools count in decoder) at map
+        set table to av1 cdf base 15 of decoder
+        if plane > 0:
+            set table to av1 cdf base 16 of decoder
+        set before to 0
+        loop size from 2 to count:
+            set before to before + (5 * (size + 1))
+        loop i from 1 to ((visibleHeight + visibleWidth) - 1):
+            set j to the minimum of i and (visibleWidth - 1)
+            set lowest to the maximum of 0 and ((i - visibleHeight) + 1)
+            loop while j >= lowest:
+                set context to the av1 colour context of map stride 64 at (i - j) j with count into order
+                set chosen to the av1 symbol of count at ((table + before) + (context * (count + 1))) in decoder
+                store (the item at chosen in order) at (map + (((i - j) * 64) + j))
+                set j to j - 1
+        loop i from 0 to visibleHeight:
+            loop j from visibleWidth to blockWidth:
+                store (the item at ((i * 64) + (visibleWidth - 1)) in map) at (map + ((i * 64) + j))
+        loop i from visibleHeight to blockHeight:
+            loop j from 0 to blockWidth:
+                store (the item at (((visibleHeight - 1) * 64) + j) in map) at (map + ((i * 64) + j))
+        @intrinsic("call", "libc", "free", nothing, order)
+
+function read av1 palette tokens in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set size to the av1 block field 2 of decoder
+        set blockHeight to 4 * (av1 blocks high of size)
+        set blockWidth to 4 * (av1 blocks wide of size)
+        set visibleHeight to the minimum of blockHeight and (((decoder's adMiRows) - (the av1 block field 0 of decoder)) * 4)
+        set visibleWidth to the minimum of blockWidth and (((decoder's adMiCols) - (the av1 block field 1 of decoder)) * 4)
+        if (the av1 block field 16 of decoder) > 0:
+            read av1 colour map for 0 counting (the av1 block field 16 of decoder) sized blockWidth blockHeight showing visibleWidth visibleHeight into (decoder's adColorMap) in decoder
+        if (the av1 block field 17 of decoder) > 0:
+            set blockHeight to blockHeight >> (decoder's adSubY)
+            set blockWidth to blockWidth >> (decoder's adSubX)
+            set visibleHeight to visibleHeight >> (decoder's adSubY)
+            set visibleWidth to visibleWidth >> (decoder's adSubX)
+            if blockWidth < 4:
+                set blockWidth to blockWidth + 2
+                set visibleWidth to visibleWidth + 2
+            if blockHeight < 4:
+                set blockHeight to blockHeight + 2
+                set visibleHeight to visibleHeight + 2
+            read av1 colour map for 1 counting (the av1 block field 17 of decoder) sized blockWidth blockHeight showing visibleWidth visibleHeight into ((decoder's adColorMap) + 4096) in decoder
+
+# --- Transform size (5.11.15) ---
+
+function read av1 tx size in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set blockSize to the av1 block field 2 of decoder
+        if (the av1 block field 20 of decoder) = 1:
+            set av1 block field 21 to 0 in decoder
+            return nothing
+        set largest to av1 largest tx of blockSize
+        set transform to largest
+        set allowSelect to ((the av1 block field 18 of decoder) = 0) or ((the av1 block field 22 of decoder) = 0)
+        if ((blockSize > 0) and allowSelect) and ((decoder's adTxMode) = 2):
+            # The category: how many halvings from the largest to 4x4, less one.
+            set depth to 0
+            set probe to largest
+            loop while probe != 0:
+                set probe to av1 split tx of probe
+                set depth to depth + 1
+            set category to depth - 1
+            set most to the minimum of depth and 2
+            set maxWidth to av1 tx width of largest
+            set maxHeight to av1 tx height of largest
+            set row to the av1 block field 0 of decoder
+            set column to the av1 block field 1 of decoder
+            set above to 0
+            set left to 0
+            if (the av1 block field 4 of decoder) = 1:
+                set aboveWidth to av1 tx width of (the av1 mi field 5 at (row - 1) column of decoder)
+                if (the av1 mi field 6 at (row - 1) column of decoder) = 1:
+                    set aboveWidth to 4 * (av1 blocks wide of (the av1 mi field 0 at (row - 1) column of decoder))
+                if aboveWidth >= maxWidth:
+                    set above to 1
+            if (the av1 block field 5 of decoder) = 1:
+                set leftHeight to av1 tx height of (the av1 mi field 5 at row (column - 1) of decoder)
+                if (the av1 mi field 6 at row (column - 1) of decoder) = 1:
+                    set leftHeight to 4 * (av1 blocks high of (the av1 mi field 0 at row (column - 1) of decoder))
+                if leftHeight >= maxHeight:
+                    set left to 1
+            set context to above + left
+            set chosen to 0
+            if category = 0:
+                set chosen to the av1 symbol of 2 at ((av1 cdf base 28 of decoder) + (context * 3)) in decoder
+            else:
+                set chosen to the av1 symbol of (most + 1) at ((av1 cdf base 29 of decoder) + ((((category - 1) * 3) + context) * 4)) in decoder
+            loop step from 0 to chosen:
+                set transform to av1 split tx of transform
+        set av1 block field 21 to transform in decoder
+
+# --- One block (5.11.5) ---
+
+function decode av1 block at {integer:row} {integer:column} sized {integer:size} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adFailed) != 0:
+            return nothing
+        set blockFields to decoder's adBlock
+        loop field from 0 to 40:
+            store 0 at (blockFields + field)
+        store row at blockFields
+        store column at (blockFields + 1)
+        store size at (blockFields + 2)
+        set across to av1 blocks wide of size
+        set down to av1 blocks high of size
+        store across at (blockFields + 26)
+        store down at (blockFields + 27)
+        set subX to decoder's adSubX
+        set subY to decoder's adSubY
+        set hasChroma to 1
+        if (decoder's adPlanes) = 1:
+            set hasChroma to 0
+        if ((down = 1) and (subY = 1)) and ((row & 1) = 0):
+            set hasChroma to 0
+        if ((across = 1) and (subX = 1)) and ((column & 1) = 0):
+            set hasChroma to 0
+        store hasChroma at (blockFields + 3)
+        set availableUp to av1 is inside (row - 1) column of decoder
+        set availableLeft to av1 is inside row (column - 1) of decoder
+        store (availableUp as an integer) at (blockFields + 4)
+        store (availableLeft as an integer) at (blockFields + 5)
+        set chromaUp to availableUp
+        set chromaLeft to availableLeft
+        if hasChroma = 1:
+            if (subY = 1) and (down = 1):
+                set chromaUp to av1 is inside (row - 2) column of decoder
+            if (subX = 1) and (across = 1):
+                set chromaLeft to av1 is inside row (column - 2) of decoder
+        else:
+            set chromaUp to false
+            set chromaLeft to false
+        store (chromaUp as an integer) at (blockFields + 6)
+        store (chromaLeft as an integer) at (blockFields + 7)
+        # intra_frame_mode_info()
+        if (decoder's adSegPreSkip) = 1:
+            read av1 intra segment in decoder
+        read av1 skip in decoder
+        if (decoder's adSegPreSkip) = 0:
+            read av1 intra segment in decoder
+        read av1 cdef index in decoder
+        read av1 delta q in decoder
+        read av1 delta lf in decoder
+        set decoder's adReadDeltas to 0
+        if (decoder's adAllowIntrabc) = 1:
+            if (the av1 symbol of 2 at (av1 cdf base 18 of decoder) in decoder) = 1:
+                av1 failure of decoder as 4
+                return nothing
+        set aboveMode to 0
+        set leftMode to 0
+        if availableUp:
+            set aboveMode to the av1 mi field 1 at (row - 1) column of decoder
+        if availableLeft:
+            set leftMode to the av1 mi field 1 at row (column - 1) of decoder
+        set aboveContext to the av1 intra mode context of aboveMode
+        set leftContext to the av1 intra mode context of leftMode
+        set mode to the av1 symbol of 13 at ((av1 cdf base 0 of decoder) + (((aboveContext * 5) + leftContext) * 14)) in decoder
+        store mode at (blockFields + 8)
+        if (size >= 3) and (av1 mode is directional mode):
+            store ((the av1 symbol of 7 at ((av1 cdf base 1 of decoder) + ((mode - 1) * 8)) in decoder) - 3) at (blockFields + 10)
+        if hasChroma = 1:
+            set cflAllowed to false
+            set residual to the av1 residual size of size for 1 in decoder
+            if (the av1 block field 20 of decoder) = 1:
+                set cflAllowed to residual = 0
+            else:
+                set cflAllowed to (the maximum of across and down) <= 8
+            set chroma to 0
+            if cflAllowed:
+                set chroma to the av1 symbol of 14 at ((av1 cdf base 3 of decoder) + (mode * 15)) in decoder
+            else:
+                set chroma to the av1 symbol of 13 at ((av1 cdf base 2 of decoder) + (mode * 14)) in decoder
+            store chroma at (blockFields + 9)
+            if chroma = 13:
+                read av1 cfl alphas in decoder
+            if (size >= 3) and (av1 mode is directional chroma):
+                store ((the av1 symbol of 7 at ((av1 cdf base 1 of decoder) + ((chroma - 1) * 8)) in decoder) - 3) at (blockFields + 11)
+        # The neighbours' palettes, for the cache.
+        set palette to decoder's adPalette
+        loop index from 24 to 72:
+            store 0 at (palette + index)
+        if availableUp:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, palette + 24, (decoder's adPaletteAbove) + (column * 16), 64 as a word sized integer)
+        if availableLeft:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, palette + 48, (decoder's adPaletteLeft) + (row * 16), 64 as a word sized integer)
+        if (((size >= 3) and (across <= 16)) and (down <= 16)) and ((decoder's adAllowScreen) = 1):
+            read av1 palette mode info in decoder
+        # filter_intra_mode_info()
+        if (((decoder's adFilterIntra) = 1) and (mode = 0)) and (((the av1 block field 16 of decoder) = 0) and ((the maximum of across and down) <= 8)):
+            if (the av1 symbol of 2 at ((av1 cdf base 20 of decoder) + (size * 3)) in decoder) = 1:
+                store 1 at (blockFields + 14)
+                store (the av1 symbol of 5 at (av1 cdf base 19 of decoder) in decoder) at (blockFields + 15)
+        # palette_tokens(), read_block_tx_size()
+        read av1 palette tokens in decoder
+        read av1 tx size in decoder
+        if (the av1 block field 18 of decoder) = 1:
+            reset av1 block contexts in decoder
+        # The blockFields's record in the frame store.
+        set columns to decoder's adMiCols
+        set rows to decoder's adMiRows
+        loop y from 0 to down:
+            loop x from 0 to across:
+                if ((row + y) < rows) and ((column + x) < columns):
+                    set record to (decoder's adMi) + ((((row + y) * columns) + (column + x)) * 16)
+                    store size at record
+                    store mode at (record + 1)
+                    store (the av1 block field 9 of decoder) at (record + 2)
+                    store (the av1 block field 18 of decoder) at (record + 3)
+                    store (the av1 block field 19 of decoder) at (record + 4)
+                    store (the av1 block field 21 of decoder) at (record + 5)
+                    store (the av1 block field 22 of decoder) at (record + 6)
+                    store (the av1 block field 16 of decoder) at (record + 7)
+                    store (the av1 block field 17 of decoder) at (record + 8)
+                    loop filter from 0 to 4:
+                        store (the item at filter in (decoder's adDeltaLf)) at (record + (9 + filter))
+                    store 0 at (record + 13)
+                    store 1 at (record + 14)
+        # The palettes along the lines for the blocks below and right.
+        loop x from 0 to across:
+            if (column + x) < columns:
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, (decoder's adPaletteAbove) + ((column + x) * 16), palette, 64 as a word sized integer)
+        loop y from 0 to down:
+            if (row + y) < rows:
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, (decoder's adPaletteLeft) + ((row + y) * 16), palette, 64 as a word sized integer)
+        decode av1 residual in decoder
+
+# The size of a plane's part of a block (Subsampled_Size); -1 when none.
+function the av1 residual size of {integer:size} for {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if plane = 0:
+            return size
+        set across to av1 blocks wide of size
+        set down to av1 blocks high of size
+        set subX to decoder's adSubX
+        set subY to decoder's adSubY
+        set width to the maximum of 1 and (across >> subX)
+        set height to the maximum of 1 and (down >> subY)
+        if (across = 1) and (subX = 1):
+            set width to 1
+        if (down = 1) and (subY = 1):
+            set height to 1
+        return av1 block size of width by height
+
+function reset av1 block contexts in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        set across to the av1 block field 26 of decoder
+        set down to the av1 block field 27 of decoder
+        set planes to 1
+        if (the av1 block field 3 of decoder) = 1:
+            set planes to 3
+        loop plane from 0 to planes:
+            set subX to 0
+            set subY to 0
+            if plane > 0:
+                set subX to decoder's adSubX
+                set subY to decoder's adSubY
+            loop i from (column >> subX) to (((column + across) - 1) >> subX) + 1:
+                store 0 at ((decoder's adAboveLevel) + ((plane * (decoder's adAboveSize)) + i))
+                store 0 at ((decoder's adAboveDc) + ((plane * (decoder's adAboveSize)) + i))
+            loop i from (row >> subY) to (((row + down) - 1) >> subY) + 1:
+                store 0 at ((decoder's adLeftLevel) + ((plane * (decoder's adLeftSize)) + i))
+                store 0 at ((decoder's adLeftDc) + ((plane * (decoder's adLeftSize)) + i))
+
+# The transform size of a chroma plane (get_tx_size()).
+function the av1 plane tx of {integer:plane} for {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if plane = 0:
+            return transform
+        set residual to the av1 residual size of (the av1 block field 2 of decoder) for plane in decoder
+        set chroma to av1 largest tx of residual
+        if ((av1 tx width of chroma) = 64) or ((av1 tx height of chroma) = 64):
+            if (av1 tx width of chroma) = 16:
+                return 9
+            if (av1 tx height of chroma) = 16:
+                return 10
+            return 3
+        return chroma
+
+# residual() (5.11.34) for intra blocks.
+function decode av1 residual in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set row to the av1 block field 0 of decoder
+        set column to the av1 block field 1 of decoder
+        set size to the av1 block field 2 of decoder
+        set across to the av1 block field 26 of decoder
+        set down to the av1 block field 27 of decoder
+        set widthChunks to the maximum of 1 and (across >> 4)
+        set heightChunks to the maximum of 1 and (down >> 4)
+        set planes to 1
+        if (the av1 block field 3 of decoder) = 1:
+            set planes to 3
+        loop chunkY from 0 to heightChunks:
+            loop chunkX from 0 to widthChunks:
+                loop plane from 0 to planes:
+                    set transform to 0
+                    if (the av1 block field 20 of decoder) = 0:
+                        set transform to the av1 plane tx of plane for (the av1 block field 21 of decoder) in decoder
+                    set stepX to (av1 tx width of transform) >> 2
+                    set stepY to (av1 tx height of transform) >> 2
+                    set planeSize to the av1 residual size of size for plane in decoder
+                    set wide to av1 blocks wide of planeSize
+                    set high to av1 blocks high of planeSize
+                    set subX to 0
+                    set subY to 0
+                    if plane > 0:
+                        set subX to decoder's adSubX
+                        set subY to decoder's adSubY
+                    set baseX to (column >> subX) * 4
+                    set baseY to (row >> subY) * 4
+                    set y to 0
+                    loop while y < (the minimum of high and (16 >> subY)):
+                        set x to 0
+                        loop while x < (the minimum of wide and (16 >> subX)):
+                            decode av1 transform block of plane plane at baseX baseY sized transform offset (x + ((chunkX << 4) >> subX)) (y + ((chunkY << 4) >> subY)) in decoder
+                            set x to x + stepX
+                        set y to y + stepY
+
+# transform_block() (5.11.35).
+function decode av1 transform block of plane {integer:plane} at {integer:baseX} {integer:baseY} sized {integer:transform} offset {integer:x} {integer:y} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set startX to baseX + (4 * x)
+        set startY to baseY + (4 * y)
+        set subX to 0
+        set subY to 0
+        if plane > 0:
+            set subX to decoder's adSubX
+            set subY to decoder's adSubY
+        set row to (startY << subY) >> 2
+        set column to (startX << subX) >> 2
+        set mask to 15
+        if (decoder's adSb128) = 1:
+            set mask to 31
+        set subRow to row & mask
+        set subColumn to column & mask
+        set stepX to (av1 tx width of transform) >> 2
+        set stepY to (av1 tx height of transform) >> 2
+        set maxX to ((decoder's adMiCols) * 4) >> subX
+        set maxY to ((decoder's adMiRows) * 4) >> subY
+        if (startX >= maxX) or (startY >= maxY):
+            return nothing
+        set decoded to (decoder's adBlockDecoded) + (plane * 1156)
+        if ((plane = 0) and ((the av1 block field 16 of decoder) > 0)) or ((plane > 0) and ((the av1 block field 17 of decoder) > 0)):
+            predict av1 palette of plane plane at startX startY offset x y sized transform in decoder
+        else:
+            set isCfl to (plane > 0) and ((the av1 block field 9 of decoder) = 13)
+            set mode to the av1 block field 8 of decoder
+            if plane > 0:
+                set mode to the av1 block field 9 of decoder
+                if isCfl:
+                    set mode to 0
+            set haveLeft to (x > 0)
+            set haveAbove to (y > 0)
+            if plane = 0:
+                set haveLeft to haveLeft or ((the av1 block field 5 of decoder) = 1)
+                set haveAbove to haveAbove or ((the av1 block field 4 of decoder) = 1)
+            else:
+                set haveLeft to haveLeft or ((the av1 block field 7 of decoder) = 1)
+                set haveAbove to haveAbove or ((the av1 block field 6 of decoder) = 1)
+            set aboveRight to (the item at (((((subRow >> subY) - 1) + 1) * 34) + (((subColumn >> subX) + stepX) + 1)) in decoded) = 1
+            set belowLeft to (the item at (((((subRow >> subY) + stepY) + 1) * 34) + (((subColumn >> subX) - 1) + 1)) in decoded) = 1
+            predict av1 intra of plane plane at startX startY left haveLeft above haveAbove right aboveRight below belowLeft mode mode sized transform in decoder
+            if isCfl:
+                predict av1 chroma from luma of plane plane at startX startY sized transform in decoder
+        if plane = 0:
+            set av1 block field 28 to (startX + (stepX * 4)) in decoder
+            set av1 block field 29 to (startY + (stepY * 4)) in decoder
+        if (the av1 block field 18 of decoder) = 0:
+            set last to the av1 coefficients of plane plane at startX startY sized transform in decoder
+            if last > 0:
+                reconstruct av1 plane plane at startX startY sized transform in decoder
+        set planeColumns to ((decoder's adMiCols) + subX) >> subX
+        loop i from 0 to stepY:
+            loop j from 0 to stepX:
+                set lfRow to (row >> subY) + i
+                set lfColumn to (column >> subX) + j
+                if (lfRow < (((decoder's adMiRows) + subY) >> subY)) and (lfColumn < planeColumns):
+                    store transform at ((decoder's adLfTxSizes) + ((plane * ((decoder's adMiRows) * (decoder's adMiCols))) + ((lfRow * planeColumns) + lfColumn)))
+                store 1 at (decoded + (((((subRow >> subY) + i) + 1) * 34) + (((subColumn >> subX) + j) + 1)))
+
+# --- Transform type (5.11.47) ---
+
+# TX_SET_DCTONLY 0, TX_SET_INTRA_1 1, TX_SET_INTRA_2 2.
+function the av1 tx set of {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set squareUp to av1 tx square up of transform
+        if (squareUp > 3) or (squareUp = 3):
+            return 0
+        if (decoder's adReducedTxSet) = 1:
+            return 2
+        if (av1 tx square of transform) = 2:
+            return 2
+        return 1
+
+function av1 tx type {integer:kind} in set {integer:set}:
+    execute:
+        if set = 1:
+            return ((kind <= 3) or (kind = 9)) or ((kind = 10) or (kind = 11))
+        if set = 2:
+            return (kind <= 3) or (kind = 9)
+        return kind = 0
+
+function read av1 tx type at {integer:x4} {integer:y4} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set set to the av1 tx set of transform in decoder
+        set kind to 0
+        set qindex to the av1 base quantiser in decoder
+        if (set > 0) and (qindex > 0):
+            set direction to the av1 block field 8 of decoder
+            if (the av1 block field 14 of decoder) = 1:
+                set direction to the av1 number (the av1 block field 15 of decoder) in (the string form of "0 1 2 6 12")
+            set square to av1 tx square of transform
+            if set = 1:
+                set chosen to the av1 symbol of 7 at ((av1 cdf base 7 of decoder) + (((square * 13) + direction) * 8)) in decoder
+                set kind to the av1 number chosen in (the string form of "9 0 10 11 3 1 2")
+            else:
+                set chosen to the av1 symbol of 5 at ((av1 cdf base 8 of decoder) + (((square * 13) + direction) * 6)) in decoder
+                set kind to the av1 number chosen in (the string form of "9 0 3 1 2")
+        set columns to decoder's adMiCols
+        loop j from 0 to ((av1 tx height of transform) >> 2):
+            loop i from 0 to ((av1 tx width of transform) >> 2):
+                if ((y4 + j) < (decoder's adMiRows)) and ((x4 + i) < columns):
+                    store kind at ((decoder's adTxTypes) + (((y4 + j) * columns) + (x4 + i)))
+
+function the av1 base quantiser in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adSegEnabled) = 1:
+            return the av1 quantiser of (the av1 block field 19 of decoder) plain true in decoder
+        return decoder's adBaseQ
+
+function the av1 compute tx type of plane {integer:plane} sized {integer:transform} at {integer:x4} {integer:y4} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if ((the av1 block field 20 of decoder) = 1) or ((av1 tx square up of transform) > 3):
+            return 0
+        if plane = 0:
+            return the item at ((y4 * (decoder's adMiCols)) + x4) in (decoder's adTxTypes)
+        set kind to the av1 number (the av1 block field 9 of decoder) in (the string form of "0 1 2 0 3 1 2 2 1 3 1 2 3 0")
+        if (av1 tx type kind in set (the av1 tx set of transform in decoder)) = false:
+            return 0
+        return kind
+
+# TX_CLASS_2D 0, TX_CLASS_HORIZ 1, TX_CLASS_VERT 2.
+function the av1 tx class of {integer:kind}:
+    execute:
+        if ((kind = 10) or (kind = 12)) or (kind = 14):
+            return 2
+        if ((kind = 11) or (kind = 13)) or (kind = 15):
+            return 1
+        return 0
+
+# --- Coefficients (5.11.39) ---
+
+function the av1 scan for {integer:transform} type {integer:kind} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set size to transform
+        if transform = 17:
+            set size to 9
+        else if transform = 18:
+            set size to 10
+        else if (av1 tx square up of transform) = 4:
+            set size to 3
+        set which to 0
+        if kind != 9:
+            if ((kind = 10) or (kind = 12)) or (kind = 14):
+                set which to 1
+            if ((kind = 11) or (kind = 13)) or (kind = 15):
+                set which to 2
+        return (decoder's adScans) + (the item at ((size * 3) + which) in (decoder's adScanOffsets))
+
+function the av1 coefficients of plane {integer:plane} at {integer:startX} {integer:startY} sized {integer:transform} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set x4 to startX >> 2
+        set y4 to startY >> 2
+        set w4 to (av1 tx width of transform) >> 2
+        set h4 to (av1 tx height of transform) >> 2
+        set txSzCtx to ((av1 tx square of transform) + ((av1 tx square up of transform) + 1)) >> 1
+        set ptype to 0
+        if plane > 0:
+            set ptype to 1
+        set segEob to the minimum of 1024 and ((av1 tx width of transform) * (av1 tx height of transform))
+        if (transform = 17) or (transform = 18):
+            set segEob to 512
+        set quant to decoder's adQuant
+        loop c from 0 to segEob:
+            store 0 at (quant + c)
+        set eob to 0
+        set culLevel to 0
+        set dcCategory to 0
+        set subX to 0
+        set subY to 0
+        if plane > 0:
+            set subX to decoder's adSubX
+            set subY to decoder's adSubY
+        set maxX4 to (decoder's adMiCols) >> subX
+        set maxY4 to (decoder's adMiRows) >> subY
+        if plane > 0:
+            set maxX4 to ((decoder's adMiCols) + subX) >> subX
+            set maxY4 to ((decoder's adMiRows) + subY) >> subY
+        set aboveLevel to (decoder's adAboveLevel) + (plane * (decoder's adAboveSize))
+        set aboveDc to (decoder's adAboveDc) + (plane * (decoder's adAboveSize))
+        set leftLevel to (decoder's adLeftLevel) + (plane * (decoder's adLeftSize))
+        set leftDc to (decoder's adLeftDc) + (plane * (decoder's adLeftSize))
+        set width to av1 tx width of transform
+        set height to av1 tx height of transform
+        # all_zero's context
+        set context to 0
+        set residual to the av1 residual size of (the av1 block field 2 of decoder) for plane in decoder
+        set blockWidth to 4 * (av1 blocks wide of residual)
+        set blockHeight to 4 * (av1 blocks high of residual)
+        if plane = 0:
+            set top to 0
+            set left to 0
+            loop k from 0 to w4:
+                if (x4 + k) < maxX4:
+                    set top to the maximum of top and (the item at (x4 + k) in aboveLevel)
+            loop k from 0 to h4:
+                if (y4 + k) < maxY4:
+                    set left to the maximum of left and (the item at (y4 + k) in leftLevel)
+            set top to the minimum of top and 255
+            set left to the minimum of left and 255
+            if (blockWidth = width) and (blockHeight = height):
+                set context to 0
+            else if (top = 0) and (left = 0):
+                set context to 1
+            else if (top = 0) or (left = 0):
+                set context to 2
+                if (the maximum of top and left) > 3:
+                    set context to 3
+            else if (the maximum of top and left) <= 3:
+                set context to 4
+            else if (the minimum of top and left) <= 3:
+                set context to 5
+            else:
+                set context to 6
+        else:
+            set above to 0
+            set left to 0
+            loop k from 0 to w4:
+                if (x4 + k) < maxX4:
+                    set above to (above | (the item at (x4 + k) in aboveLevel)) | (the item at (x4 + k) in aboveDc)
+            loop k from 0 to h4:
+                if (y4 + k) < maxY4:
+                    set left to (left | (the item at (y4 + k) in leftLevel)) | (the item at (y4 + k) in leftDc)
+            set context to 7
+            if above != 0:
+                set context to context + 1
+            if left != 0:
+                set context to context + 1
+            if (blockWidth * blockHeight) > (width * height):
+                set context to context + 3
+        set allZero to the av1 symbol of 2 at ((av1 cdf base 30 of decoder) + (((txSzCtx * 13) + context) * 3)) in decoder
+        if allZero = 1:
+            if plane = 0:
+                loop i from 0 to w4:
+                    loop j from 0 to h4:
+                        if ((y4 + j) < (decoder's adMiRows)) and ((x4 + i) < (decoder's adMiCols)):
+                            store 0 at ((decoder's adTxTypes) + (((y4 + j) * (decoder's adMiCols)) + (x4 + i)))
+        else:
+            if plane = 0:
+                read av1 tx type at x4 y4 sized transform in decoder
+            set kind to the av1 compute tx type of plane plane sized transform at x4 y4 in decoder
+            set av1 block field 30 to kind in decoder
+            set scan to the av1 scan for transform type kind in decoder
+            set txClass to the av1 tx class of kind
+            set eobMultisize to ((the minimum of (av1 log of width) and 5) + (the minimum of (av1 log of height) and 5)) - 4
+            set eobContext to 1
+            if txClass = 0:
+                set eobContext to 0
+            set symbols to eobMultisize + 5
+            set eobTable to av1 cdf base (32 + eobMultisize) of decoder
+            set eobPt to (the av1 symbol of symbols at (eobTable + (((ptype * 2) + eobContext) * (symbols + 1))) in decoder) + 1
+            set eob to eobPt
+            if eobPt >= 2:
+                set eob to (1 << (eobPt - 2)) + 1
+            set eobShift to eobPt - 3
+            if eobShift >= 0:
+                set extra to the av1 symbol of 2 at ((av1 cdf base 31 of decoder) + (((((txSzCtx * 2) + ptype) * 9) + (eobPt - 3)) * 3)) in decoder
+                if extra = 1:
+                    set eob to eob + (1 << eobShift)
+                loop i from 1 to (the maximum of 0 and (eobPt - 2)):
+                    set eobShift to ((the maximum of 0 and (eobPt - 2)) - 1) - i
+                    if (the av1 literal of 1 in decoder) = 1:
+                        set eob to eob + (1 << eobShift)
+            # Levels, last to first.
+            set adjusted to av1 adjusted tx of transform
+            set bwl to av1 log of (av1 tx width of adjusted)
+            set txw to av1 tx width of adjusted
+            set txh to av1 tx height of adjusted
+            set baseEob to av1 cdf base 39 of decoder
+            set baseTable to av1 cdf base 40 of decoder
+            set brTable to av1 cdf base 41 of decoder
+            set brSize to the minimum of txSzCtx and 3
+            set c to eob - 1
+            loop while c >= 0:
+                set pos to the item at c in scan
+                set level to 0
+                if c = (eob - 1):
+                    set baseContext to 3
+                    if c = 0:
+                        set baseContext to 0
+                    else if c <= ((txh * txw) / 8):
+                        set baseContext to 1
+                    else if c <= ((txh * txw) / 4):
+                        set baseContext to 2
+                    set level to (the av1 symbol of 3 at (baseEob + (((((txSzCtx * 2) + ptype) * 4) + baseContext) * 4)) in decoder) + 1
+                else:
+                    set baseContext to the av1 base context at pos sized transform class txClass width bwl height txh in decoder
+                    set level to the av1 symbol of 4 at (baseTable + (((((txSzCtx * 2) + ptype) * 42) + baseContext) * 5)) in decoder
+                if level > 2:
+                    set brContext to the av1 range context at pos class txClass width bwl height txh in decoder
+                    set brOffset to brTable + (((((brSize * 2) + ptype) * 21) + brContext) * 5)
+                    set going to true
+                    set round to 0
+                    loop while going and (round < 4):
+                        set step to the av1 symbol of 4 at brOffset in decoder
+                        set level to level + step
+                        if step < 3:
+                            set going to false
+                        set round to round + 1
+                store level at (quant + pos)
+                set c to c - 1
+            # Signs and the Golomb remainders, first to last.
+            loop c from 0 to eob:
+                set pos to the item at c in scan
+                set value to the item at pos in quant
+                set sign to 0
+                if value != 0:
+                    if c = 0:
+                        set dcSign to 0
+                        loop k from 0 to w4:
+                            if (x4 + k) < maxX4:
+                                set category to the item at (x4 + k) in aboveDc
+                                if category = 1:
+                                    set dcSign to dcSign - 1
+                                else if category = 2:
+                                    set dcSign to dcSign + 1
+                        loop k from 0 to h4:
+                            if (y4 + k) < maxY4:
+                                set category to the item at (y4 + k) in leftDc
+                                if category = 1:
+                                    set dcSign to dcSign - 1
+                                else if category = 2:
+                                    set dcSign to dcSign + 1
+                        set signContext to 0
+                        if dcSign < 0:
+                            set signContext to 1
+                        else if dcSign > 0:
+                            set signContext to 2
+                        set sign to the av1 symbol of 2 at ((av1 cdf base 42 of decoder) + (((ptype * 3) + signContext) * 3)) in decoder
+                    else:
+                        set sign to the av1 literal of 1 in decoder
+                if value > 14:
+                    set length to 0
+                    set going to true
+                    loop while going:
+                        set length to length + 1
+                        if (the av1 literal of 1 in decoder) = 1:
+                            set going to false
+                        if length >= 20:
+                            set going to false
+                    set golomb to 1
+                    set i to length - 2
+                    loop while i >= 0:
+                        set golomb to (golomb << 1) | (the av1 literal of 1 in decoder)
+                        set i to i - 1
+                    set value to golomb + 14
+                if (pos = 0) and (value > 0):
+                    set dcCategory to 2
+                    if sign = 1:
+                        set dcCategory to 1
+                set value to value & 1048575
+                set culLevel to culLevel + value
+                if sign = 1:
+                    set value to 0 - value
+                store value at (quant + pos)
+            set culLevel to the minimum of 63 and culLevel
+        loop i from 0 to w4:
+            store culLevel at (aboveLevel + (x4 + i))
+            store dcCategory at (aboveDc + (x4 + i))
+        loop i from 0 to h4:
+            store culLevel at (leftLevel + (y4 + i))
+            store dcCategory at (leftDc + (y4 + i))
+        return eob
+
+function av1 adjusted tx of {integer:transform}:
+    execute:
+        if (transform = 4) or ((transform = 11) or (transform = 12)):
+            return 3
+        if transform = 17:
+            return 9
+        if transform = 18:
+            return 10
+        return transform
+
+# get_coeff_base_ctx() for a coefficient that is not the last (8.3.2).
+function the av1 base context at {integer:pos} sized {integer:transform} class {integer:txClass} width {integer:bwl} height {integer:txh} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set quant to decoder's adQuant
+        set row to pos >> bwl
+        set column to pos - (row << bwl)
+        set rowLimit to txh
+        set columnLimit to 1 << bwl
+        set magnitude to 0
+        set offsets to the string form of "0 1 1 0 1 1 0 2 2 0 0 1 1 0 0 2 0 3 0 4 0 1 1 0 2 0 3 0 4 0"
+        loop index from 0 to 5:
+            set refRow to row + (the av1 number (((txClass * 5) + index) * 2) in offsets)
+            set refColumn to column + (the av1 number ((((txClass * 5) + index) * 2) + 1) in offsets)
+            if (refRow < rowLimit) and (refColumn < columnLimit):
+                set magnitude to magnitude + (the minimum of (the absolute value of (the item at ((refRow << bwl) + refColumn) in quant)) and 3)
+        set result to the minimum of ((magnitude + 1) >> 1) and 4
+        if txClass = 0:
+            if (row = 0) and (column = 0):
+                return 0
+            return result + (the item at (((transform * 25) + ((the minimum of row and 4) * 5)) + (the minimum of column and 4)) in (decoder's adSignificance))
+        set place to column
+        if txClass = 2:
+            set place to row
+        return result + (26 + (5 * (the minimum of place and 2)))
+
+function the av1 range context at {integer:pos} class {integer:txClass} width {integer:bwl} height {integer:txh} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set quant to decoder's adQuant
+        set row to pos >> bwl
+        set column to pos - (row << bwl)
+        set txw to 1 << bwl
+        set magnitude to 0
+        set offsets to the string form of "0 1 1 0 1 1 0 1 1 0 0 2 0 1 1 0 2 0"
+        loop index from 0 to 3:
+            set refRow to row + (the av1 number (((txClass * 3) + index) * 2) in offsets)
+            set refColumn to column + (the av1 number ((((txClass * 3) + index) * 2) + 1) in offsets)
+            if (refRow < txh) and (refColumn < txw):
+                set magnitude to magnitude + (the minimum of (the item at ((refRow * txw) + refColumn) in quant) and 15)
+        set magnitude to the minimum of ((magnitude + 1) >> 1) and 6
+        if pos = 0:
+            return magnitude
+        if txClass = 0:
+            if (row < 2) and (column < 2):
+                return magnitude + 7
+        else if txClass = 1:
+            if column = 0:
+                return magnitude + 7
+        else:
+            if row = 0:
+                return magnitude + 7
+        return magnitude + 14
+
+# --- Tiles ---
+
+function decode av1 tile from {integer:rowStart} {integer:rowEnd} {integer:columnStart} {integer:columnEnd} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, decoder's adCdf, decoder's adCdfStart, ((decoder's adCdfSize) * 4) as a word sized integer)
+        set block to decoder's adBlock
+        store rowStart at (block + 40)
+        store rowEnd at (block + 41)
+        store columnStart at (block + 42)
+        store columnEnd at (block + 43)
+        loop index from 0 to (3 * (decoder's adAboveSize)):
+            store 0 at ((decoder's adAboveLevel) + index)
+            store 0 at ((decoder's adAboveDc) + index)
+        loop index from 0 to 4:
+            store 0 at ((decoder's adDeltaLf) + index)
+        set refs to decoder's adLrRefs
+        loop plane from 0 to 3:
+            store 3 at (refs + (plane * 8))
+            store -7 at (refs + ((plane * 8) + 1))
+            store 15 at (refs + ((plane * 8) + 2))
+            store 3 at (refs + ((plane * 8) + 3))
+            store -7 at (refs + ((plane * 8) + 4))
+            store 15 at (refs + ((plane * 8) + 5))
+            store -32 at (refs + ((plane * 8) + 6))
+            store 31 at (refs + ((plane * 8) + 7))
+        set size to 12
+        set step to 16
+        if (decoder's adSb128) = 1:
+            set size to 15
+            set step to 32
+        set row to rowStart
+        loop while row < rowEnd:
+            loop index from 0 to (3 * (decoder's adLeftSize)):
+                store 0 at ((decoder's adLeftLevel) + index)
+                store 0 at ((decoder's adLeftDc) + index)
+            set column to columnStart
+            loop while column < columnEnd:
+                set decoder's adReadDeltas to decoder's adDeltaQPresent
+                set stride to decoder's adCdefColumns
+                store -1 at ((decoder's adCdefIndex) + (((row >> 4) * stride) + (column >> 4)))
+                if (decoder's adSb128) = 1:
+                    store -1 at ((decoder's adCdefIndex) + (((row >> 4) * stride) + ((column >> 4) + 1)))
+                    store -1 at ((decoder's adCdefIndex) + ((((row >> 4) + 1) * stride) + (column >> 4)))
+                    store -1 at ((decoder's adCdefIndex) + ((((row >> 4) + 1) * stride) + ((column >> 4) + 1)))
+                clear av1 decoded flags at row column for step until rowEnd columnEnd in decoder
+                read av1 restoration at row column sized size in decoder
+                decode av1 partition at row column sized size in decoder
+                set column to column + step
+            set row to row + step
+
+function clear av1 decoded flags at {integer:row} {integer:column} for {integer:blocks} until {integer:rowEnd} {integer:columnEnd} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        loop plane from 0 to (decoder's adPlanes):
+            set subX to 0
+            set subY to 0
+            if plane > 0:
+                set subX to decoder's adSubX
+                set subY to decoder's adSubY
+            set sbWidth to (columnEnd - column) >> subX
+            set sbHeight to (rowEnd - row) >> subY
+            set cells to (decoder's adBlockDecoded) + (plane * 1156)
+            loop y from -1 to ((blocks >> subY) + 1):
+                loop x from -1 to ((blocks >> subX) + 1):
+                    set value to 0
+                    if (y < 0) and (x < sbWidth):
+                        set value to 1
+                    else if (x < 0) and (y < sbHeight):
+                        set value to 1
+                    store value at (cells + (((y + 1) * 34) + (x + 1)))
+            store 0 at (cells + ((((blocks >> subY) + 1) * 34) + 0))

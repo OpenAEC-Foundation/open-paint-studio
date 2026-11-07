@@ -1,0 +1,1023 @@
+# AV1 still pictures (key frames and intra-only frames), read by the editor
+# itself following the AV1 Bitstream & Decoding Process Specification
+# (v1.0.0 with errata): OBUs, the sequence and frame headers, tiles and the
+# symbol decoder with its adapting CDFs. The block syntax is in
+# av1_block.dl, prediction and reconstruction in av1_predict.dl, the
+# loop filters in av1_filter.dl; avif.dl reads the container around it.
+import dynlex/paint/decoded.dl
+import dynlex/paint/av1_tables.dl
+import dynlex/paint/av1_transforms.dl
+import lib/string.dl
+
+function fill av1 numbers {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+        return index
+
+function a new av1 table from {string:values}:
+    execute:
+        set numbers to @intrinsic("call", "libc", "calloc", a pointer to an integer, (((values' length) / 2) + 2) as a word sized integer, 4 as a word sized integer)
+        ignore fill av1 numbers numbers from values
+        return numbers
+
+# --- The decoder's state ---
+
+class:
+    patterns:
+        [an|] av1 decoder
+    members:
+        adFailed as an integer
+        # Sequence header
+        adProfile as an integer
+        adReduced as an integer
+        adWidthBits as an integer
+        adHeightBits as an integer
+        adMaxWidth as an integer
+        adMaxHeight as an integer
+        adFrameIdPresent as an integer
+        adFrameIdLength as an integer
+        adSb128 as an integer
+        adFilterIntra as an integer
+        adEdgeFilter as an integer
+        adOrderHintBits as an integer
+        adForceScreen as an integer
+        adForceIntegerMv as an integer
+        adSuperres as an integer
+        adCdefEnabled as an integer
+        adRestoration as an integer
+        adBitDepth as an integer
+        adMono as an integer
+        adPlanes as an integer
+        adPrimaries as an integer
+        adTransfer as an integer
+        adMatrix as an integer
+        adFullRange as an integer
+        adSubX as an integer
+        adSubY as an integer
+        adSeparateUv as an integer
+        adFilmGrain as an integer
+        adDecoderModel as an integer
+        adEqualInterval as an integer
+        adPresentationBits as an integer
+        adRemovalBits as an integer
+        adOperatingPoints as an integer
+        adOperatingIdc as a pointer to an integer
+        adModelForPoint as a pointer to an integer
+        adHaveSequence as an integer
+        # Frame header
+        adFrameType as an integer
+        adShowFrame as an integer
+        adShowable as an integer
+        adWidth as an integer
+        adHeight as an integer
+        adUpscaledWidth as an integer
+        adMiCols as an integer
+        adMiRows as an integer
+        adAllowScreen as an integer
+        adAllowIntrabc as an integer
+        adDisableUpdate as an integer
+        adBaseQ as an integer
+        adDeltaQ as a pointer to an integer
+        adUsingQm as an integer
+        adQmLevels as a pointer to an integer
+        adSegEnabled as an integer
+        adSegFeatureOn as a pointer to an integer
+        adSegFeatureData as a pointer to an integer
+        adSegPreSkip as an integer
+        adLastActiveSeg as an integer
+        adDeltaQPresent as an integer
+        adDeltaQRes as an integer
+        adDeltaLfPresent as an integer
+        adDeltaLfRes as an integer
+        adDeltaLfMulti as an integer
+        adCodedLossless as an integer
+        adAllLossless as an integer
+        adLosslessSegments as a pointer to an integer
+        adLfLevels as a pointer to an integer
+        adLfSharpness as an integer
+        adLfDeltaEnabled as an integer
+        adLfRefDeltas as a pointer to an integer
+        adLfModeDeltas as a pointer to an integer
+        adCdefDamping as an integer
+        adCdefBits as an integer
+        adCdefStrengths as a pointer to an integer
+        adLrTypes as a pointer to an integer
+        adLrSizes as a pointer to an integer
+        adUsesLr as an integer
+        adTxMode as an integer
+        adReducedTxSet as an integer
+        adGrain as a pointer to an integer
+        # Tiles
+        adTileCols as an integer
+        adTileRows as an integer
+        adTileColsLog2 as an integer
+        adTileRowsLog2 as an integer
+        adColStarts as a pointer to an integer
+        adRowStarts as a pointer to an integer
+        adTileSizeBytes as an integer
+        adTilesDone as an integer
+        # The symbol decoder of the current tile
+        adTile as a pointer to a byte
+        adSymbolValue as an integer
+        adSymbolRange as an integer
+        adSymbolMaxBits as an integer
+        adSymbolPosition as an integer
+        # CDFs: the working set, the frame's starting set, where each table is
+        adCdf as a pointer to an integer
+        adCdfStart as a pointer to an integer
+        adCdfOffsets as a pointer to an integer
+        adCdfSize as an integer
+        # Per 4x4 block of the frame (16 fields each, see av1_block.dl)
+        adMi as a pointer to an integer
+        adTxTypes as a pointer to an integer
+        adLfTxSizes as a pointer to an integer
+        adCdefIndex as a pointer to an integer
+        adCdefColumns as an integer
+        # Contexts along the top and left edges, per plane
+        adAboveLevel as a pointer to an integer
+        adAboveDc as a pointer to an integer
+        adLeftLevel as a pointer to an integer
+        adLeftDc as a pointer to an integer
+        adAboveSize as an integer
+        adLeftSize as an integer
+        adBlockDecoded as a pointer to an integer
+        # The picture: one plane each, stride and allocated height
+        adPlaneY as a pointer to an integer
+        adPlaneU as a pointer to an integer
+        adPlaneV as a pointer to an integer
+        adStrideY as an integer
+        adStrideC as an integer
+        adRowsY as an integer
+        adRowsC as an integer
+        # The block being decoded (fields in av1_block.dl)
+        adBlock as a pointer to an integer
+        adDeltaLf as a pointer to an integer
+        adCurrentQ as an integer
+        adReadDeltas as an integer
+        # Coefficients of the transform block being decoded
+        adQuant as a pointer to an integer
+        adDequant as a pointer to an integer
+        adScratch as a pointer to an integer
+        # Palette and colour map of the block
+        adPalette as a pointer to an integer
+        adColorMap as a pointer to an integer
+        # Loop restoration per unit
+        adLrUnits as a pointer to an integer
+        adLrUnitCols as a pointer to an integer
+        adLrUnitRows as a pointer to an integer
+        adLrRefs as a pointer to an integer
+        # Tables
+        adScans as a pointer to an integer
+        adScanOffsets as a pointer to an integer
+        adDcSteps as a pointer to an integer
+        adAcSteps as a pointer to an integer
+        adSmoothWeights as a pointer to an integer
+        adDerivatives as a pointer to an integer
+        adSignificance as a pointer to an integer
+        adBoolCdf as a pointer to an integer
+        adPaletteAbove as a pointer to an integer
+        adPaletteLeft as a pointer to an integer
+
+function av1 mode is directional {integer:mode}:
+    execute:
+        return (mode >= 1) and (mode <= 8)
+
+function av1 failure of {a pointer to an av1 decoder:decoder} as {integer:reason}:
+    execute:
+        if (decoder's adFailed) = 0:
+            set decoder's adFailed to reason
+
+# --- Constants: block sizes (spec 3, 9.3) ---
+# BLOCK_4X4 0, 4X8 1, 8X4 2, 8X8 3, 8X16 4, 16X8 5, 16X16 6, 16X32 7,
+# 32X16 8, 32X32 9, 32X64 10, 64X32 11, 64X64 12, 64X128 13, 128X64 14,
+# 128X128 15, 4X16 16, 16X4 17, 8X32 18, 32X8 19, 16X64 20, 64X16 21.
+
+function av1 blocks wide of {integer:size}:
+    execute:
+        set table to the string form of "1 1 2 2 2 4 4 4 8 8 8 16 16 16 32 32 1 4 2 8 4 16"
+        return the av1 number size in table
+
+function av1 blocks high of {integer:size}:
+    execute:
+        set table to the string form of "1 2 1 2 4 2 4 8 4 8 16 8 16 32 16 32 4 1 8 2 16 4"
+        return the av1 number size in table
+
+# The n-th number of a list written as text (small tables).
+function the av1 number {integer:wanted} in {string:listing}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (listing's length + 1):
+            set character to 32
+            if cursor < listing's length:
+                set character to ((the character at cursor in listing) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                if index = wanted:
+                    return value
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+        return 0
+
+function av1 log of {integer:value}:
+    execute:
+        set result to 0
+        set rest to value
+        loop while rest > 1:
+            set rest to rest >> 1
+            set result to result + 1
+        return result
+
+# The block size of width by height in 4x4 units; -1 when there is none.
+function av1 block size of {integer:across} by {integer:down}:
+    execute:
+        loop candidate from 0 to 22:
+            if ((av1 blocks wide of candidate) = across) and ((av1 blocks high of candidate) = down):
+                return candidate
+        return -1
+
+# Transform sizes: TX_4X4 0, 8X8 1, 16X16 2, 32X32 3, 64X64 4, 4X8 5, 8X4 6,
+# 8X16 7, 16X8 8, 16X32 9, 32X16 10, 32X64 11, 64X32 12, 4X16 13, 16X4 14,
+# 8X32 15, 32X8 16, 16X64 17, 64X16 18.
+function av1 tx width of {integer:size}:
+    execute:
+        set table to the string form of "4 8 16 32 64 4 8 8 16 16 32 32 64 4 16 8 32 16 64"
+        return the av1 number size in table
+
+function av1 tx height of {integer:size}:
+    execute:
+        set table to the string form of "4 8 16 32 64 8 4 16 8 32 16 64 32 16 4 32 8 64 16"
+        return the av1 number size in table
+
+function av1 tx size of {integer:across} by {integer:down}:
+    execute:
+        loop candidate from 0 to 19:
+            if ((av1 tx width of candidate) = across) and ((av1 tx height of candidate) = down):
+                return candidate
+        return 0
+
+function av1 tx square of {integer:size}:
+    execute:
+        set side to the minimum of (av1 tx width of size) and (av1 tx height of size)
+        return av1 tx size of side by side
+
+function av1 tx square up of {integer:size}:
+    execute:
+        set side to the maximum of (av1 tx width of size) and (av1 tx height of size)
+        return av1 tx size of side by side
+
+function av1 split tx of {integer:size}:
+    execute:
+        set table to the string form of "0 0 1 2 3 0 0 1 1 2 2 3 3 5 6 7 8 9 10"
+        return the av1 number size in table
+
+function av1 largest tx of {integer:size}:
+    execute:
+        set table to the string form of "0 5 6 1 7 8 2 9 10 3 11 12 4 4 4 4 13 14 15 16 17 18"
+        return the av1 number size in table
+
+function av1 largest tx depth of {integer:size}:
+    execute:
+        set table to the string form of "0 1 1 1 2 2 2 3 3 3 4 4 4 4 4 4 2 2 3 3 4 4"
+        return the av1 number size in table
+
+# --- Reading the bitstream bit by bit (headers) ---
+
+class:
+    patterns:
+        [an|] av1 bit reader
+    members:
+        arBytes as a pointer to a byte
+        arEnd as an integer
+        arPosition as an integer
+
+function the av1 bits {integer:count} from {a pointer to an av1 bit reader:reader}:
+    execute:
+        set value to 0
+        loop step from 0 to count:
+            set position to reader's arPosition
+            set bit to 0
+            if (position >> 3) < (reader's arEnd):
+                set bit to ((((the item at (position >> 3) in (reader's arBytes)) as an integer) & 255) >> (7 - (position & 7))) & 1
+            set value to (value << 1) | bit
+            set reader's arPosition to position + 1
+        return value
+
+function the av1 flag from {a pointer to an av1 bit reader:reader}:
+    execute:
+        return the av1 bits 1 from reader
+
+function the av1 signed {integer:count} from {a pointer to an av1 bit reader:reader}:
+    execute:
+        set value to the av1 bits count from reader
+        set sign to 1 << (count - 1)
+        if (value & sign) != 0:
+            set value to value - (2 * sign)
+        return value
+
+function the av1 leb128 from {a pointer to an av1 bit reader:reader}:
+    execute:
+        set value to 0
+        set going to true
+        set shift to 0
+        loop while going:
+            set octet to the av1 bits 8 from reader
+            if shift < 28:
+                set value to value | ((octet & 127) << shift)
+            set shift to shift + 7
+            if (octet & 128) = 0:
+                set going to false
+            if shift > 56:
+                set going to false
+        return value
+
+function the av1 uvlc from {a pointer to an av1 bit reader:reader}:
+    execute:
+        set zeros to 0
+        set going to true
+        loop while going:
+            if (the av1 flag from reader) = 1:
+                set going to false
+            else:
+                set zeros to zeros + 1
+                if zeros >= 32:
+                    return 0
+        return ((1 << zeros) - 1) + (the av1 bits zeros from reader)
+
+# ns(n): a value below n in as few bits as fit (4.10.7).
+function the av1 bounded {integer:limit} from {a pointer to an av1 bit reader:reader}:
+    execute:
+        set width to (av1 log of limit) + 1
+        set extra to (1 << width) - limit
+        set value to the av1 bits (width - 1) from reader
+        if value < extra:
+            return value
+        return ((value << 1) - extra) + (the av1 flag from reader)
+
+function the av1 delta q from {a pointer to an av1 bit reader:reader}:
+    execute:
+        if (the av1 flag from reader) = 1:
+            return the av1 signed 7 from reader
+        return 0
+
+# --- Sequence header OBU (5.5) ---
+
+function read av1 sequence header with {a pointer to an av1 bit reader:reader} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set decoder's adProfile to the av1 bits 3 from reader
+        ignore the av1 flag from reader
+        set decoder's adReduced to the av1 flag from reader
+        set decoder's adOperatingIdc to @intrinsic("call", "libc", "calloc", a pointer to an integer, 32 as a word sized integer, 4 as a word sized integer)
+        set decoder's adModelForPoint to @intrinsic("call", "libc", "calloc", a pointer to an integer, 32 as a word sized integer, 4 as a word sized integer)
+        set decoder's adOperatingPoints to 1
+        if (decoder's adReduced) = 1:
+            ignore the av1 bits 5 from reader
+        else:
+            set timing to the av1 flag from reader
+            if timing = 1:
+                ignore the av1 bits 32 from reader
+                ignore the av1 bits 32 from reader
+                set decoder's adEqualInterval to the av1 flag from reader
+                if (decoder's adEqualInterval) = 1:
+                    ignore the av1 uvlc from reader
+                set decoder's adDecoderModel to the av1 flag from reader
+                if (decoder's adDecoderModel) = 1:
+                    set bufferDelayLength to (the av1 bits 5 from reader) + 1
+                    ignore the av1 bits 32 from reader
+                    set decoder's adRemovalBits to (the av1 bits 5 from reader) + 1
+                    set decoder's adPresentationBits to (the av1 bits 5 from reader) + 1
+                    set decoder's adFrameIdLength to bufferDelayLength
+            set displayDelay to the av1 flag from reader
+            set decoder's adOperatingPoints to (the av1 bits 5 from reader) + 1
+            loop point from 0 to (decoder's adOperatingPoints):
+                store (the av1 bits 12 from reader) at ((decoder's adOperatingIdc) + point)
+                set level to the av1 bits 5 from reader
+                if level > 7:
+                    ignore the av1 flag from reader
+                if (decoder's adDecoderModel) = 1:
+                    set present to the av1 flag from reader
+                    store present at ((decoder's adModelForPoint) + point)
+                    if present = 1:
+                        ignore the av1 bits (decoder's adFrameIdLength) from reader
+                        ignore the av1 bits (decoder's adFrameIdLength) from reader
+                        ignore the av1 flag from reader
+                if displayDelay = 1:
+                    if (the av1 flag from reader) = 1:
+                        ignore the av1 bits 4 from reader
+        set decoder's adWidthBits to (the av1 bits 4 from reader) + 1
+        set decoder's adHeightBits to (the av1 bits 4 from reader) + 1
+        set decoder's adMaxWidth to (the av1 bits (decoder's adWidthBits) from reader) + 1
+        set decoder's adMaxHeight to (the av1 bits (decoder's adHeightBits) from reader) + 1
+        set decoder's adFrameIdPresent to 0
+        if (decoder's adReduced) = 0:
+            set decoder's adFrameIdPresent to the av1 flag from reader
+        if (decoder's adFrameIdPresent) = 1:
+            set deltaLength to (the av1 bits 4 from reader) + 2
+            set additional to (the av1 bits 3 from reader) + 1
+            set decoder's adFrameIdLength to deltaLength + additional
+        set decoder's adSb128 to the av1 flag from reader
+        set decoder's adFilterIntra to the av1 flag from reader
+        set decoder's adEdgeFilter to the av1 flag from reader
+        set decoder's adForceScreen to 2
+        set decoder's adForceIntegerMv to 2
+        set decoder's adOrderHintBits to 0
+        if (decoder's adReduced) = 0:
+            ignore the av1 bits 4 from reader
+            set orderHint to the av1 flag from reader
+            if orderHint = 1:
+                ignore the av1 bits 2 from reader
+            if (the av1 flag from reader) = 0:
+                set decoder's adForceScreen to the av1 flag from reader
+            if (decoder's adForceScreen) > 0:
+                if (the av1 flag from reader) = 0:
+                    set decoder's adForceIntegerMv to the av1 flag from reader
+            if orderHint = 1:
+                set decoder's adOrderHintBits to (the av1 bits 3 from reader) + 1
+        set decoder's adSuperres to the av1 flag from reader
+        set decoder's adCdefEnabled to the av1 flag from reader
+        set decoder's adRestoration to the av1 flag from reader
+        # color_config()
+        set high to the av1 flag from reader
+        set decoder's adBitDepth to 8
+        if ((decoder's adProfile) = 2) and (high = 1):
+            if (the av1 flag from reader) = 1:
+                set decoder's adBitDepth to 12
+            else:
+                set decoder's adBitDepth to 10
+        else if high = 1:
+            set decoder's adBitDepth to 10
+        set decoder's adMono to 0
+        if (decoder's adProfile) != 1:
+            set decoder's adMono to the av1 flag from reader
+        set decoder's adPlanes to 3
+        if (decoder's adMono) = 1:
+            set decoder's adPlanes to 1
+        set decoder's adPrimaries to 2
+        set decoder's adTransfer to 2
+        set decoder's adMatrix to 2
+        if (the av1 flag from reader) = 1:
+            set decoder's adPrimaries to the av1 bits 8 from reader
+            set decoder's adTransfer to the av1 bits 8 from reader
+            set decoder's adMatrix to the av1 bits 8 from reader
+        set decoder's adSeparateUv to 0
+        if (decoder's adMono) = 1:
+            set decoder's adFullRange to the av1 flag from reader
+            set decoder's adSubX to 1
+            set decoder's adSubY to 1
+        else if (((decoder's adPrimaries) = 1) and ((decoder's adTransfer) = 13)) and ((decoder's adMatrix) = 0):
+            set decoder's adFullRange to 1
+            set decoder's adSubX to 0
+            set decoder's adSubY to 0
+            set decoder's adSeparateUv to the av1 flag from reader
+        else:
+            set decoder's adFullRange to the av1 flag from reader
+            if (decoder's adProfile) = 0:
+                set decoder's adSubX to 1
+                set decoder's adSubY to 1
+            else if (decoder's adProfile) = 1:
+                set decoder's adSubX to 0
+                set decoder's adSubY to 0
+            else if (decoder's adBitDepth) = 12:
+                set decoder's adSubX to the av1 flag from reader
+                set decoder's adSubY to 0
+                if (decoder's adSubX) = 1:
+                    set decoder's adSubY to the av1 flag from reader
+            else:
+                set decoder's adSubX to 1
+                set decoder's adSubY to 0
+            if ((decoder's adSubX) = 1) and ((decoder's adSubY) = 1):
+                ignore the av1 bits 2 from reader
+            set decoder's adSeparateUv to the av1 flag from reader
+        set decoder's adFilmGrain to the av1 flag from reader
+        set decoder's adHaveSequence to 1
+
+# --- Frame header OBU (5.9), for key and intra-only frames ---
+
+function the av1 tile log of {integer:size} for {integer:goal}:
+    execute:
+        set k to 0
+        loop while (size << k) < goal:
+            set k to k + 1
+        return k
+
+function read av1 tile info with {a pointer to an av1 bit reader:reader} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set sbShift to 4
+        if (decoder's adSb128) = 1:
+            set sbShift to 5
+        set sbCols to ((decoder's adMiCols) + ((1 << sbShift) - 1)) >> sbShift
+        set sbRows to ((decoder's adMiRows) + ((1 << sbShift) - 1)) >> sbShift
+        set sbSize to sbShift + 2
+        set maxTileWidthSb to 4096 >> sbSize
+        set maxTileAreaSb to (4096 * 2304) >> (2 * sbSize)
+        set minLog2TileCols to the av1 tile log of maxTileWidthSb for sbCols
+        set maxLog2TileCols to the av1 tile log of 1 for (the minimum of sbCols and 64)
+        set maxLog2TileRows to the av1 tile log of 1 for (the minimum of sbRows and 64)
+        set minLog2Tiles to the maximum of minLog2TileCols and (the av1 tile log of maxTileAreaSb for (sbRows * sbCols))
+        set decoder's adColStarts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 70 as a word sized integer, 4 as a word sized integer)
+        set decoder's adRowStarts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 70 as a word sized integer, 4 as a word sized integer)
+        set uniform to the av1 flag from reader
+        if uniform = 1:
+            set colsLog2 to minLog2TileCols
+            set going to colsLog2 < maxLog2TileCols
+            loop while going:
+                if (the av1 flag from reader) = 1:
+                    set colsLog2 to colsLog2 + 1
+                    set going to colsLog2 < maxLog2TileCols
+                else:
+                    set going to false
+            set tileWidthSb to (sbCols + ((1 << colsLog2) - 1)) >> colsLog2
+            set index to 0
+            set startSb to 0
+            loop while startSb < sbCols:
+                store (startSb << sbShift) at ((decoder's adColStarts) + index)
+                set index to index + 1
+                set startSb to startSb + tileWidthSb
+            store (decoder's adMiCols) at ((decoder's adColStarts) + index)
+            set decoder's adTileCols to index
+            set decoder's adTileColsLog2 to colsLog2
+            set minLog2TileRows to the maximum of (minLog2Tiles - colsLog2) and 0
+            set rowsLog2 to minLog2TileRows
+            set going to rowsLog2 < maxLog2TileRows
+            loop while going:
+                if (the av1 flag from reader) = 1:
+                    set rowsLog2 to rowsLog2 + 1
+                    set going to rowsLog2 < maxLog2TileRows
+                else:
+                    set going to false
+            set tileHeightSb to (sbRows + ((1 << rowsLog2) - 1)) >> rowsLog2
+            set index to 0
+            set startSb to 0
+            loop while startSb < sbRows:
+                store (startSb << sbShift) at ((decoder's adRowStarts) + index)
+                set index to index + 1
+                set startSb to startSb + tileHeightSb
+            store (decoder's adMiRows) at ((decoder's adRowStarts) + index)
+            set decoder's adTileRows to index
+            set decoder's adTileRowsLog2 to rowsLog2
+        else:
+            set widestTileSb to 0
+            set startSb to 0
+            set index to 0
+            loop while (startSb < sbCols) and (index < 64):
+                store (startSb << sbShift) at ((decoder's adColStarts) + index)
+                set maxWidth to the minimum of (sbCols - startSb) and maxTileWidthSb
+                set sizeSb to (the av1 bounded maxWidth from reader) + 1
+                set widestTileSb to the maximum of sizeSb and widestTileSb
+                set startSb to startSb + sizeSb
+                set index to index + 1
+            store (decoder's adMiCols) at ((decoder's adColStarts) + index)
+            set decoder's adTileCols to index
+            set decoder's adTileColsLog2 to the av1 tile log of 1 for index
+            set areaSb to sbRows * sbCols
+            if minLog2Tiles > 0:
+                set areaSb to (sbRows * sbCols) >> (minLog2Tiles + 1)
+            set maxTileHeightSb to the maximum of (areaSb / widestTileSb) and 1
+            set startSb to 0
+            set index to 0
+            loop while (startSb < sbRows) and (index < 64):
+                store (startSb << sbShift) at ((decoder's adRowStarts) + index)
+                set maxHeight to the minimum of (sbRows - startSb) and maxTileHeightSb
+                set sizeSb to (the av1 bounded maxHeight from reader) + 1
+                set startSb to startSb + sizeSb
+                set index to index + 1
+            store (decoder's adMiRows) at ((decoder's adRowStarts) + index)
+            set decoder's adTileRows to index
+            set decoder's adTileRowsLog2 to the av1 tile log of 1 for index
+        set decoder's adTileSizeBytes to 4
+        if ((decoder's adTileColsLog2) > 0) or ((decoder's adTileRowsLog2) > 0):
+            ignore the av1 bits ((decoder's adTileRowsLog2) + (decoder's adTileColsLog2)) from reader
+            set decoder's adTileSizeBytes to (the av1 bits 2 from reader) + 1
+
+# The quantiser index of a segment (7.12.2), with or without the block's
+# delta.
+function the av1 quantiser of {integer:segmentId} plain {boolean:unchanged} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        if (decoder's adSegEnabled) = 1:
+            if (the item at (segmentId * 8) in (decoder's adSegFeatureOn)) = 1:
+                set data to the item at (segmentId * 8) in (decoder's adSegFeatureData)
+                set result to (decoder's adBaseQ) + data
+                if (unchanged = false) and ((decoder's adDeltaQPresent) = 1):
+                    set result to (decoder's adCurrentQ) + data
+                return result clamped between 0 and 255
+        if (unchanged = false) and ((decoder's adDeltaQPresent) = 1):
+            return decoder's adCurrentQ
+        return decoder's adBaseQ
+
+# Reads an uncompressed header; false when the frame is not one this
+# decoder reads (inter frames, shown existing frames).
+function read av1 frame header with {a pointer to an av1 bit reader:reader} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set decoder's adFrameType to 0
+        set decoder's adShowFrame to 1
+        set errorResilient to 1
+        if (decoder's adReduced) = 0:
+            if (the av1 flag from reader) = 1:
+                # show_existing_frame
+                av1 failure of decoder as 3
+                return false
+            set decoder's adFrameType to the av1 bits 2 from reader
+            set decoder's adShowFrame to the av1 flag from reader
+            if (((decoder's adShowFrame) = 1) and ((decoder's adDecoderModel) = 1)) and ((decoder's adEqualInterval) = 0):
+                ignore the av1 bits (decoder's adPresentationBits) from reader
+            if (decoder's adShowFrame) = 0:
+                set decoder's adShowable to the av1 flag from reader
+            if ((decoder's adFrameType) = 3) or (((decoder's adFrameType) = 0) and ((decoder's adShowFrame) = 1)):
+                set errorResilient to 1
+            else:
+                set errorResilient to the av1 flag from reader
+        if ((decoder's adFrameType) = 1) or ((decoder's adFrameType) = 3):
+            av1 failure of decoder as 3
+            return false
+        set decoder's adDisableUpdate to the av1 flag from reader
+        set decoder's adAllowScreen to decoder's adForceScreen
+        if (decoder's adForceScreen) = 2:
+            set decoder's adAllowScreen to the av1 flag from reader
+        if (decoder's adAllowScreen) = 1:
+            if (decoder's adForceIntegerMv) = 2:
+                ignore the av1 flag from reader
+        if (decoder's adFrameIdPresent) = 1:
+            ignore the av1 bits (decoder's adFrameIdLength) from reader
+        set overrideSize to 0
+        if (decoder's adReduced) = 0:
+            set overrideSize to the av1 flag from reader
+        ignore the av1 bits (decoder's adOrderHintBits) from reader
+        if (decoder's adDecoderModel) = 1:
+            if (the av1 flag from reader) = 1:
+                loop point from 0 to (decoder's adOperatingPoints):
+                    if (the item at point in (decoder's adModelForPoint)) = 1:
+                        ignore the av1 bits (decoder's adRemovalBits) from reader
+        set refresh to 255
+        if ((decoder's adFrameType) != 0) or ((decoder's adShowFrame) = 0):
+            set refresh to the av1 bits 8 from reader
+        if (refresh != 255) and ((errorResilient = 1) and ((decoder's adOrderHintBits) > 0)):
+            loop slot from 0 to 8:
+                ignore the av1 bits (decoder's adOrderHintBits) from reader
+        # frame_size(), superres_params(), render_size()
+        set decoder's adWidth to decoder's adMaxWidth
+        set decoder's adHeight to decoder's adMaxHeight
+        if overrideSize = 1:
+            set decoder's adWidth to (the av1 bits (decoder's adWidthBits) from reader) + 1
+            set decoder's adHeight to (the av1 bits (decoder's adHeightBits) from reader) + 1
+        set decoder's adUpscaledWidth to decoder's adWidth
+        if (decoder's adSuperres) = 1:
+            if (the av1 flag from reader) = 1:
+                set denominator to (the av1 bits 3 from reader) + 9
+                set decoder's adWidth to (((decoder's adUpscaledWidth) * 8) + (denominator / 2)) / denominator
+        set decoder's adMiCols to 2 * (((decoder's adWidth) + 7) >> 3)
+        set decoder's adMiRows to 2 * (((decoder's adHeight) + 7) >> 3)
+        if (the av1 flag from reader) = 1:
+            ignore the av1 bits 16 from reader
+            ignore the av1 bits 16 from reader
+        set decoder's adAllowIntrabc to 0
+        if ((decoder's adAllowScreen) = 1) and ((decoder's adUpscaledWidth) = (decoder's adWidth)):
+            set decoder's adAllowIntrabc to the av1 flag from reader
+        if ((decoder's adReduced) = 0) and ((decoder's adDisableUpdate) = 0):
+            ignore the av1 flag from reader
+        read av1 tile info with reader into decoder
+        # quantization_params()
+        set decoder's adBaseQ to the av1 bits 8 from reader
+        set decoder's adDeltaQ to @intrinsic("call", "libc", "calloc", a pointer to an integer, 6 as a word sized integer, 4 as a word sized integer)
+        store (the av1 delta q from reader) at (decoder's adDeltaQ)
+        if (decoder's adPlanes) > 1:
+            set different to 0
+            if (decoder's adSeparateUv) = 1:
+                set different to the av1 flag from reader
+            store (the av1 delta q from reader) at ((decoder's adDeltaQ) + 1)
+            store (the av1 delta q from reader) at ((decoder's adDeltaQ) + 2)
+            store (the item at 1 in (decoder's adDeltaQ)) at ((decoder's adDeltaQ) + 3)
+            store (the item at 2 in (decoder's adDeltaQ)) at ((decoder's adDeltaQ) + 4)
+            if different = 1:
+                store (the av1 delta q from reader) at ((decoder's adDeltaQ) + 3)
+                store (the av1 delta q from reader) at ((decoder's adDeltaQ) + 4)
+        set decoder's adUsingQm to the av1 flag from reader
+        set decoder's adQmLevels to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        if (decoder's adUsingQm) = 1:
+            store (the av1 bits 4 from reader) at (decoder's adQmLevels)
+            store (the av1 bits 4 from reader) at ((decoder's adQmLevels) + 1)
+            store (the item at 1 in (decoder's adQmLevels)) at ((decoder's adQmLevels) + 2)
+            if (decoder's adSeparateUv) = 1:
+                store (the av1 bits 4 from reader) at ((decoder's adQmLevels) + 2)
+        # segmentation_params()
+        set decoder's adSegFeatureOn to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set decoder's adSegFeatureData to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set decoder's adSegEnabled to the av1 flag from reader
+        if (decoder's adSegEnabled) = 1:
+            set bitsTable to the string form of "8 6 6 6 6 3 0 0"
+            set limitTable to the string form of "255 63 63 63 63 7 0 0"
+            loop segment from 0 to 8:
+                loop feature from 0 to 8:
+                    set enabled to the av1 flag from reader
+                    store enabled at ((decoder's adSegFeatureOn) + ((segment * 8) + feature))
+                    if enabled = 1:
+                        set count to the av1 number feature in bitsTable
+                        set limit to the av1 number feature in limitTable
+                        set value to 0
+                        if feature < 5:
+                            set value to (the av1 signed (count + 1) from reader) clamped between (0 - limit) and limit
+                        else:
+                            set value to (the av1 bits count from reader) clamped between 0 and limit
+                        store value at ((decoder's adSegFeatureData) + ((segment * 8) + feature))
+        set decoder's adSegPreSkip to 0
+        set decoder's adLastActiveSeg to 0
+        loop segment from 0 to 8:
+            loop feature from 0 to 8:
+                if (the item at ((segment * 8) + feature) in (decoder's adSegFeatureOn)) = 1:
+                    set decoder's adLastActiveSeg to segment
+                    if feature >= 5:
+                        set decoder's adSegPreSkip to 1
+        # delta_q_params(), delta_lf_params()
+        set decoder's adDeltaQPresent to 0
+        set decoder's adDeltaQRes to 0
+        if (decoder's adBaseQ) > 0:
+            set decoder's adDeltaQPresent to the av1 flag from reader
+        if (decoder's adDeltaQPresent) = 1:
+            set decoder's adDeltaQRes to the av1 bits 2 from reader
+        set decoder's adDeltaLfPresent to 0
+        set decoder's adDeltaLfRes to 0
+        set decoder's adDeltaLfMulti to 0
+        if (decoder's adDeltaQPresent) = 1:
+            if (decoder's adAllowIntrabc) = 0:
+                set decoder's adDeltaLfPresent to the av1 flag from reader
+            if (decoder's adDeltaLfPresent) = 1:
+                set decoder's adDeltaLfRes to the av1 bits 2 from reader
+                set decoder's adDeltaLfMulti to the av1 flag from reader
+        # Lossless segments (5.9.2)
+        set decoder's adLosslessSegments to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        set decoder's adCodedLossless to 1
+        set deltas to decoder's adDeltaQ
+        loop segment from 0 to 8:
+            set qindex to the av1 quantiser of segment plain true in decoder
+            set lossless to (qindex = 0) and (((the item at 0 in deltas) = 0) and ((((the item at 1 in deltas) = 0) and ((the item at 2 in deltas) = 0)) and (((the item at 3 in deltas) = 0) and ((the item at 4 in deltas) = 0))))
+            if lossless:
+                store 1 at ((decoder's adLosslessSegments) + segment)
+            else:
+                set decoder's adCodedLossless to 0
+        set decoder's adAllLossless to 0
+        if ((decoder's adCodedLossless) = 1) and ((decoder's adWidth) = (decoder's adUpscaledWidth)):
+            set decoder's adAllLossless to 1
+        # loop_filter_params()
+        set decoder's adLfLevels to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set decoder's adLfRefDeltas to @intrinsic("call", "libc", "calloc", a pointer to an integer, 8 as a word sized integer, 4 as a word sized integer)
+        set decoder's adLfModeDeltas to @intrinsic("call", "libc", "calloc", a pointer to an integer, 2 as a word sized integer, 4 as a word sized integer)
+        store 1 at (decoder's adLfRefDeltas)
+        store -1 at ((decoder's adLfRefDeltas) + 4)
+        store -1 at ((decoder's adLfRefDeltas) + 6)
+        store -1 at ((decoder's adLfRefDeltas) + 7)
+        if ((decoder's adCodedLossless) = 0) and ((decoder's adAllowIntrabc) = 0):
+            store (the av1 bits 6 from reader) at (decoder's adLfLevels)
+            store (the av1 bits 6 from reader) at ((decoder's adLfLevels) + 1)
+            if (decoder's adPlanes) > 1:
+                if ((the item at 0 in (decoder's adLfLevels)) != 0) or ((the item at 1 in (decoder's adLfLevels)) != 0):
+                    store (the av1 bits 6 from reader) at ((decoder's adLfLevels) + 2)
+                    store (the av1 bits 6 from reader) at ((decoder's adLfLevels) + 3)
+            set decoder's adLfSharpness to the av1 bits 3 from reader
+            set decoder's adLfDeltaEnabled to the av1 flag from reader
+            if (decoder's adLfDeltaEnabled) = 1:
+                if (the av1 flag from reader) = 1:
+                    loop slot from 0 to 8:
+                        if (the av1 flag from reader) = 1:
+                            store (the av1 signed 7 from reader) at ((decoder's adLfRefDeltas) + slot)
+                    loop slot from 0 to 2:
+                        if (the av1 flag from reader) = 1:
+                            store (the av1 signed 7 from reader) at ((decoder's adLfModeDeltas) + slot)
+        # cdef_params()
+        set decoder's adCdefStrengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 32 as a word sized integer, 4 as a word sized integer)
+        set decoder's adCdefDamping to 3
+        set decoder's adCdefBits to 0
+        set cdefOn to (((decoder's adCodedLossless) = 0) and ((decoder's adAllowIntrabc) = 0)) and ((decoder's adCdefEnabled) = 1)
+        if cdefOn:
+            set decoder's adCdefDamping to (the av1 bits 2 from reader) + 3
+            set decoder's adCdefBits to the av1 bits 2 from reader
+            loop index from 0 to (1 << (decoder's adCdefBits)):
+                store (the av1 bits 4 from reader) at ((decoder's adCdefStrengths) + (index * 4))
+                set secondary to the av1 bits 2 from reader
+                if secondary = 3:
+                    set secondary to 4
+                store secondary at ((decoder's adCdefStrengths) + ((index * 4) + 1))
+                if (decoder's adPlanes) > 1:
+                    store (the av1 bits 4 from reader) at ((decoder's adCdefStrengths) + ((index * 4) + 2))
+                    set secondary to the av1 bits 2 from reader
+                    if secondary = 3:
+                        set secondary to 4
+                    store secondary at ((decoder's adCdefStrengths) + ((index * 4) + 3))
+        # lr_params(): types NONE 0, WIENER 1, SGRPROJ 2, SWITCHABLE 3
+        set decoder's adLrTypes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 3 as a word sized integer, 4 as a word sized integer)
+        set decoder's adLrSizes to @intrinsic("call", "libc", "calloc", a pointer to an integer, 3 as a word sized integer, 4 as a word sized integer)
+        set decoder's adUsesLr to 0
+        set lrOn to (((decoder's adAllLossless) = 0) and ((decoder's adAllowIntrabc) = 0)) and ((decoder's adRestoration) = 1)
+        if lrOn:
+            set usesChroma to 0
+            loop plane from 0 to (decoder's adPlanes):
+                set coded to the av1 bits 2 from reader
+                set kind to the av1 number coded in (the string form of "0 3 1 2")
+                store kind at ((decoder's adLrTypes) + plane)
+                if kind != 0:
+                    set decoder's adUsesLr to 1
+                    if plane > 0:
+                        set usesChroma to 1
+            if (decoder's adUsesLr) = 1:
+                set shift to the av1 flag from reader
+                if (decoder's adSb128) = 1:
+                    set shift to shift + 1
+                else if shift = 1:
+                    set shift to shift + (the av1 flag from reader)
+                set unit to 256 >> (2 - shift)
+                set uvShift to 0
+                if (((decoder's adSubX) = 1) and ((decoder's adSubY) = 1)) and (usesChroma = 1):
+                    set uvShift to the av1 flag from reader
+                store unit at (decoder's adLrSizes)
+                store (unit >> uvShift) at ((decoder's adLrSizes) + 1)
+                store (unit >> uvShift) at ((decoder's adLrSizes) + 2)
+        # read_tx_mode(): ONLY_4X4 0, LARGEST 1, SELECT 2
+        set decoder's adTxMode to 0
+        if (decoder's adCodedLossless) = 0:
+            if (the av1 flag from reader) = 1:
+                set decoder's adTxMode to 2
+            else:
+                set decoder's adTxMode to 1
+        set decoder's adReducedTxSet to the av1 flag from reader
+        # film_grain_params(): kept for the synthesis after decoding.
+        set decoder's adGrain to @intrinsic("call", "libc", "calloc", a pointer to an integer, 160 as a word sized integer, 4 as a word sized integer)
+        if ((decoder's adFilmGrain) = 1) and (((decoder's adShowFrame) = 1) or ((decoder's adShowable) = 1)):
+            read av1 film grain with reader into decoder
+        return true
+
+# film_grain_params() (5.9.30) into adGrain: 0 apply, 1 seed, 2 y points,
+# 3..30 y (value, scaling), 31 chroma from luma, 32 cb points, 33..52,
+# 53 cr points, 54..73, 74 scaling shift, 75 ar lag, 76..99 ar y, 100..124
+# ar cb, 125..149 ar cr, 150 ar shift, 151 grain scale shift, 152..157 cb/cr
+# mult, luma mult, offset, 158 overlap, 159 clip.
+function read av1 film grain with {a pointer to an av1 bit reader:reader} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set values to decoder's adGrain
+        store (the av1 flag from reader) at values
+        if (the item at 0 in values) = 0:
+            return nothing
+        store (the av1 bits 16 from reader) at (values + 1)
+        if (decoder's adFrameType) = 1:
+            ignore the av1 flag from reader
+        set yPoints to the av1 bits 4 from reader
+        store yPoints at (values + 2)
+        loop point from 0 to yPoints:
+            store (the av1 bits 8 from reader) at (values + (3 + (point * 2)))
+            store (the av1 bits 8 from reader) at (values + (4 + (point * 2)))
+        set chromaFromLuma to 0
+        if (decoder's adMono) = 0:
+            set chromaFromLuma to the av1 flag from reader
+        store chromaFromLuma at (values + 31)
+        set cbPoints to 0
+        set crPoints to 0
+        if (((decoder's adMono) = 1) or ((chromaFromLuma = 1) or ((((decoder's adSubX) = 1) and ((decoder's adSubY) = 1)) and (yPoints = 0)))) = false:
+            set cbPoints to the av1 bits 4 from reader
+            loop point from 0 to cbPoints:
+                store (the av1 bits 8 from reader) at (values + (33 + (point * 2)))
+                store (the av1 bits 8 from reader) at (values + (34 + (point * 2)))
+            set crPoints to the av1 bits 4 from reader
+            loop point from 0 to crPoints:
+                store (the av1 bits 8 from reader) at (values + (54 + (point * 2)))
+                store (the av1 bits 8 from reader) at (values + (55 + (point * 2)))
+        store cbPoints at (values + 32)
+        store crPoints at (values + 53)
+        store ((the av1 bits 2 from reader) + 8) at (values + 74)
+        set lag to the av1 bits 2 from reader
+        store lag at (values + 75)
+        set count to (2 * lag) * (lag + 1)
+        if yPoints > 0:
+            loop index from 0 to count:
+                store ((the av1 bits 8 from reader) - 128) at (values + (76 + index))
+        set chromaCount to count
+        if yPoints > 0:
+            set chromaCount to count + 1
+        if (chromaFromLuma = 1) or (cbPoints > 0):
+            loop index from 0 to chromaCount:
+                store ((the av1 bits 8 from reader) - 128) at (values + (100 + index))
+        if (chromaFromLuma = 1) or (crPoints > 0):
+            loop index from 0 to chromaCount:
+                store ((the av1 bits 8 from reader) - 128) at (values + (125 + index))
+        store ((the av1 bits 2 from reader) + 6) at (values + 150)
+        store (the av1 bits 2 from reader) at (values + 151)
+        if cbPoints > 0:
+            store (the av1 bits 8 from reader) at (values + 152)
+            store (the av1 bits 8 from reader) at (values + 153)
+            store (the av1 bits 9 from reader) at (values + 154)
+        if crPoints > 0:
+            store (the av1 bits 8 from reader) at (values + 155)
+            store (the av1 bits 8 from reader) at (values + 156)
+            store (the av1 bits 9 from reader) at (values + 157)
+        store (the av1 flag from reader) at (values + 158)
+        store (the av1 flag from reader) at (values + 159)
+
+# --- The symbol decoder (8.2) ---
+
+function the av1 symbol bits {integer:count} of {a pointer to an av1 decoder:decoder}:
+    execute:
+        set value to 0
+        set position to decoder's adSymbolPosition
+        set data to decoder's adTile
+        loop step from 0 to count:
+            set bit to ((((the item at (position >> 3) in data) as an integer) & 255) >> (7 - (position & 7))) & 1
+            set value to (value << 1) | bit
+            set position to position + 1
+        set decoder's adSymbolPosition to position
+        return value
+
+function start av1 symbols of {integer:size} bytes at {pointer:origin} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set decoder's adTile to origin as a pointer to a byte
+        set decoder's adSymbolPosition to 0
+        set count to the minimum of (size * 8) and 15
+        set buffer to the av1 symbol bits count of decoder
+        set decoder's adSymbolValue to 32767 ^ (buffer << (15 - count))
+        set decoder's adSymbolRange to 32768
+        set decoder's adSymbolMaxBits to (8 * size) - 15
+
+# Reads a symbol with the CDF of n symbols (n + 1 values: the cumulative
+# ones rising to 32768, then the adaptation counter) and adapts it when
+# asked (8.2.6, 8.2.7).
+function the av1 decoded symbol of {integer:count} with {a pointer to an integer:cdf} adapting {boolean:adapts} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set range to decoder's adSymbolRange
+        set value to decoder's adSymbolValue
+        set current to range
+        set chosen to -1
+        set previous to range
+        set going to true
+        loop while going:
+            set chosen to chosen + 1
+            set previous to current
+            set chance to 32768 - (the item at chosen in cdf)
+            set current to (((range >> 8) * (chance >> 6)) >> 1) + (4 * ((count - chosen) - 1))
+            set going to value < current
+        set range to previous - current
+        set value to value - current
+        set bits to 15 - (av1 log of range)
+        set range to range << bits
+        set available to the maximum of 0 and (decoder's adSymbolMaxBits)
+        set wanted to the minimum of bits and available
+        set fresh to the av1 symbol bits wanted of decoder
+        set value to (fresh << (bits - wanted)) ^ (((value + 1) << bits) - 1)
+        set decoder's adSymbolMaxBits to (decoder's adSymbolMaxBits) - bits
+        set decoder's adSymbolRange to range
+        set decoder's adSymbolValue to value
+        if adapts:
+            set counter to the item at count in cdf
+            set rate to 3 + (the minimum of (av1 log of count) and 2)
+            if counter > 15:
+                set rate to rate + 1
+            if counter > 31:
+                set rate to rate + 1
+            set target to 0
+            loop index from 0 to (count - 1):
+                if index = chosen:
+                    set target to 32768
+                set probability to the item at index in cdf
+                if target < probability:
+                    store (probability - ((probability - target) >> rate)) at (cdf + index)
+                else:
+                    store (probability + ((target - probability) >> rate)) at (cdf + index)
+            if counter < 32:
+                store (counter + 1) at (cdf + count)
+        return chosen
+
+# A symbol with the working set's CDF at offset.
+function the av1 symbol of {integer:count} at {integer:offset} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        return the av1 decoded symbol of count with ((decoder's adCdf) + offset) adapting ((decoder's adDisableUpdate) = 0) in decoder
+
+# A symbol from a CDF made for the occasion, not kept.
+function the av1 symbol of {integer:count} from {a pointer to an integer:cdf} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        return the av1 decoded symbol of count with cdf adapting false in decoder
+
+function the av1 bool of {a pointer to an av1 decoder:decoder}:
+    execute:
+        set cdf to decoder's adBoolCdf
+        store 16384 at cdf
+        store 32768 at (cdf + 1)
+        return the av1 decoded symbol of 2 with cdf adapting false in decoder
+
+function the av1 literal of {integer:count} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set value to 0
+        loop step from 0 to count:
+            set value to (value << 1) | (the av1 bool of decoder)
+        return value

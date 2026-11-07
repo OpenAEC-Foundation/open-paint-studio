@@ -1,0 +1,717 @@
+# AVIF (AV1 Image File Format): the HEIF container (ISO/IEC 23008-12 on
+# ISOBMFF) around an AV1 still picture, read by the editor itself. The
+# primary item's AV1 data goes through the decoder in av1*.dl; an alpha
+# auxiliary item gives the alpha plane; the colour properties choose the
+# YUV to RGB matrix; rotation and mirroring are applied.
+import dynlex/paint/av1_block.dl
+
+# --- Decoding one AV1 still picture ---
+
+function the av1 scan table named {string:label} kind {integer:kind}:
+    execute:
+        if kind = 1:
+            if label = (the string form of "4x4"):
+                return the av1 mrow scan 4x4 table
+            if label = (the string form of "8x8"):
+                return the av1 mrow scan 8x8 table
+            if label = (the string form of "16x16"):
+                return the av1 mrow scan 16x16 table
+            if label = (the string form of "32x32"):
+                return the av1 mrow scan 32x32 table
+            if label = (the string form of "4x8"):
+                return the av1 mrow scan 4x8 table
+            if label = (the string form of "8x4"):
+                return the av1 mrow scan 8x4 table
+            if label = (the string form of "8x16"):
+                return the av1 mrow scan 8x16 table
+            if label = (the string form of "16x8"):
+                return the av1 mrow scan 16x8 table
+            if label = (the string form of "16x32"):
+                return the av1 mrow scan 16x32 table
+            if label = (the string form of "32x16"):
+                return the av1 mrow scan 32x16 table
+            if label = (the string form of "4x16"):
+                return the av1 mrow scan 4x16 table
+            if label = (the string form of "16x4"):
+                return the av1 mrow scan 16x4 table
+            if label = (the string form of "8x32"):
+                return the av1 mrow scan 8x32 table
+            return the av1 mrow scan 32x8 table
+        if kind = 2:
+            if label = (the string form of "4x4"):
+                return the av1 mcol scan 4x4 table
+            if label = (the string form of "8x8"):
+                return the av1 mcol scan 8x8 table
+            if label = (the string form of "16x16"):
+                return the av1 mcol scan 16x16 table
+            if label = (the string form of "32x32"):
+                return the av1 mcol scan 32x32 table
+            if label = (the string form of "4x8"):
+                return the av1 mcol scan 4x8 table
+            if label = (the string form of "8x4"):
+                return the av1 mcol scan 8x4 table
+            if label = (the string form of "8x16"):
+                return the av1 mcol scan 8x16 table
+            if label = (the string form of "16x8"):
+                return the av1 mcol scan 16x8 table
+            if label = (the string form of "16x32"):
+                return the av1 mcol scan 16x32 table
+            if label = (the string form of "32x16"):
+                return the av1 mcol scan 32x16 table
+            if label = (the string form of "4x16"):
+                return the av1 mcol scan 4x16 table
+            if label = (the string form of "16x4"):
+                return the av1 mcol scan 16x4 table
+            if label = (the string form of "8x32"):
+                return the av1 mcol scan 8x32 table
+            return the av1 mcol scan 32x8 table
+        if label = (the string form of "4x4"):
+            return the av1 default scan 4x4 table
+        if label = (the string form of "8x8"):
+            return the av1 default scan 8x8 table
+        if label = (the string form of "16x16"):
+            return the av1 default scan 16x16 table
+        if label = (the string form of "32x32"):
+            return the av1 default scan 32x32 table
+        if label = (the string form of "4x8"):
+            return the av1 default scan 4x8 table
+        if label = (the string form of "8x4"):
+            return the av1 default scan 8x4 table
+        if label = (the string form of "8x16"):
+            return the av1 default scan 8x16 table
+        if label = (the string form of "16x8"):
+            return the av1 default scan 16x8 table
+        if label = (the string form of "16x32"):
+            return the av1 default scan 16x32 table
+        if label = (the string form of "32x16"):
+            return the av1 default scan 32x16 table
+        if label = (the string form of "4x16"):
+            return the av1 default scan 4x16 table
+        if label = (the string form of "16x4"):
+            return the av1 default scan 16x4 table
+        if label = (the string form of "8x32"):
+            return the av1 default scan 8x32 table
+        return the av1 default scan 32x8 table
+
+# The tables a frame needs, in the decoder.
+function set up av1 tables for {a pointer to an av1 decoder:decoder}:
+    execute:
+        set decoder's adScans to @intrinsic("call", "libc", "calloc", a pointer to an integer, 65536 as a word sized integer, 4 as a word sized integer)
+        set decoder's adScanOffsets to @intrinsic("call", "libc", "calloc", a pointer to an integer, 64 as a word sized integer, 4 as a word sized integer)
+        set labels to the string form of "4x4 8x8 16x16 32x32 32x32 4x8 8x4 8x16 16x8 16x32 32x16 32x32 32x32 4x16 16x4 8x32 32x8 16x32 32x16"
+        set filled to 0
+        set start to 0
+        loop size from 0 to 19:
+            # The size's label: the size-th word of the list.
+            set word to the string form of ""
+            set index to 0
+            set cursor to 0
+            loop while cursor < labels' length:
+                set stop to cursor
+                loop while (stop < labels' length) and (((the character at stop in labels) as an integer) != 32):
+                    set stop to stop + 1
+                if index = size:
+                    set word to the substring of labels from cursor spanning (stop - cursor) bytes
+                set index to index + 1
+                set cursor to stop + 1
+            loop kind from 0 to 3:
+                store filled at ((decoder's adScanOffsets) + ((size * 3) + kind))
+                set count to fill av1 numbers ((decoder's adScans) + filled) from (the av1 scan table named word kind kind)
+                set filled to filled + count
+        set depthIndex to ((decoder's adBitDepth) - 8) >> 1
+        if depthIndex = 0:
+            set decoder's adDcSteps to a new av1 table from (the av1 dc q 8 table)
+            set decoder's adAcSteps to a new av1 table from (the av1 ac q 8 table)
+        else if depthIndex = 1:
+            set decoder's adDcSteps to a new av1 table from (the av1 dc q 10 table)
+            set decoder's adAcSteps to a new av1 table from (the av1 ac q 10 table)
+        else:
+            set decoder's adDcSteps to a new av1 table from (the av1 dc q 12 table)
+            set decoder's adAcSteps to a new av1 table from (the av1 ac q 12 table)
+        set decoder's adSmoothWeights to a new av1 table from (the av1 smooth weights table)
+        set decoder's adDerivatives to a new av1 table from (the av1 intra derivative table)
+        set decoder's adSignificance to a new av1 table from (the av1 significance offsets table)
+
+function calloc av1 integers {integer:count}:
+    execute:
+        return @intrinsic("call", "libc", "calloc", a pointer to an integer, (count + 64) as a word sized integer, 4 as a word sized integer)
+
+# The per-frame stores, once the frame header is known.
+function allocate av1 frame for {a pointer to an av1 decoder:decoder}:
+    execute:
+        set rows to decoder's adMiRows
+        set columns to decoder's adMiCols
+        set decoder's adMi to calloc av1 integers ((rows * columns) * 16)
+        set decoder's adTxTypes to calloc av1 integers (rows * columns)
+        set decoder's adLfTxSizes to calloc av1 integers ((rows * columns) * 3)
+        set decoder's adCdefColumns to ((columns + 15) >> 4) + 2
+        set decoder's adCdefIndex to calloc av1 integers ((((rows + 15) >> 4) + 2) * (decoder's adCdefColumns))
+        set decoder's adAboveSize to columns + 64
+        set decoder's adLeftSize to rows + 64
+        set decoder's adAboveLevel to calloc av1 integers (3 * (decoder's adAboveSize))
+        set decoder's adAboveDc to calloc av1 integers (3 * (decoder's adAboveSize))
+        set decoder's adLeftLevel to calloc av1 integers (3 * (decoder's adLeftSize))
+        set decoder's adLeftDc to calloc av1 integers (3 * (decoder's adLeftSize))
+        set decoder's adBlockDecoded to calloc av1 integers (3 * 1156)
+        set decoder's adStrideY to (columns * 4) + 80
+        set decoder's adRowsY to (rows * 4) + 80
+        set decoder's adStrideC to ((columns * 4) >> (decoder's adSubX)) + 80
+        set decoder's adRowsC to ((rows * 4) >> (decoder's adSubY)) + 80
+        set decoder's adPlaneY to calloc av1 integers ((decoder's adStrideY) * (decoder's adRowsY))
+        set decoder's adPlaneU to calloc av1 integers ((decoder's adStrideC) * (decoder's adRowsC))
+        set decoder's adPlaneV to calloc av1 integers ((decoder's adStrideC) * (decoder's adRowsC))
+        set decoder's adBlock to calloc av1 integers 64
+        set decoder's adDeltaLf to calloc av1 integers 4
+        set decoder's adQuant to calloc av1 integers 1024
+        set decoder's adDequant to calloc av1 integers 1024
+        set decoder's adScratch to calloc av1 integers 9000
+        set decoder's adPalette to calloc av1 integers 72
+        set decoder's adColorMap to calloc av1 integers 8192
+        set decoder's adLrUnits to calloc av1 integers (3 * 65536)
+        set decoder's adLrUnitCols to calloc av1 integers 3
+        set decoder's adLrUnitRows to calloc av1 integers 3
+        set decoder's adLrRefs to calloc av1 integers 24
+        set decoder's adBoolCdf to calloc av1 integers 4
+        set decoder's adPaletteAbove to calloc av1 integers (columns * 16)
+        set decoder's adPaletteLeft to calloc av1 integers (rows * 16)
+        set up av1 tables for decoder
+        load av1 cdfs into decoder
+
+# Decodes a tile group OBU's payload from data[start, start + size).
+function decode av1 tile group at {integer:start} spanning {integer:size} in {pointer:data} with {a pointer to an av1 decoder:decoder}:
+    execute:
+        set state to @intrinsic("construct", an av1 bit reader, data as a pointer to a byte, start + size, start * 8)
+        set reader to the address of state
+        set tiles to (decoder's adTileCols) * (decoder's adTileRows)
+        set first to 0
+        set last to tiles - 1
+        if tiles > 1:
+            if (the av1 flag from reader) = 1:
+                set bits to (decoder's adTileColsLog2) + (decoder's adTileRowsLog2)
+                set first to the av1 bits bits from reader
+                set last to the av1 bits bits from reader
+        set cursor to ((state's arPosition) + 7) >> 3
+        set finish to start + size
+        loop number from first to (last + 1):
+            if (decoder's adFailed) = 0:
+                set tileSize to finish - cursor
+                if number != last:
+                    set tileSize to 0
+                    loop octet from 0 to (decoder's adTileSizeBytes):
+                        set tileSize to tileSize | ((the byte (cursor + octet) in data) << (8 * octet))
+                    set tileSize to tileSize + 1
+                    set cursor to cursor + (decoder's adTileSizeBytes)
+                if (tileSize <= 0) or ((cursor + tileSize) > finish):
+                    av1 failure of decoder as 1
+                else:
+                    set tileRow to number / (decoder's adTileCols)
+                    set tileColumn to the remainder of number divided by (decoder's adTileCols)
+                    set decoder's adCurrentQ to decoder's adBaseQ
+                    start av1 symbols of tileSize bytes at (((data as a pointer to a byte) + cursor) as pointer) in decoder
+                    decode av1 tile from (the item at tileRow in (decoder's adRowStarts)) (the item at (tileRow + 1) in (decoder's adRowStarts)) (the item at tileColumn in (decoder's adColStarts)) (the item at (tileColumn + 1) in (decoder's adColStarts)) in decoder
+                    set cursor to cursor + tileSize
+                    set decoder's adTilesDone to (decoder's adTilesDone) + 1
+
+# Decodes the OBUs of one AV1 image item (a temporal unit holding a
+# sequence header and one frame). The configuration OBUs of av1C come first.
+function decode av1 still from {pointer:data} spanning {integer:count} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set cursor to 0
+        set haveFrame to false
+        loop while (cursor < count) and ((decoder's adFailed) = 0):
+            set header to the byte cursor in data
+            set kind to (header >> 3) & 15
+            set extension to (header >> 2) & 1
+            set sized to (header >> 1) & 1
+            set state to @intrinsic("construct", an av1 bit reader, data as a pointer to a byte, count, (((cursor + 1) + extension) * 8))
+            set reader to the address of state
+            set payload to count - ((cursor + 1) + extension)
+            if sized = 1:
+                set payload to the av1 leb128 from reader
+            set start to (state's arPosition) >> 3
+            if (start + payload) > count:
+                av1 failure of decoder as 1
+                return nothing
+            if kind = 1:
+                set inner to @intrinsic("construct", an av1 bit reader, data as a pointer to a byte, start + payload, start * 8)
+                read av1 sequence header with (the address of inner) into decoder
+            else if ((kind = 3) or (kind = 6)) and (haveFrame = false):
+                if (decoder's adHaveSequence) = 0:
+                    av1 failure of decoder as 1
+                    return nothing
+                set inner to @intrinsic("construct", an av1 bit reader, data as a pointer to a byte, start + payload, start * 8)
+                if read av1 frame header with (the address of inner) into decoder:
+                    set haveFrame to true
+                    allocate av1 frame for decoder
+                    if @intrinsic("call", "libc", "getenv", a pointer, "PAINT_AV1_TRACE") != 0 as a pointer:
+                        print ((((the string form of "frame ") + (the string form of (decoder's adWidth))) + (the string form of "x")) + (the string form of (decoder's adHeight))) as a line
+                        print ((((the string form of "profile ") + (the string form of (decoder's adProfile))) + (the string form of " depth ")) + (the string form of (decoder's adBitDepth))) as a line
+                        print ((((the string form of "reduced ") + (the string form of (decoder's adReduced))) + (the string form of " sb128 ")) + (the string form of (decoder's adSb128))) as a line
+                        print ((((the string form of "filterintra ") + (the string form of (decoder's adFilterIntra))) + (the string form of " edge ")) + (the string form of (decoder's adEdgeFilter))) as a line
+                        print ((((the string form of "baseq ") + (the string form of (decoder's adBaseQ))) + (the string form of " lossless ")) + (the string form of (decoder's adCodedLossless))) as a line
+                        print ((((the string form of "txmode ") + (the string form of (decoder's adTxMode))) + (the string form of " tiles ")) + (the string form of ((decoder's adTileCols) * (decoder's adTileRows)))) as a line
+                        print ((((the string form of "screen ") + (the string form of (decoder's adAllowScreen))) + (the string form of " seg ")) + (the string form of (decoder's adSegEnabled))) as a line
+                        print ((((the string form of "cdef ") + (the string form of (decoder's adCdefEnabled))) + (the string form of " lr ")) + (the string form of (decoder's adUsesLr))) as a line
+                        print ((((the string form of "subx ") + (the string form of (decoder's adSubX))) + (the string form of " planes ")) + (the string form of (decoder's adPlanes))) as a line
+                        print ((((the string form of "disable update ") + (the string form of (decoder's adDisableUpdate))) + (the string form of " deltaq ")) + (the string form of (decoder's adDeltaQPresent))) as a line
+                    if (decoder's adUsingQm) = 1:
+                        av1 failure of decoder as 5
+                    if kind = 6:
+                        set headerBytes to (((inner's arPosition) + 7) >> 3) - start
+                        decode av1 tile group at (start + headerBytes) spanning (payload - headerBytes) in data with decoder
+                else:
+                    return nothing
+            else if (kind = 4) and haveFrame:
+                decode av1 tile group at start spanning payload in data with decoder
+            set cursor to start + payload
+        if haveFrame = false:
+            av1 failure of decoder as 1
+
+# --- The container ---
+
+# An item: its id, type, where its data lies (extents), and its properties.
+class:
+    patterns:
+        [an|] avif item
+    members:
+        aiId as an integer
+        aiType as an integer
+        aiExtents as a pointer to an integer
+        aiExtentCount as an integer
+        aiMethod as an integer
+        aiProperties as a pointer to an integer
+        aiPropertyCount as an integer
+
+function the avif four of {string:code}:
+    execute:
+        set value to 0
+        loop index from 0 to 4:
+            set value to (value << 8) | (((the character at index in code) as an integer) & 255)
+        return value
+
+function the avif field of {integer:size} bytes at {integer:at} in {pointer:data}:
+    execute:
+        set value to 0
+        loop index from 0 to size:
+            set value to (value << 8) | (the byte (at + index) in data)
+        return value
+
+# The parsed file: up to 64 items (16 ints each: id, type, method, extent
+# count, extents start/length pairs at 4.., property indices at 12..),
+# the property boxes (start, length, type per index), the references.
+class:
+    patterns:
+        [an|] avif file
+    members:
+        afItems as a pointer to an integer
+        afItemCount as an integer
+        afExtents as a pointer to an integer
+        afExtentCount as an integer
+        afProperties as a pointer to an integer
+        afPropertyCount as an integer
+        afAssociations as a pointer to an integer
+        afAssociationCount as an integer
+        afReferences as a pointer to an integer
+        afReferenceCount as an integer
+        afPrimary as an integer
+        afIdat as an integer
+        afIdatSize as an integer
+
+function the avif slot of item {integer:id} in {a pointer to an avif file:file}:
+    execute:
+        loop index from 0 to (file's afItemCount):
+            if (the item at (index * 4) in (file's afItems)) = id:
+                return index
+        if (file's afItemCount) >= 64:
+            return -1
+        set index to file's afItemCount
+        store id at ((file's afItems) + (index * 4))
+        store -1 at ((file's afItems) + ((index * 4) + 2))
+        set file's afItemCount to index + 1
+        return index
+
+# Reads the boxes in data[start, finish) into the file record.
+function read avif boxes from {integer:start} until {integer:finish} in {pointer:data} into {a pointer to an avif file:file}:
+    execute:
+        set at to start
+        loop while (at + 8) <= finish:
+            set size to the big-endian word at in data
+            set kind to the big-endian word (at + 4) in data
+            set body to at + 8
+            if size = 1:
+                set size to the big-endian word (at + 12) in data
+                set body to at + 16
+            if size = 0:
+                set size to finish - at
+            if (size < 8) or ((at + size) > finish):
+                return nothing
+            set stop to at + size
+            if kind = (the avif four of (the string form of "meta")):
+                read avif boxes from (body + 4) until stop in data into file
+            else if kind = (the avif four of (the string form of "iprp")):
+                read avif boxes from body until stop in data into file
+            else if kind = (the avif four of (the string form of "pitm")):
+                if (the byte body in data) = 0:
+                    set file's afPrimary to the big-endian half (body + 4) in data
+                else:
+                    set file's afPrimary to the big-endian word (body + 4) in data
+            else if kind = (the avif four of (the string form of "idat")):
+                set file's afIdat to body
+                set file's afIdatSize to stop - body
+            else if kind = (the avif four of (the string form of "iinf")):
+                set version to the byte body in data
+                set entries to body + 6
+                if version > 0:
+                    set entries to body + 8
+                read avif boxes from entries until stop in data into file
+            else if kind = (the avif four of (the string form of "infe")):
+                set version to the byte body in data
+                if version >= 2:
+                    set id to the big-endian half (body + 4) in data
+                    set typeAt to body + 8
+                    if version >= 3:
+                        set id to the big-endian word (body + 4) in data
+                        set typeAt to body + 10
+                    set slot to the avif slot of item id in file
+                    if slot >= 0:
+                        store (the big-endian word typeAt in data) at ((file's afItems) + ((slot * 4) + 1))
+            else if kind = (the avif four of (the string form of "iloc")):
+                read avif locations from body until stop in data into file
+            else if kind = (the avif four of (the string form of "ipco")):
+                set inner to body
+                loop while (inner + 8) <= stop:
+                    set propertySize to the big-endian word inner in data
+                    if (propertySize < 8) or ((inner + propertySize) > stop):
+                        set inner to stop
+                    else:
+                        set slot to file's afPropertyCount
+                        if slot < 256:
+                            store inner at ((file's afProperties) + (slot * 3))
+                            store propertySize at ((file's afProperties) + ((slot * 3) + 1))
+                            store (the big-endian word (inner + 4) in data) at ((file's afProperties) + ((slot * 3) + 2))
+                            set file's afPropertyCount to slot + 1
+                        set inner to inner + propertySize
+            else if kind = (the avif four of (the string form of "ipma")):
+                set version to the byte body in data
+                set flags to the byte (body + 3) in data
+                set entries to the big-endian word (body + 4) in data
+                set cursor to body + 8
+                loop entry from 0 to entries:
+                    if cursor < stop:
+                        set id to the big-endian half cursor in data
+                        set cursor to cursor + 2
+                        if version >= 1:
+                            set id to the big-endian word (cursor - 2) in data
+                            set cursor to cursor + 2
+                        set count to the byte cursor in data
+                        set cursor to cursor + 1
+                        loop association from 0 to count:
+                            set index to the byte cursor in data
+                            set cursor to cursor + 1
+                            if (flags & 1) = 1:
+                                set index to the big-endian half (cursor - 1) in data
+                                set cursor to cursor + 1
+                                set index to index & 32767
+                            else:
+                                set index to index & 127
+                            set slot to file's afAssociationCount
+                            if slot < 1024:
+                                store id at ((file's afAssociations) + (slot * 2))
+                                store index at ((file's afAssociations) + ((slot * 2) + 1))
+                                set file's afAssociationCount to slot + 1
+            else if kind = (the avif four of (the string form of "iref")):
+                set version to the byte body in data
+                set inner to body + 4
+                loop while (inner + 8) <= stop:
+                    set referenceSize to the big-endian word inner in data
+                    if (referenceSize < 8) or ((inner + referenceSize) > stop):
+                        set inner to stop
+                    else:
+                        set referenceType to the big-endian word (inner + 4) in data
+                        set field to 2
+                        if version > 0:
+                            set field to 4
+                        set fromId to the avif field of field bytes at (inner + 8) in data
+                        set references to the big-endian half ((inner + 8) + field) in data
+                        loop reference from 0 to references:
+                            set toId to the avif field of field bytes at (((inner + 10) + field) + (reference * field)) in data
+                            set slot to file's afReferenceCount
+                            if slot < 1024:
+                                store referenceType at ((file's afReferences) + (slot * 4))
+                                store fromId at ((file's afReferences) + ((slot * 4) + 1))
+                                store toId at ((file's afReferences) + ((slot * 4) + 2))
+                                store reference at ((file's afReferences) + ((slot * 4) + 3))
+                                set file's afReferenceCount to slot + 1
+                        set inner to inner + referenceSize
+            set at to stop
+
+function read avif locations from {integer:body} until {integer:stop} in {pointer:data} into {a pointer to an avif file:file}:
+    execute:
+        set version to the byte body in data
+        set sizes to the big-endian half (body + 4) in data
+        set offsetSize to (sizes >> 12) & 15
+        set lengthSize to (sizes >> 8) & 15
+        set baseSize to (sizes >> 4) & 15
+        set indexSize to 0
+        if version >= 1:
+            set indexSize to sizes & 15
+        set cursor to body + 6
+        set count to the big-endian half cursor in data
+        set cursor to cursor + 2
+        if version = 2:
+            set count to the big-endian word (cursor - 2) in data
+            set cursor to cursor + 2
+        loop entry from 0 to count:
+            if cursor < stop:
+                set id to the big-endian half cursor in data
+                set cursor to cursor + 2
+                if version = 2:
+                    set id to the big-endian word (cursor - 2) in data
+                    set cursor to cursor + 2
+                set method to 0
+                if version >= 1:
+                    set method to (the big-endian half cursor in data) & 15
+                    set cursor to cursor + 2
+                set cursor to cursor + 2
+                set base to the avif field of baseSize bytes at cursor in data
+                set cursor to cursor + baseSize
+                set extents to the big-endian half cursor in data
+                set cursor to cursor + 2
+                set slot to the avif slot of item id in file
+                if slot >= 0:
+                    store method at ((file's afItems) + ((slot * 4) + 3))
+                    store (file's afExtentCount) at ((file's afItems) + ((slot * 4) + 2))
+                loop extent from 0 to extents:
+                    set cursor to cursor + indexSize
+                    set offset to the avif field of offsetSize bytes at cursor in data
+                    set cursor to cursor + offsetSize
+                    set length to the avif field of lengthSize bytes at cursor in data
+                    set cursor to cursor + lengthSize
+                    set extentSlot to file's afExtentCount
+                    if extentSlot < 4096:
+                        store id at ((file's afExtents) + (extentSlot * 3))
+                        store (base + offset) at ((file's afExtents) + ((extentSlot * 3) + 1))
+                        store length at ((file's afExtents) + ((extentSlot * 3) + 2))
+                        set file's afExtentCount to extentSlot + 1
+
+# The item's data, its extents joined; count into total.
+function the avif data of item {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file} counting {a pointer to an integer:total}:
+    execute:
+        set slot to the avif slot of item id in file
+        set method to 0
+        if slot >= 0:
+            set method to the item at ((slot * 4) + 3) in (file's afItems)
+        set size to 0
+        loop extent from 0 to (file's afExtentCount):
+            if (the item at (extent * 3) in (file's afExtents)) = id:
+                set size to size + (the item at ((extent * 3) + 2) in (file's afExtents))
+        set joined to @intrinsic("call", "libc", "malloc", a pointer to a byte, (size + 16) as a word sized integer)
+        set filled to 0
+        loop extent from 0 to (file's afExtentCount):
+            if (the item at (extent * 3) in (file's afExtents)) = id:
+                set offset to the item at ((extent * 3) + 1) in (file's afExtents)
+                set length to the item at ((extent * 3) + 2) in (file's afExtents)
+                if method = 1:
+                    set offset to offset + (file's afIdat)
+                if ((offset >= 0) and (length >= 0)) and ((offset + length) <= count):
+                    ignore @intrinsic("call", "libc", "memcpy", a pointer, joined + filled, (data as a pointer to a byte) + offset, length as a word sized integer)
+                    set filled to filled + length
+        store filled at total
+        return joined
+
+# The property of the item with the given type: its box's start, or -1.
+function the avif property {string:code} of item {integer:id} in {a pointer to an avif file:file}:
+    execute:
+        set wanted to the avif four of code
+        loop association from 0 to (file's afAssociationCount):
+            if (the item at (association * 2) in (file's afAssociations)) = id:
+                set index to (the item at ((association * 2) + 1) in (file's afAssociations)) - 1
+                if (index >= 0) and (index < (file's afPropertyCount)):
+                    if (the item at ((index * 3) + 2) in (file's afProperties)) = wanted:
+                        return the item at (index * 3) in (file's afProperties)
+        return -1
+
+# The item whose auxC names the alpha channel of the primary item, or -1.
+function the avif alpha item of {a pointer to an avif file:file} in {pointer:data}:
+    execute:
+        loop reference from 0 to (file's afReferenceCount):
+            set record to (file's afReferences) + (reference * 4)
+            if ((the item at 0 in record) = (the avif four of (the string form of "auxl"))) and ((the item at 2 in record) = (file's afPrimary)):
+                set candidate to the item at 1 in record
+                set box to the avif property (the string form of "auxC") of item candidate in file
+                if box >= 0:
+                    if the bytes (box + 12) in data spell "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha":
+                        return candidate
+                    if the bytes (box + 12) in data spell "urn:mpeg:hevc:2015:auxid:1":
+                        return candidate
+        return -1
+
+# Decodes an AV1 item; the decoder holds its planes afterwards.
+function decode avif item {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file} into {a pointer to an av1 decoder:decoder}:
+    execute:
+        set total to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set bytes to the avif data of item id from data spanning count in file counting total
+        set size to the item at 0 in total
+        # The configuration OBUs of av1C (after its four bytes) go first.
+        set box to the avif property (the string form of "av1C") of item id in file
+        set configured to 0
+        if box >= 0:
+            set boxSize to the big-endian word box in data
+            set configured to (boxSize - 12)
+            if configured < 0:
+                set configured to 0
+        set joined to @intrinsic("call", "libc", "malloc", a pointer to a byte, ((configured + size) + 16) as a word sized integer)
+        if configured > 0:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, joined, (data as a pointer to a byte) + (box + 12), configured as a word sized integer)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, joined + configured, bytes, size as a word sized integer)
+        decode av1 still from (joined as pointer) spanning (configured + size) into decoder
+        @intrinsic("call", "libc", "free", nothing, bytes)
+        @intrinsic("call", "libc", "free", nothing, joined)
+        @intrinsic("call", "libc", "free", nothing, total)
+
+function a new av1 decoder:
+    execute:
+        set memory to @intrinsic("call", "libc", "calloc", a pointer to a byte, ((the size of (an av1 decoder)) as an integer) as a word sized integer, 1 as a word sized integer)
+        return memory as a pointer to an av1 decoder
+
+# --- YUV to RGB ---
+
+# Kr and Kb of the matrix coefficients (ITU-T H.273); BT.601 when not said.
+function the avif red weight of {integer:matrix}:
+    execute:
+        if matrix = 1:
+            return 0.2126
+        if (matrix = 9) or (matrix = 10):
+            return 0.2627
+        if matrix = 4:
+            return 0.30
+        if matrix = 7:
+            return 0.212
+        return 0.299
+
+function the avif blue weight of {integer:matrix}:
+    execute:
+        if matrix = 1:
+            return 0.0722
+        if (matrix = 9) or (matrix = 10):
+            return 0.0593
+        if matrix = 4:
+            return 0.11
+        if matrix = 7:
+            return 0.087
+        return 0.114
+
+function the avif sample at {integer:x} {integer:y} of plane {integer:plane} in {a pointer to an av1 decoder:decoder}:
+    execute:
+        set samples to the av1 plane plane of decoder
+        set stride to the av1 stride of plane in decoder
+        if plane = 0:
+            return the item at ((y * stride) + x) in samples
+        return the item at (((y >> (decoder's adSubY)) * stride) + (x >> (decoder's adSubX))) in samples
+
+function the paint avif from {pointer:data} spanning {integer:count}:
+    execute:
+        if count < 16:
+            return no decoded image because "the AVIF file is damaged"
+        set file to @intrinsic("construct", an avif file, calloc av1 integers 256, 0, calloc av1 integers 12288, 0, calloc av1 integers 768, 0, calloc av1 integers 2048, 0, calloc av1 integers 4096, 0, 0, 0, 0)
+        read avif boxes from 0 until count in data into (the address of file)
+        set primary to file's afPrimary
+        set slot to the avif slot of item primary in (the address of file)
+        if (slot < 0) or ((the item at ((slot * 4) + 1) in (file's afItems)) != (the avif four of (the string form of "av01"))):
+            if (slot >= 0) and ((the item at ((slot * 4) + 1) in (file's afItems)) = (the avif four of (the string form of "grid"))):
+                return no decoded image because "a tiled (grid) AVIF, which the editor does not read yet"
+            return no decoded image because "the AVIF file holds no AV1 image"
+        set decoder to a new av1 decoder
+        decode avif item primary from data spanning count in (the address of file) into decoder
+        if (decoder's adFailed) != 0:
+            set reason to decoder's adFailed
+            if reason = 4:
+                return no decoded image because "an AVIF with intra block copy, which the editor does not read yet"
+            if reason = 5:
+                return no decoded image because "an AVIF with quantiser matrices, which the editor does not read yet"
+            return no decoded image because "the AVIF image data is damaged"
+        set width to decoder's adUpscaledWidth
+        set height to decoder's adHeight
+        set box to the avif property (the string form of "ispe") of item primary in (the address of file)
+        if box >= 0:
+            set width to the minimum of width and (the big-endian word (box + 12) in data)
+            set height to the minimum of height and (the big-endian word (box + 16) in data)
+        if (a paint canvas width by height fits) = false:
+            return no decoded image because "the AVIF image is larger than the editor can use"
+        # The planes as dav1d writes them, for comparing (debugging only).
+        set dumpPath to @intrinsic("call", "libc", "getenv", a pointer, "PAINT_AV1_DUMP")
+        if dumpPath != 0 as a pointer:
+            set dumpFile to @intrinsic("call", "libc", "fopen", a pointer, dumpPath, "wb")
+            loop plane from 0 to (decoder's adPlanes):
+                set subX to 0
+                set subY to 0
+                if plane > 0:
+                    set subX to decoder's adSubX
+                    set subY to decoder's adSubY
+                loop y from 0 to ((height + subY) >> subY):
+                    loop x from 0 to ((width + subX) >> subX):
+                        set value to the item at ((y * (the av1 stride of plane in decoder)) + x) in (the av1 plane plane of decoder)
+                        store value at (decoder's adScratch)
+                        ignore @intrinsic("call", "libc", "fwrite", a word sized integer, decoder's adScratch, 2 as a word sized integer, 1 as a word sized integer, dumpFile)
+            ignore @intrinsic("call", "libc", "fclose", an integer, dumpFile)
+        # Colour: the colr box's nclx over the sequence header.
+        set matrix to decoder's adMatrix
+        set fullRange to decoder's adFullRange
+        set colour to the avif property (the string form of "colr") of item primary in (the address of file)
+        if colour >= 0:
+            if the bytes (colour + 8) in data spell "nclx":
+                set matrix to the big-endian half (colour + 16) in data
+                set fullRange to (the byte (colour + 18) in data) >> 7
+        set depth to decoder's adBitDepth
+        set largest to ((1 << depth) - 1) as a 64 bit floating-point number
+        set red to the avif red weight of matrix
+        set blue to the avif blue weight of matrix
+        set green to (1.0 - red) - blue
+        set lumaOffset to 0.0
+        set lumaScale to 1.0 / largest
+        set chromaScale to 1.0 / largest
+        if fullRange = 0:
+            set lumaOffset to (16 << (depth - 8)) as a 64 bit floating-point number
+            set lumaScale to 1.0 / ((219 << (depth - 8)) as a 64 bit floating-point number)
+            set chromaScale to 1.0 / ((224 << (depth - 8)) as a 64 bit floating-point number)
+        set middle to (1 << (depth - 1)) as a 64 bit floating-point number
+        set canvas to an unfilled paint canvas width by height
+        set out to (canvas's pixels) as a pointer to an integer
+        loop y from 0 to height:
+            loop x from 0 to width:
+                set luma to (((the avif sample at x y of plane 0 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
+                set r to luma
+                set g to luma
+                set b to luma
+                if (decoder's adPlanes) = 3:
+                    set cb to (((the avif sample at x y of plane 1 in decoder) as a 64 bit floating-point number) - middle) * chromaScale
+                    set cr to (((the avif sample at x y of plane 2 in decoder) as a 64 bit floating-point number) - middle) * chromaScale
+                    if matrix = 0:
+                        set g to luma
+                        set b to (((the avif sample at x y of plane 1 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
+                        set r to (((the avif sample at x y of plane 2 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
+                    else:
+                        set r to luma + ((2.0 * (1.0 - red)) * cr)
+                        set b to luma + ((2.0 * (1.0 - blue)) * cb)
+                        set g to ((luma - (red * r)) - (blue * b)) / green
+                set rr to ((the floor of ((r * 255.0) + 0.5)) as an integer) clamped between 0 and 255
+                set gg to ((the floor of ((g * 255.0) + 0.5)) as an integer) clamped between 0 and 255
+                set bb to ((the floor of ((b * 255.0) + 0.5)) as an integer) clamped between 0 and 255
+                store (((rr | (gg << 8)) | (bb << 16)) | -16777216) at (out + ((y * width) + x))
+        # Alpha from the auxiliary item.
+        set alphaItem to the avif alpha item of (the address of file) in data
+        if alphaItem >= 0:
+            set alpha to a new av1 decoder
+            decode avif item alphaItem from data spanning count in (the address of file) into alpha
+            if (alpha's adFailed) = 0:
+                set alphaDepth to alpha's adBitDepth
+                set alphaLargest to (1 << alphaDepth) - 1
+                loop y from 0 to (the minimum of height and (alpha's adHeight)):
+                    loop x from 0 to (the minimum of width and (alpha's adUpscaledWidth)):
+                        set value to the item at ((y * (alpha's adStrideY)) + x) in (alpha's adPlaneY)
+                        if (alpha's adFullRange) = 0:
+                            set value to (((value - (16 << (alphaDepth - 8))) * alphaLargest) + ((219 << (alphaDepth - 8)) / 2)) / (219 << (alphaDepth - 8))
+                        set value to ((value * 255) + (alphaLargest / 2)) / alphaLargest
+                        set pixel to (the item at ((y * width) + x) in out) & 16777215
+                        store (pixel | ((value clamped between 0 and 255) << 24)) at (out + ((y * width) + x))
+        return a decoded canvas
