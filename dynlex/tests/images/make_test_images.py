@@ -9,7 +9,7 @@ here is committed; run it again to rebuild the set.
 
     python3 dynlex/tests/images/make_test_images.py
 """
-import gzip, os, shutil, struct, subprocess, sys
+import gzip, os, shutil, struct, subprocess, sys, zlib
 from pathlib import Path
 from PIL import Image, ImageDraw
 
@@ -49,7 +49,25 @@ save("png-gray-alpha.png", rgba.convert("LA"))
 save("png-palette.png", rgb.quantize(64))
 pal = rgba.convert("RGBA").quantize(32, method=Image.Quantize.FASTOCTREE)
 save("png-palette-trns.png", pal, transparency=0)
-save("png-interlaced.png", rgba, interlace=1)
+# Pillow writes no Adam7 (it ignores interlace=1), so the passes are
+# written here: eight-bit RGBA, filter type 0 rows.
+def adam7_png(name, im):
+    w, h = im.size
+    data = im.tobytes()
+    raw = bytearray()
+    for x0, y0, dx, dy in ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)):
+        if x0 >= w:
+            continue
+        for y in range(y0, h, dy):
+            row = data[y * w * 4:(y + 1) * w * 4]
+            raw.append(0)
+            for x in range(x0, w, dx):
+                raw += row[x * 4:x * 4 + 4]
+    chunk = lambda kind, body: struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    (out / name).write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 1))
+                             + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
+    made.append(name)
+adam7_png("png-interlaced.png", rgba)
 save("png-16bit-gray.png", gray.convert("I;16"))
 save("png-1bit.png", gray.convert("1"))
 # BMP: 1, 4 (via palette), 8, 24 bits, RLE8 below, and 32 with alpha.

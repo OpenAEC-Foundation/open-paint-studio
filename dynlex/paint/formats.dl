@@ -255,16 +255,20 @@ local function the span of bits {integer:field}:
             set shifted to shifted >> 1
         return size
 
-# The masked channel scaled to 0..255 (fallback when the mask is empty).
-local function the channel {integer:pixel} under {integer:field} or {integer:fallback}:
+# The masked channel scaled to 0..255 (fallback when the mask is empty); the
+# mask's shift and span are worked out once per image.
+local function the channel {integer:pixel} under {integer:field} shifted {integer:moved} spanning {integer:width} or {integer:fallback}:
     execute:
         if field = 0:
             return fallback
-        set size to the span of bits field
-        set value to ((pixel & field) >> (the shift of bits field)) & ((1 << size) - 1)
-        if size >= 8:
-            return value >> (size - 8)
-        return (value * 255) / ((1 << size) - 1)
+        set value to ((pixel & field) >> moved) & ((1 << width) - 1)
+        if width >= 8:
+            return value >> (width - 8)
+        return (value * 255) / ((1 << width) - 1)
+
+local function the channel {integer:pixel} under {integer:field} or {integer:fallback}:
+    execute:
+        return the channel pixel under field shifted (the shift of bits field) spanning (the span of bits field) or fallback
 
 function the paint bmp from {pointer:bytes} spanning {integer:count}:
     execute:
@@ -394,6 +398,14 @@ function the paint bmp from {pointer:bytes} spanning {integer:count}:
             free paint canvas image
             return no decoded image because "the BMP file is truncated"
         set anyAlpha to false
+        set redShift to the shift of bits redMask
+        set redSpan to the span of bits redMask
+        set greenShift to the shift of bits greenMask
+        set greenSpan to the span of bits greenMask
+        set blueShift to the shift of bits blueMask
+        set blueSpan to the span of bits blueMask
+        set alphaShift to the shift of bits alphaMask
+        set alphaSpan to the span of bits alphaMask
         loop row from 0 to height:
             set source to start + (row * stride)
             set y to (height - 1) - row
@@ -427,10 +439,10 @@ function the paint bmp from {pointer:bytes} spanning {integer:count}:
                         set pixel to the little-endian half (source + (x * 2)) in bytes
                     else:
                         set pixel to the little-endian word (source + (x * 4)) in bytes
-                    set red to the channel pixel under redMask or 0
-                    set green to the channel pixel under greenMask or 0
-                    set blue to the channel pixel under blueMask or 0
-                    set alpha to the channel pixel under alphaMask or 255
+                    set red to the channel pixel under redMask shifted redShift spanning redSpan or 0
+                    set green to the channel pixel under greenMask shifted greenShift spanning greenSpan or 0
+                    set blue to the channel pixel under blueMask shifted blueShift spanning blueSpan or 0
+                    set alpha to the channel pixel under alphaMask shifted alphaShift spanning alphaSpan or 255
                     if (alphaMask != 0) and (alpha != 0):
                         set anyAlpha to true
                 store pixel red green blue alpha at x y in image

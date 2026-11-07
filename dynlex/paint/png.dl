@@ -17,7 +17,7 @@ local function paint png pass start x {integer:pass}:
 
 local function paint png pass start y {integer:pass}:
     execute:
-        if (pass = 0) or ((pass = 1) or (pass = 3)):
+        if (pass = 0) or ((pass = 1) or ((pass = 3) or (pass = 5))):
             return 0
         if pass = 2:
             return 4
@@ -41,9 +41,7 @@ local function paint png pass step y {integer:pass}:
             return 8
         if pass <= 4:
             return 4
-        if pass = 5:
-            return 2
-        return 1
+        return 2
 
 local function the paeth of {integer:a} {integer:b} {integer:c}:
     execute:
