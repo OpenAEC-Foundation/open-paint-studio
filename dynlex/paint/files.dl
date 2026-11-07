@@ -35,6 +35,13 @@ function paint format unknown:
     replacement: 0
 function paint format jpeg:
     replacement: 5
+function paint format ifcimage:
+    replacement: 6
+
+# The release the editor writes into an IfcImageB file's header; the same
+# as package.json's version.
+function the paint studio version:
+    replacement: "2026.43.2"
 
 local function the lower case of character {integer:character}:
     execute:
@@ -63,6 +70,8 @@ function the paint format of {string:path}:
             return paint format ppm
         if (path ends with extension ".jpg") or (path ends with extension ".jpeg"):
             return paint format jpeg
+        if path ends with extension ".ifcimageb":
+            return paint format ifcimage
         return paint format unknown
 
 # --- Whole-file byte buffers ---
@@ -182,6 +191,33 @@ local function save {paint canvas:image} as ppm to {string:path}:
         @intrinsic("call", "libc", "free", nothing, data)
         return written
 
+# --- IfcImageB, named after the file (at most 120 bytes, as the browser
+# edition allows) ---
+
+local function the file title of {string:path}:
+    execute:
+        set start to 0
+        set stop to path's length
+        loop index from 0 to path's length:
+            set character to (the character at index in path) as an integer
+            if character = 47:
+                set start to index + 1
+                set stop to path's length
+            if character = 46:
+                set stop to index
+        if stop <= start:
+            return the string form of "Image"
+        return the substring of path from start spanning (the minimum of (stop - start) and 120) bytes
+
+local function save {paint canvas:image} as ifcimage to {string:path}:
+    execute:
+        set encoded to the ifcimage bytes of image named (the file title of path) by ((the string form of "OpenAEC Paint Studio ") + (the string form of the paint studio version))
+        if encoded's count < 0:
+            return false
+        set written to write (encoded's count) bytes from (encoded's bytes) to file path
+        @intrinsic("call", "libc", "free", nothing, encoded's bytes)
+        return written
+
 # --- The entry points ---
 
 local function {paint decoded image:decoded} as a paint file:
@@ -251,6 +287,8 @@ function save {paint canvas:image} to {string:path}:
             return save image as bmp to path
         if format = paint format ppm:
             return save image as ppm to path
+        if format = paint format ifcimage:
+            return save image as ifcimage to path
         if format = paint format jpeg:
             set encoded to the jpeg bytes of image quality 90
             set written to write (encoded's count) bytes from (encoded's bytes) to file path

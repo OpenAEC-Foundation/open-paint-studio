@@ -695,11 +695,11 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 474.5 81.75 16.0 showing -1 2 13 "36363eff" 0 0 "IFCX (raster)" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 492.5 266.31 15.0 showing -1 0 12 "36363ea6" 0 0 "Een vlakke afbeelding in een IFCX-document" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 531.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
-        add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 531.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:IFCXB (raster)" to skin
+        add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 531.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:IfcImageB" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 543.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 552.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
-        add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 546.5 90.75 16.0 showing -1 2 13 "36363eff" 0 0 "IFCXB (raster)" "" to skin
-        add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 564.5 266.31 15.0 showing -1 0 12 "36363ea6" 0 0 "Een vlakke afbeelding in een IFCX-document" "" to skin
+        add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 546.5 66.69 16.0 showing -1 2 13 "36363eff" 0 0 "IfcImageB" "" to skin
+        add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 564.5 391.7 15.0 showing -1 0 12 "36363ea6" 0 0 "Binair IFC-beeld: de vlakke afbeelding als gecomprimeerde CBOR" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 128.06 52.5 28.26 15.0 showing -1 1 12 "36363eff" 0 0 "Start" "" to skin
         add kind 4 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 109.0 45.0 66.0 30.0 showing -1 0 0 "00000000" 0 0 "" "tab:Start" to skin
@@ -1397,8 +1397,8 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 313.0 221.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 329.5 68.81 14.0 showing -1 1 11 "36363eff" 0 0 "IFCX (raster)" "" to skin
         add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 320.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:IFCX (raster)" to skin
-        add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 364.5 76.81 14.0 showing -1 1 11 "36363eff" 0 0 "IFCXB (raster)" "" to skin
-        add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 355.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:IFCXB (raster)" to skin
+        add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 364.5 54.7 14.0 showing -1 1 11 "36363eff" 0 0 "IfcImageB" "" to skin
+        add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 355.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:IfcImageB" to skin
         add kind 1 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 394.0 221.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 122.0 410.5 72.91 14.0 showing -1 1 11 "36363eff" 0 0 "IFCX opslaan" "" to skin
         add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 401.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:IFCX opslaan" to skin

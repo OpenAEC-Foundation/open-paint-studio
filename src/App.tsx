@@ -349,12 +349,12 @@ export default function App() {
   async function filterImage(kind:'adjust'|'grayscale'|'invert'|'sepia'){
     setBusy(true);try{const image=await renderDocument(doc),ctx=image.getContext('2d')!,pixels=ctx.getImageData(0,0,doc.width,doc.height);adjustPixels(pixels.data,kind==='adjust'?corrections:{brightness:0,contrast:0,saturation:100},kind);ctx.putImageData(pixels,0,0);commit({...doc,operations:[{type:'image',data:image.toDataURL('image/png'),sourceSize:{width:doc.width,height:doc.height}}]});setSelection(null);setModal('');}catch(error){fail(error);}finally{setBusy(false);}
   }
-  async function exportOther(format:'svg'|'jpeg'|'webp'|'ifcx'|'ifcxb'){
+  async function exportOther(format:'svg'|'jpeg'|'webp'|'ifcx'|'ifcimageb'){
     try{
       let blob:Blob;
-      if(format==='ifcx'||format==='ifcxb'){
+      if(format==='ifcx'||format==='ifcimageb'){
         const image=await renderDocument(doc);
-        blob=await encodeRasterIfcx(rasterIfcx(doc.name,doc.width,doc.height,image.toDataURL('image/png')),format==='ifcxb');
+        blob=await encodeRasterIfcx(rasterIfcx(doc.name,doc.width,doc.height,image.toDataURL('image/png')),format==='ifcimageb');
       }else if(format==='svg'){
         let output=doc;const lastFill=doc.operations.findLastIndex(op=>op.type==='fill');
         if(lastFill>=0){const prefix=await renderDocument({...doc,background:'transparent',operations:doc.operations.slice(0,lastFill+1)});output={...doc,operations:[{type:'image',data:prefix.toDataURL('image/png'),sourceSize:{width:doc.width,height:doc.height}},...doc.operations.slice(lastFill+1)]};}
@@ -372,7 +372,7 @@ export default function App() {
     setBusy(true);
     try {
       if (file.size > 64_000_000) throw new Error('File exceeds 64 MB');
-      if(/\.ifcxb?$/i.test(file.name)){
+      if(/\.(ifcxb?|ifcimageb)$/i.test(file.name)){
         const image=await readRasterIfcx(new Uint8Array(await file.arrayBuffer()));
         file=new File([image.bytes as BlobPart],`${image.name}.png`,{type:'image/png'});
       }
@@ -418,7 +418,7 @@ export default function App() {
   return <div className={`studio ${focus?'focus-mode':''} ${fileOpen?'file-open':''}`} aria-busy={busy}>
     <TitleBar name={doc.name} save={() => void save()} undo={undo} redo={redo} settings={() => setModal('settings')} canUndo={past.length > 0} canRedo={future.length > 0}/>
     <input ref={input} type="file" accept={imageFileAccept} hidden onChange={e => void openFile(e.target.files?.[0])}/>
-    <input ref={projectInput} type="file" accept=".ifcx,.ifcxb" hidden onChange={e => void openFile(e.target.files?.[0])}/>
+    <input ref={projectInput} type="file" accept=".ifcx,.ifcimageb,.ifcxb" hidden onChange={e => void openFile(e.target.files?.[0])}/>
     <nav className="ribbon-tabs" aria-label="Ribbon">
       <RibbonTab label={t('file')} isFileTab onClick={() => setFileOpen(!fileOpen)}/>
       {(['home'] as const).map(id => <RibbonTab key={id} label={t(id)} isActive={tab === id && !fileOpen} onClick={() => { setTab(id); setFileOpen(false); }}/>) }
@@ -429,7 +429,7 @@ export default function App() {
         <RibbonGroup label={t('project')}>
           <Action icon={FolderOpen} label={t('open')} onClick={chooseFile}/>
           <RibbonMenu icon={Download} label={language==='nl'?'Exporteren':'Export'}>
-            <button onClick={()=>void exportPng()}>PNG</button><button onClick={()=>void exportOther('jpeg')}>JPEG</button><button onClick={()=>void exportOther('webp')}>WebP</button><button onClick={()=>void exportOther('svg')}>SVG</button><hr/><button onClick={()=>void exportOther('ifcx')}>IFCX (raster)</button><button onClick={()=>void exportOther('ifcxb')}>IFCXB (raster)</button>
+            <button onClick={()=>void exportPng()}>PNG</button><button onClick={()=>void exportOther('jpeg')}>JPEG</button><button onClick={()=>void exportOther('webp')}>WebP</button><button onClick={()=>void exportOther('svg')}>SVG</button><hr/><button onClick={()=>void exportOther('ifcx')}>IFCX (raster)</button><button onClick={()=>void exportOther('ifcimageb')}>IfcImageB</button>
             <hr/><button onClick={()=>void save()}><Save size={15}/>{t('save')}</button><button onClick={actionNew}><FilePlus2 size={15}/>{t('new')}</button>
           </RibbonMenu>
         </RibbonGroup>
@@ -491,7 +491,7 @@ export default function App() {
           { title: 'WebP', detail: t('exportWebpDetail'), icon: FileImage, onClick: then(() => void exportOther('webp')) },
           { title: 'SVG', detail: t('exportSvgDetail'), icon: FileImage, onClick: then(() => void exportOther('svg')) },
           { title: 'IFCX (raster)', detail: t('exportRasterDetail'), icon: FileImage, onClick: then(() => void exportOther('ifcx')) },
-          { title: 'IFCXB (raster)', detail: t('exportRasterDetail'), icon: FileImage, onClick: then(() => void exportOther('ifcxb')) },
+          { title: 'IfcImageB', detail: t('exportIfcImageDetail'), icon: FileImage, onClick: then(() => void exportOther('ifcimageb')) },
         ]}/>}
         {filePage === 'formats' && <div className="format-list backstage-formats">{formats.map(item => <span key={item.format} title={item.description}>{item.format}</span>)}</div>}
         {filePage === 'about' && <div className="backstage-about"><strong>OpenAEC Paint Studio · {releaseVersion}</strong><p>{t('about')}</p><a href="https://github.com/OpenAEC-Foundation/OpenAEC-style-book" target="_blank" rel="noreferrer">OpenAEC style book · CC BY-SA 4.0</a></div>}

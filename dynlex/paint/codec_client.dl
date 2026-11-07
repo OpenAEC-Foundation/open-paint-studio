@@ -86,3 +86,36 @@ function the gzip inflation of {pointer:data} spanning {integer:count}:
         set bytes to the paint address in out
         @intrinsic("call", "libc", "free", nothing, out)
         return @intrinsic("construct", a paint inflated bytes, bytes, size, size >= 0)
+
+local function a C copy of {string:content}:
+    execute:
+        set terminated to @intrinsic("call", "libc", "calloc", a pointer to a byte, (content's length + 1) as a word sized integer, 1 as a word sized integer)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, terminated, the data of content, content's length as a word sized integer)
+        return terminated
+
+class:
+    patterns:
+        [a|] paint ifcimage file
+    members:
+        bytes as a pointer to a byte
+        count as an integer
+        note as a string
+
+# The IfcImageB file of an image (dynlex/paint/ifcimage.dl); count is -1
+# and the note says why when the library cannot write it.
+function the ifcimage bytes of {paint canvas:image} named {string:title} by {string:author}:
+    execute:
+        set out to a new paint codec block
+        set titleCopy to a C copy of title
+        set authorCopy to a C copy of author
+        set count to @intrinsic("call", "paintcodecs", "paint_codecs_ifcimage_3pointer8pixels5_width_3integer8width5_height_3integer8height5_named_3pointer8title5_by_3pointer8author5_into_3pointer8out5_callable_i8_2a__i32_i32_i8_2a__i8_2a__i8_2a_", an integer, (image's pixels) as pointer, image's width, image's height, titleCopy, authorCopy, out)
+        set reason to the string form of ""
+        set written to 0 as a pointer to a byte
+        if count < 0:
+            set reason to the paint message in out
+        else:
+            set written to the paint address in out
+        @intrinsic("call", "libc", "free", nothing, titleCopy)
+        @intrinsic("call", "libc", "free", nothing, authorCopy)
+        @intrinsic("call", "libc", "free", nothing, out)
+        return @intrinsic("construct", a paint ifcimage file, written, count, reason)

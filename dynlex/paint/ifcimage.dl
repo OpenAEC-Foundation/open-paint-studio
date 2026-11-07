@@ -1,0 +1,458 @@
+# IfcImageB: a raster image as a binary IFCX document (docs/IFCX.md), read
+# and written by the editor itself. The IFCX alpha document holds one node,
+# /paint/image, whose attribute openaec::paint::rasterImage carries the name,
+# size and the PNG as a data URI; the document is CBOR behind the
+# self-described tag (d9 d9 f7), compressed with gzip. The browser edition
+# writes the same bytes (shared/ifcx.ts), and older .ifcxb files are the same
+# format under their former name.
+import dynlex/paint/decoded.dl
+import dynlex/paint/png.dl
+import dynlex/paint/inflate.dl
+import lib/string.dl
+
+# The browser edition's limits (shared/ifcx.ts), so that every file the
+# editor writes opens there too.
+function ifcimage largest side:
+    replacement: 4096
+function ifcimage largest area:
+    replacement: 8388608
+
+local function the png data uri prefix:
+    replacement: "data:image/png;base64,"
+
+# --- Base64 (RFC 4648, with padding) ---
+
+local function the base64 value of {integer:character}:
+    execute:
+        if (character >= 65) and (character <= 90):
+            return character - 65
+        if (character >= 97) and (character <= 122):
+            return character - 71
+        if (character >= 48) and (character <= 57):
+            return character + 4
+        if character = 43:
+            return 62
+        if character = 47:
+            return 63
+        return -1
+
+# The bytes the base64 text stands for; not valid when a character is not
+# base64 (whitespace is skipped, the padding ends it).
+local function the base64 bytes of {pointer:text} spanning {integer:count}:
+    execute:
+        set out to @intrinsic("call", "libc", "malloc", a pointer to a byte, (((count / 4) * 3) + 4) as a word sized integer)
+        set size to 0
+        set gathered to 0
+        set held to 0
+        set damaged to false
+        set index to 0
+        loop while index < count:
+            set character to the byte index in text
+            set index to index + 1
+            if character = 61:
+                set index to count
+            else:
+                set digit to the base64 value of character
+                if digit >= 0:
+                    set gathered to ((gathered << 6) | digit) & 16777215
+                    set held to held + 6
+                    if held >= 8:
+                        set held to held - 8
+                        store (((gathered >> held) & 255) as a byte) at (out + size)
+                        set size to size + 1
+                else if ((character != 10) and (character != 13)) and ((character != 32) and (character != 9)):
+                    set damaged to true
+                    set index to count
+        if damaged:
+            @intrinsic("call", "libc", "free", nothing, out)
+            return no paint byte stream
+        return a paint byte stream of out spanning size
+
+local function the base64 digit {integer:value}:
+    execute:
+        if value < 26:
+            return value + 65
+        if value < 52:
+            return value + 71
+        if value < 62:
+            return value - 4
+        if value = 62:
+            return 43
+        return 47
+
+# Writes the base64 text of the bytes at target; returns its length.
+local function write base64 of {pointer:source} spanning {integer:count} at {pointer:target}:
+    execute:
+        set out to target as a pointer to a byte
+        set written to 0
+        set index to 0
+        loop while (index + 3) <= count:
+            set triple to (((the byte index in source) << 16) | ((the byte (index + 1) in source) << 8)) | (the byte (index + 2) in source)
+            store ((the base64 digit ((triple >> 18) & 63)) as a byte) at (out + written)
+            store ((the base64 digit ((triple >> 12) & 63)) as a byte) at (out + (written + 1))
+            store ((the base64 digit ((triple >> 6) & 63)) as a byte) at (out + (written + 2))
+            store ((the base64 digit (triple & 63)) as a byte) at (out + (written + 3))
+            set written to written + 4
+            set index to index + 3
+        set rest to count - index
+        if rest > 0:
+            set triple to (the byte index in source) << 16
+            if rest = 2:
+                set triple to triple | ((the byte (index + 1) in source) << 8)
+            store ((the base64 digit ((triple >> 18) & 63)) as a byte) at (out + written)
+            store ((the base64 digit ((triple >> 12) & 63)) as a byte) at (out + (written + 1))
+            store (61 as a byte) at (out + (written + 2))
+            if rest = 2:
+                store ((the base64 digit ((triple >> 6) & 63)) as a byte) at (out + (written + 2))
+            store (61 as a byte) at (out + (written + 3))
+            set written to written + 4
+        return written
+
+# --- Reading ---
+
+# The CBOR document inside an IfcImageB file: inflated when gzip-compressed;
+# not valid when the bytes are no self-described CBOR.
+function the ifcimage document of {pointer:data} spanning {integer:count}:
+    execute:
+        if count < 3:
+            return no paint byte stream
+        if ((the byte 0 in data) = 31) and ((the byte 1 in data) = 139):
+            set inflated to the gzip inflation of data spanning count
+            if inflated's valid = false:
+                return inflated
+            if ((inflated's count < 3) or ((the byte 0 in (inflated's bytes as pointer)) != 217)) or (((the byte 1 in (inflated's bytes as pointer)) != 217) or ((the byte 2 in (inflated's bytes as pointer)) != 247)):
+                @intrinsic("call", "libc", "free", nothing, inflated's bytes)
+                return no paint byte stream
+            return inflated
+        if (((the byte 0 in data) = 217) and ((the byte 1 in data) = 217)) and ((the byte 2 in data) = 247):
+            set copy to @intrinsic("call", "libc", "malloc", a pointer to a byte, count as a word sized integer)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, data, count as a word sized integer)
+            return a paint byte stream of copy spanning count
+        return no paint byte stream
+
+local function the cbor text at {integer:start} of {integer:size} in {pointer:data} matches {C string:word}:
+    execute:
+        if size != ((the length of word) as an integer):
+            return false
+        return the bytes start in data spell word
+
+# The image in a CBOR IFCX document (after its tag). Every data item's head
+# is read in document order; a text key "uri", "width" or "height" gives
+# the item after it. The raster attribute is the only place those keys occur
+# in a Paint Studio document, and it must occur once.
+function the paint ifcimage from cbor {pointer:data} spanning {integer:count}:
+    execute:
+        set cursor to 3
+        set pending to 0
+        set uriAt to -1
+        set uriSize to 0
+        set uris to 0
+        set imageWidth to -1
+        set imageHeight to -1
+        set damaged to false
+        loop while cursor < count:
+            set initial to the byte cursor in data
+            set major to initial >> 5
+            set extra to initial & 31
+            set cursor to cursor + 1
+            set value to extra
+            set needed to 0
+            if extra = 24:
+                set needed to 1
+            else if extra = 25:
+                set needed to 2
+            else if extra = 26:
+                set needed to 4
+            else if extra = 27:
+                set needed to 8
+            else if (extra >= 28) and (extra <= 30):
+                set damaged to true
+            if (cursor + needed) > count:
+                set damaged to true
+            if damaged:
+                set cursor to count
+            else:
+                # Floats and simple values (major 7) only need skipping; a
+                # number too large for this reader is no size it accepts.
+                set huge to false
+                if needed > 0:
+                    set value to 0
+                    loop index from 0 to needed:
+                        if (value >> 23) != 0:
+                            set huge to true
+                        set value to ((value << 8) | (the byte (cursor + index) in data)) & 2147483647
+                    set cursor to cursor + needed
+                if huge:
+                    set value to -1
+                set key to pending
+                set pending to 0
+                if major = 0:
+                    if key = 2:
+                        set imageWidth to value
+                    if key = 3:
+                        set imageHeight to value
+                if ((major = 2) or (major = 3)) and (extra != 31):
+                    if (value < 0) or ((cursor + value) > count):
+                        set damaged to true
+                        set cursor to count
+                    else:
+                        if major = 3:
+                            if key = 1:
+                                set uriAt to cursor
+                                set uriSize to value
+                                set uris to uris + 1
+                            else if the cbor text at cursor of value in data matches "uri":
+                                set pending to 1
+                            else if the cbor text at cursor of value in data matches "width":
+                                set pending to 2
+                            else if the cbor text at cursor of value in data matches "height":
+                                set pending to 3
+                        set cursor to cursor + value
+        if damaged:
+            return no decoded image because "the IfcImageB file is damaged"
+        if uris != 1:
+            return no decoded image because "an IfcImageB file holds exactly one Paint Studio raster image"
+        set prefix to the length of (the png data uri prefix)
+        if (uriSize < prefix) or ((the bytes uriAt in data spell (the png data uri prefix)) = false):
+            return no decoded image because "the IfcImageB image is not an embedded PNG"
+        set png to the base64 bytes of ((data as a pointer to a byte) + (uriAt + prefix)) spanning (uriSize - prefix)
+        if png's valid = false:
+            return no decoded image because "the IfcImageB image data is damaged"
+        set pngData to png's bytes as pointer
+        set fits to png's count >= 33
+        if fits:
+            set fits to ((the bytes 1 in pngData spell "PNG") and (the bytes 12 in pngData spell "IHDR"))
+        if fits:
+            set fits to ((the big-endian word 16 in pngData) = imageWidth) and ((the big-endian word 20 in pngData) = imageHeight)
+        if fits = false:
+            @intrinsic("call", "libc", "free", nothing, png's bytes)
+            return no decoded image because "the IfcImageB image does not match its size"
+        set decoded to the paint png from pngData spanning (png's count)
+        @intrinsic("call", "libc", "free", nothing, png's bytes)
+        return decoded
+
+# --- Writing ---
+
+class:
+    patterns:
+        [a|] paint cbor writer
+    members:
+        cwBytes as a pointer to a byte
+        cwCount as an integer
+        cwCapacity as an integer
+
+local function make room for {integer:size} in {a pointer to a paint cbor writer:writer}:
+    execute:
+        if ((writer's cwCount) + size) > (writer's cwCapacity):
+            set writer's cwCapacity to (((writer's cwCount) + size) * 2) + 4096
+            set writer's cwBytes to @intrinsic("call", "libc", "realloc", a pointer to a byte, writer's cwBytes, (writer's cwCapacity) as a word sized integer)
+
+local function put cbor byte {integer:value} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        make room for 1 in writer
+        store ((value & 255) as a byte) at ((writer's cwBytes) + (writer's cwCount))
+        set writer's cwCount to (writer's cwCount) + 1
+
+# A head in its shortest form, as CBOR's preferred serialisation has it.
+local function put cbor head {integer:major} of {integer:value} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        set first to major << 5
+        if value < 24:
+            put cbor byte (first | value) to writer
+        else if value < 256:
+            put cbor byte (first | 24) to writer
+            put cbor byte value to writer
+        else if value < 65536:
+            put cbor byte (first | 25) to writer
+            put cbor byte (value >> 8) to writer
+            put cbor byte value to writer
+        else:
+            put cbor byte (first | 26) to writer
+            put cbor byte (value >> 24) to writer
+            put cbor byte (value >> 16) to writer
+            put cbor byte (value >> 8) to writer
+            put cbor byte value to writer
+
+local function put cbor text of {integer:size} bytes at {pointer:source} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        put cbor head 3 of size to writer
+        make room for size in writer
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, (writer's cwBytes) + (writer's cwCount), source, size as a word sized integer)
+        set writer's cwCount to (writer's cwCount) + size
+
+local function put cbor word {C string:word} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        put cbor text of ((the length of word) as an integer) bytes at (word as pointer) to writer
+
+local function put cbor string {string:content} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        put cbor text of (content's length) bytes at ((the data of content) as pointer) to writer
+
+local function put cbor key {C string:name} and word {C string:word} to {a pointer to a paint cbor writer:writer}:
+    execute:
+        put cbor word name to writer
+        put cbor word word to writer
+
+local function the hex digit {integer:value}:
+    execute:
+        if value < 10:
+            return value + 48
+        return value + 87
+
+# A random UUID (version 4) from the system's random source.
+local function a new uuid:
+    execute:
+        set random to @intrinsic("call", "libc", "calloc", a pointer to a byte, 16 as a word sized integer, 1 as a word sized integer)
+        set source to @intrinsic("call", "libc", "fopen", a pointer, "/dev/urandom", "rb")
+        if source != 0 as a pointer:
+            ignore @intrinsic("call", "libc", "fread", a word sized integer, random, 1 as a word sized integer, 16 as a word sized integer, source)
+            ignore @intrinsic("call", "libc", "fclose", an integer, source)
+        store ((((the byte 6 in (random as pointer)) & 15) | 64) as a byte) at (random + 6)
+        store ((((the byte 8 in (random as pointer)) & 63) | 128) as a byte) at (random + 8)
+        set spelled to a new string buffer containing 36 bytes
+        set out to (the data of spelled) as a pointer to a byte
+        set written to 0
+        loop index from 0 to 16:
+            if (((index = 4) or (index = 6)) or ((index = 8) or (index = 10))):
+                store (45 as a byte) at (out + written)
+                set written to written + 1
+            store ((the hex digit ((the byte index in (random as pointer)) >> 4)) as a byte) at (out + written)
+            store ((the hex digit ((the byte index in (random as pointer)) & 15)) as a byte) at (out + (written + 1))
+            set written to written + 2
+        @intrinsic("call", "libc", "free", nothing, random)
+        return spelled
+
+local function write {integer:value} in {integer:places} digits at {pointer:target}:
+    execute:
+        set rest to value
+        set index to places - 1
+        loop while index >= 0:
+            store (((the remainder of rest divided by 10) + 48) as a byte) at ((target as a pointer to a byte) + index)
+            set rest to rest / 10
+            set index to index - 1
+
+# The current time in UTC as ISO 8601 with milliseconds, as JavaScript's
+# toISOString writes it.
+local function the current timestamp:
+    execute:
+        set clock to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 0, clock)
+        set fields to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        ignore @intrinsic("call", "libc", "gmtime_r", a pointer, clock, fields)
+        set spelled to the string form of "0000-00-00T00:00:00.000Z"
+        set stamp to a new string buffer containing 24 bytes
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, the data of stamp, the data of spelled, 24 as a word sized integer)
+        set out to (the data of stamp) as pointer
+        write ((the item at 5 in fields) + 1900) in 4 digits at out
+        write ((the item at 4 in fields) + 1) in 2 digits at ((out as a pointer to a byte) + 5)
+        write (the item at 3 in fields) in 2 digits at ((out as a pointer to a byte) + 8)
+        write (the item at 2 in fields) in 2 digits at ((out as a pointer to a byte) + 11)
+        write (the item at 1 in fields) in 2 digits at ((out as a pointer to a byte) + 14)
+        write (the item at 0 in fields) in 2 digits at ((out as a pointer to a byte) + 17)
+        write (((the item at 1 in clock) / (1000000 as a C long integer)) as an integer) in 3 digits at ((out as a pointer to a byte) + 20)
+        @intrinsic("call", "libc", "free", nothing, clock)
+        @intrinsic("call", "libc", "free", nothing, fields)
+        return stamp
+
+local function the gzip crc of {pointer:bytes} spanning {integer:count}:
+    execute:
+        set table to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 256 as a word sized integer, 8 as a word sized integer)
+        loop entry from 0 to 256:
+            set value to entry as a C long integer
+            loop bit from 0 to 8:
+                if (value & (1 as a C long integer)) != (0 as a C long integer):
+                    set value to (3988292384 as a C long integer) ^ (value >> 1)
+                else:
+                    set value to value >> 1
+            store value at (table + entry)
+        set check to 4294967295 as a C long integer
+        set data to bytes as a pointer to a byte
+        loop index from 0 to count:
+            set check to (the item at (((check ^ ((((the item at index in data) as an integer) & 255) as a C long integer)) & (255 as a C long integer)) as an integer) in table) ^ (check >> 8)
+        @intrinsic("call", "libc", "free", nothing, table)
+        return check ^ (4294967295 as a C long integer)
+
+local function place little-endian word {C long integer:value} at {pointer:target}:
+    execute:
+        loop index from 0 to 4:
+            store (((value >> (8 * index)) & (255 as a C long integer)) as a byte) at ((target as a pointer to a byte) + index)
+
+# The bytes in a gzip file (RFC 1952) with no name or time.
+function the gzip of {pointer:source} spanning {integer:count}:
+    execute:
+        set body to the deflation of source spanning count
+        set out to @intrinsic("call", "libc", "malloc", a pointer to a byte, (body's count + 18) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memset", a pointer, out, 0, 10 as a word sized integer)
+        store (31 as a byte) at out
+        store (139 as a byte) at (out + 1)
+        store (8 as a byte) at (out + 2)
+        store (255 as a byte) at (out + 9)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, out + 10, body's bytes, body's count as a word sized integer)
+        place little-endian word (the gzip crc of source spanning count) at ((out + (10 + body's count)) as pointer)
+        place little-endian word (count as a C long integer) at ((out + (14 + body's count)) as pointer)
+        @intrinsic("call", "libc", "free", nothing, body's bytes)
+        return a paint byte stream of out spanning (body's count + 18)
+
+# The IfcImageB file of an image: the document the browser edition writes
+# (header, the raster schema, one node at /paint/image), as tagged CBOR in
+# gzip. Not valid beyond the browser edition's limits.
+function the ifcimage bytes of {paint canvas:image} named {string:title} by {string:author}:
+    execute:
+        if ((image's width > ifcimage largest side) or (image's height > ifcimage largest side)) or ((image's width * image's height) > ifcimage largest area):
+            return no paint byte stream
+        set png to the png bytes of image
+        set encodedSize to ((png's count + 2) / 3) * 4
+        set prefix to (the length of (the png data uri prefix)) as an integer
+        set state to @intrinsic("construct", a paint cbor writer, @intrinsic("call", "libc", "malloc", a pointer to a byte, (encodedSize + 4096) as a word sized integer), 0, encodedSize + 4096)
+        set writer to the address of state
+        put cbor byte 217 to writer
+        put cbor byte 217 to writer
+        put cbor byte 247 to writer
+        put cbor head 5 of 4 to writer
+        put cbor word "header" to writer
+        put cbor head 5 of 5 to writer
+        put cbor word "id" to writer
+        put cbor string (a new uuid) to writer
+        put cbor key "ifcxVersion" and word "ifcx_alpha" to writer
+        put cbor key "dataVersion" and word "1.0.0" to writer
+        put cbor word "author" to writer
+        put cbor string author to writer
+        put cbor word "timestamp" to writer
+        put cbor string (the current timestamp) to writer
+        put cbor word "imports" to writer
+        put cbor head 4 of 0 to writer
+        put cbor word "schemas" to writer
+        put cbor head 5 of 1 to writer
+        put cbor word "openaec::paint::rasterImage" to writer
+        put cbor head 5 of 1 to writer
+        put cbor word "value" to writer
+        put cbor head 5 of 1 to writer
+        put cbor key "dataType" and word "Object" to writer
+        put cbor word "data" to writer
+        put cbor head 4 of 1 to writer
+        put cbor head 5 of 2 to writer
+        put cbor key "path" and word "/paint/image" to writer
+        put cbor word "attributes" to writer
+        put cbor head 5 of 1 to writer
+        put cbor word "openaec::paint::rasterImage" to writer
+        put cbor head 5 of 6 to writer
+        put cbor word "version" to writer
+        put cbor head 0 of 1 to writer
+        put cbor word "name" to writer
+        put cbor string title to writer
+        put cbor word "width" to writer
+        put cbor head 0 of (image's width) to writer
+        put cbor word "height" to writer
+        put cbor head 0 of (image's height) to writer
+        put cbor key "mimeType" and word "image/png" to writer
+        put cbor word "uri" to writer
+        put cbor head 3 of (prefix + encodedSize) to writer
+        make room for (prefix + encodedSize) in writer
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, (state's cwBytes) + (state's cwCount), (the png data uri prefix) as pointer, prefix as a word sized integer)
+        set state's cwCount to (state's cwCount) + prefix
+        set written to write base64 of (png's bytes as pointer) spanning (png's count) at (((state's cwBytes) + (state's cwCount)) as pointer)
+        set state's cwCount to (state's cwCount) + written
+        @intrinsic("call", "libc", "free", nothing, png's bytes)
+        set compressed to the gzip of ((state's cwBytes) as pointer) spanning (state's cwCount)
+        @intrinsic("call", "libc", "free", nothing, state's cwBytes)
+        return compressed

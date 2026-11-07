@@ -102,7 +102,7 @@ linear values for an sRGB swapchain, so not every sRGB colour is reachable
 | Files | see below; up to 32768 pixels a side and 268 megapixels, kept at full resolution |
 
 Not ported:
-- editable vector objects and SVG export, IFCX/IFCXB;
+- editable vector objects and SVG export, IFCX (JSON);
 - changing theme or language in Settings: the skin measures the light Dutch interface;
 - the API exchange itself (the dialog opens; the HTTP API and MCP server are not ported);
 - the HTTP API and the MCP server;
@@ -124,6 +124,7 @@ contents rather than its name:
 | TGA, ICO, QOI, PNM (P1–P6), XBM, XPM | `paint/formats.dl` | PPM |
 | DDS | uncompressed bit-mask layouts, BC1–BC5 and BC7 (DX9 and DX10 headers) | — |
 | WebP | lossless (all four transforms, colour cache, meta prefix codes; `paint/webp.dl`) and lossy (VP8 key frames with segments, token partitions, both loop filters; `paint/vp8.dl`), alpha plane, extended and animated files (first frame) | — |
+| IfcImageB | the binary IFCX raster document (`paint/ifcimage.dl`: gzip, CBOR, the embedded PNG), also as the former `.ifcxb` | IfcImageB up to 4096 pixels a side and 8 megapixels, opened by the browser edition |
 | SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
 Not read yet: AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats

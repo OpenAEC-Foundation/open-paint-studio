@@ -139,7 +139,7 @@ test('Open filters image files and offers a separate project picker', async ({pa
   const projectEvent=page.waitForEvent('filechooser');
   await page.getByRole('button',{name:'IFCX openen',exact:true}).click();
   const projectPicker=await projectEvent;
-  expect(await projectPicker.element().getAttribute('accept')).toBe('.ifcx,.ifcxb');await projectPicker.setFiles([]);
+  expect(await projectPicker.element().getAttribute('accept')).toBe('.ifcx,.ifcimageb,.ifcxb');await projectPicker.setFiles([]);
 });
 
 test('IFCX raster exports include the image and reopen as a raster',async({page})=>{
@@ -148,19 +148,19 @@ test('IFCX raster exports include the image and reopen as a raster',async({page}
   await surface.click({position:{x:60,y:60}});
   await expect(page.locator('.history-item')).toHaveCount(1);
   let binaryPath='';
-  for(const format of ['IFCX','IFCXB']){
+  for(const [format,button] of [['ifcx','IFCX (raster)'],['ifcimageb','IfcImageB']]){
     await page.locator('.home-ribbon summary').filter({hasText:'Exporteren'}).click();
-    const event=page.waitForEvent('download');await page.getByRole('button',{name:`${format} (raster)`,exact:true}).click();
-    const file=await event;expect(file.suggestedFilename()).toBe(`Untitled.${format.toLowerCase()}`);
+    const event=page.waitForEvent('download');await page.getByRole('button',{name:button,exact:true}).click();
+    const file=await event;expect(file.suggestedFilename()).toBe(`Untitled.${format}`);
     const path=(await file.path())!;
     const {readRasterIfcx}=await import('../../shared/ifcx');
     const image=await readRasterIfcx(new Uint8Array(readFileSync(path)));
     expect(image.width).toBe(1200);expect(image.height).toBe(800);expect(image.uri).toMatch(/^data:image\/png;base64,/);
-    if(format==='IFCXB')binaryPath=path;
+    if(format==='ifcimageb')binaryPath=path;
     await expect(page.locator('.history-item')).toHaveCount(1);
   }
   page.on('dialog',dialog=>void dialog.accept());
-  await page.locator('input[accept^=".ifcx"]').setInputFiles({name:'raster.ifcxb',mimeType:'application/octet-stream',buffer:readFileSync(binaryPath)});
+  await page.locator('input[accept^=".ifcx"]').setInputFiles({name:'raster.ifcimageb',mimeType:'application/octet-stream',buffer:readFileSync(binaryPath)});
   await expect(page.locator('.history-item')).toContainText('Afbeelding');
 });
 
