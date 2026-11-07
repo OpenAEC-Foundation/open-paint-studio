@@ -23,6 +23,19 @@ DYNLEX_ROOT=~/dynlex dynlex/build.sh install      # menu entry and icon in ~/.lo
 dynlex/build/open-paint-studio [IMAGE]
 ```
 
+The raster codecs (`paint/codecs.dl`: PNG, JPEG, deflate, WebP, GIF, BMP,
+TIFF, DDS and the rest) compile on their own into
+`dynlex/build/libpaintcodecs.a`. Every `build.sh` command builds that
+library first, but only when one of the codecs' sources changed, and links
+it into the editor, the tests and the benchmarks. The interface calls the
+library through `paint/codec_client.dl`: three exposed functions with plain
+types for decoding, encoding and gunzip. SVG stays in the editor, because the
+interface draws its own icons with it. On 2026-11-07, an optimised editor
+build after an interface change took 8.1 s, against 13.5 s for the editor in
+one piece. The library takes 3.7 s, and only when a codec changes.
+Measured with the machine idle; opening images is as fast as before
+(4K PNG 62 ms, 8K PNG 195 ms, 4K JPEG 29 ms).
+
 Runtime libraries: Xlib with MIT-SHM (the window, drawn without a GPU),
 FreeType and HarfBuzz (text). Image formats, compression and SVG are the
 editor's own code. DejaVu Sans for the text tool and as the fallback face; `zenity` for the file and colour dialogs. The

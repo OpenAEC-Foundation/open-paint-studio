@@ -1,15 +1,12 @@
 # Opening and saving images, all by the editor itself: PNG, JPEG, GIF, BMP,
-# TIFF, TGA, ICO, QOI, PNM (all six kinds), XBM, XPM and SVG (also
+# TIFF, TGA, ICO, QOI, PNM (all six kinds), XBM, XPM, DDS, WebP and SVG (also
 # gzip-compressed), recognised by their contents rather than their names.
 # Written: PNG, JPEG, BMP and PPM, chosen by the extension (PNG when it
-# names none).
+# names none). The raster formats are read and written by the codec library
+# (dynlex/paint/codecs.dl, through codec_client.dl); SVG is drawn here.
 import dynlex/paint/canvas.dl
-import dynlex/paint/jpeg.dl
-import dynlex/paint/png.dl
-import dynlex/paint/formats.dl
-import dynlex/paint/webp.dl
+import dynlex/paint/codec_client.dl
 import dynlex/paint/vector.dl
-import dynlex/paint/inflate.dl
 import lib/string.dl
 
 class:
@@ -126,16 +123,6 @@ local function store little-endian {integer:value} in {integer:size} bytes at {i
 
 # --- PNG ---
 
-local function the paint png at {string:path}:
-    execute:
-        set buffer to the paint bytes of file path
-        set decoded to the paint png from (buffer's data) spanning (buffer's length)
-        @intrinsic("call", "libc", "free", nothing, buffer's data)
-        if decoded's ok = false:
-            free paint canvas decoded's image
-            return @intrinsic("construct", a paint file result, false, (a new paint canvas 1 by 1 filled with the transparent paint color), decoded's note)
-        return a paint file holding decoded's image
-
 local function save {paint canvas:image} as png to {string:path}:
     execute:
         set encoded to the png bytes of image
@@ -214,14 +201,6 @@ local function {paint byte buffer:buffer} looks like markup:
             set cursor to cursor + 1
         return (the byte at cursor of buffer) = 60
 
-# TGA has no signature: its version 2 footer or the extension names it.
-local function {paint byte buffer:buffer} is a tga at {string:path}:
-    execute:
-        if path ends with extension ".tga":
-            return true
-        set footer to buffer's length - 18
-        return (footer > 0) and (((the byte at footer of buffer) = 84) and (((the byte at (footer + 1) of buffer) = 82) and ((the byte at (footer + 2) of buffer) = 85)))
-
 # An SVG document (markup in memory) rendered at its own size.
 local function the paint svg from {pointer:data} spanning {integer:count}:
     execute:
@@ -241,50 +220,26 @@ function the paint image opened from {string:path}:
         set count to buffer's length
         set first to the byte at 0 of buffer
         set second to the byte at 1 of buffer
+        set hint to 0
+        if path ends with extension ".tga":
+            set hint to 1
+        if path ends with extension ".xpm":
+            set hint to 2
+        set raster to the paint codec decoding of data spanning count hint hint
         set result to a failed paint file with "a file format the editor does not read (AVIF, HEIC, JPEG XL and JPEG 2000 are not supported yet)"
-        if (first = 66) and (second = 77):
-            set result to (the paint bmp from data spanning count) as a paint file
-        else if (first = 80) and ((second >= 49) and (second <= 54)):
-            set result to (the paint pnm from data spanning count) as a paint file
-        else if (first = 137) and (second = 80):
-            set result to (the paint png from data spanning count) as a paint file
-        else if (first = 255) and (second = 216):
-            set jpeg to the paint jpeg from data of count
-            if jpeg's decoded:
-                set result to a paint file holding jpeg's image
-            else:
-                free paint canvas jpeg's image
-                if jpeg's unsupported:
-                    set result to a failed paint file with "a JPEG kind the editor does not read (lossless, arithmetic-coded or 12-bit)"
+        if raster's recognised:
+            set result to (raster's result) as a paint file
+        else:
+            free paint canvas raster's result's image
+            if (first = 31) and (second = 139):
+                set inflated to the gzip inflation of data spanning count
+                if inflated's valid:
+                    set result to (the paint svg from (inflated's bytes as pointer) spanning (inflated's count)) as a paint file
+                    @intrinsic("call", "libc", "free", nothing, inflated's bytes)
                 else:
-                    set result to a failed paint file with "the JPEG could not be decoded"
-        else if (first = 71) and (second = 73):
-            set result to (the paint gif from data spanning count) as a paint file
-        else if ((first = 73) and (second = 73)) or ((first = 77) and (second = 77)):
-            set result to (the paint tiff from data spanning count) as a paint file
-        else if (first = 113) and ((second = 111) and (((the byte at 2 of buffer) = 105) and ((the byte at 3 of buffer) = 102))):
-            set result to (the paint qoi from data spanning count) as a paint file
-        else if buffer is a tga at path:
-            set result to (the paint tga from data spanning count) as a paint file
-        else if ((first = 0) and (second = 0)) and ((((the byte at 2 of buffer) = 1) or ((the byte at 2 of buffer) = 2)) and ((the byte at 3 of buffer) = 0)):
-            set result to (the paint ico from data spanning count) as a paint file
-        else if (first = 31) and (second = 139):
-            set inflated to the gzip inflation of data spanning count
-            if inflated's valid:
-                set result to (the paint svg from (inflated's bytes as pointer) spanning (inflated's count)) as a paint file
-                @intrinsic("call", "libc", "free", nothing, inflated's bytes)
-            else:
-                set result to a failed paint file with "the compressed file could not be read"
-        else if ((first = 68) and (second = 68)) and (((the byte at 2 of buffer) = 83) and ((the byte at 3 of buffer) = 32)):
-            set result to (the paint dds from data spanning count) as a paint file
-        else if ((first = 82) and (second = 73)) and ((the byte at 8 of buffer) = 87):
-            set result to (the paint webp from data spanning count) as a paint file
-        else if (first = 35) and (second = 100):
-            set result to (the paint xbm from data spanning count) as a paint file
-        else if ((first = 47) and (second = 42)) and (path ends with extension ".xpm"):
-            set result to (the paint xpm from data spanning count) as a paint file
-        else if buffer looks like markup:
-            set result to (the paint svg from data spanning count) as a paint file
+                    set result to a failed paint file with "the compressed file could not be read"
+            else if buffer looks like markup:
+                set result to (the paint svg from data spanning count) as a paint file
         @intrinsic("call", "libc", "free", nothing, buffer's data)
         return result
 

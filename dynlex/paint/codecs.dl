@@ -1,0 +1,138 @@
+# The raster codecs as a library of their own, compiled once into
+# dynlex/build/libpaintcodecs.a (dynlex/build.sh codecs) so that changing the
+# interface does not compile the decoders again. Every format but SVG is read
+# here; SVG stays with the interface, which draws its own icons with it.
+#
+# The seam is a few exposed functions with plain types; dynlex/paint/
+# codec_client.dl calls them. A result goes into a block the caller owns:
+# width (4 bytes) at 0, height (4) at 4, the pixels' or bytes' address (8)
+# at 8 and a message (a C string, at most 255 bytes) at 16, 272 bytes in all.
+# Pixels and bytes handed out are malloc'd; the caller frees them.
+import dynlex/paint/decoded.dl
+import dynlex/paint/jpeg.dl
+import dynlex/paint/png.dl
+import dynlex/paint/formats.dl
+import dynlex/paint/webp.dl
+import dynlex/paint/inflate.dl
+import lib/string.dl
+
+local function store paint address {pointer:address} in {pointer:out}:
+    execute:
+        set held to address
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, (out as a pointer to a byte) + 8, the address of held, 8 as a word sized integer)
+
+local function store paint message {string:note} in {pointer:out}:
+    execute:
+        set size to the minimum of (note's length) and 255
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, (out as a pointer to a byte) + 16, the data of note, size as a word sized integer)
+        store (0 as a byte) at ((out as a pointer to a byte) + (16 + size))
+
+local function store paint size {integer:width} by {integer:height} in {pointer:out}:
+    execute:
+        set words to out as a pointer to an integer
+        store width at words
+        store height at (words + 1)
+
+# The decoder for the bytes by their signature; hint bit 1: the name ends in
+# .tga, bit 2: in .xpm. Recognised is false when no raster format matched.
+class:
+    patterns:
+        [a|] paint raster attempt
+    members:
+        recognised as a boolean
+        result as a paint decoded image
+
+local function a paint raster attempt of {paint decoded image:decoded}:
+    execute:
+        return @intrinsic("construct", a paint raster attempt, true, decoded)
+
+local function the paint raster from {pointer:data} spanning {integer:count} hint {integer:hint}:
+    execute:
+        set first to the byte 0 in data
+        set second to the byte 1 in data
+        set third to 0
+        set fourth to 0
+        if count >= 4:
+            set third to the byte 2 in data
+            set fourth to the byte 3 in data
+        if (first = 66) and (second = 77):
+            return a paint raster attempt of (the paint bmp from data spanning count)
+        if (first = 80) and ((second >= 49) and (second <= 54)):
+            return a paint raster attempt of (the paint pnm from data spanning count)
+        if (first = 137) and (second = 80):
+            return a paint raster attempt of (the paint png from data spanning count)
+        if (first = 255) and (second = 216):
+            set jpeg to the paint jpeg from data of count
+            if jpeg's decoded:
+                return a paint raster attempt of (a decoded (jpeg's image))
+            free paint canvas jpeg's image
+            if jpeg's unsupported:
+                return a paint raster attempt of (no decoded image because "a JPEG kind the editor does not read (lossless, arithmetic-coded or 12-bit)")
+            return a paint raster attempt of (no decoded image because "the JPEG could not be decoded")
+        if (first = 71) and (second = 73):
+            return a paint raster attempt of (the paint gif from data spanning count)
+        if ((first = 73) and (second = 73)) or ((first = 77) and (second = 77)):
+            return a paint raster attempt of (the paint tiff from data spanning count)
+        if ((first = 113) and (second = 111)) and ((third = 105) and (fourth = 102)):
+            return a paint raster attempt of (the paint qoi from data spanning count)
+        if (hint & 1) != 0:
+            return a paint raster attempt of (the paint tga from data spanning count)
+        # TGA has no signature: its version 2 footer names it.
+        set footer to count - 18
+        if footer > 0:
+            if ((the byte footer in data) = 84) and (((the byte (footer + 1) in data) = 82) and ((the byte (footer + 2) in data) = 85)):
+                return a paint raster attempt of (the paint tga from data spanning count)
+        if ((first = 0) and (second = 0)) and (((third = 1) or (third = 2)) and (fourth = 0)):
+            return a paint raster attempt of (the paint ico from data spanning count)
+        if ((first = 68) and (second = 68)) and ((third = 83) and (fourth = 32)):
+            return a paint raster attempt of (the paint dds from data spanning count)
+        if ((first = 82) and (second = 73)) and (count > 12):
+            if (the byte 8 in data) = 87:
+                return a paint raster attempt of (the paint webp from data spanning count)
+        if (first = 35) and (second = 100):
+            return a paint raster attempt of (the paint xbm from data spanning count)
+        if ((first = 47) and (second = 42)) and ((hint & 2) != 0):
+            return a paint raster attempt of (the paint xpm from data spanning count)
+        return @intrinsic("construct", a paint raster attempt, false, no decoded image because "")
+
+# Decodes the bytes: 0 decoded (size and pixels in out), 1 failed (the
+# message in out), 2 not a raster format the library reads.
+exposed function paint codecs decode {pointer:data} spanning {integer:count} hint {integer:hint} into {pointer:out}:
+    execute:
+        if count < 2:
+            return 2
+        set attempt to the paint raster from data spanning count hint hint
+        if attempt's recognised = false:
+            free paint canvas attempt's result's image
+            return 2
+        set decoded to attempt's result
+        if decoded's ok = false:
+            free paint canvas decoded's image
+            store paint message (decoded's note) in out
+            return 1
+        store paint size (decoded's image's width) by (decoded's image's height) in out
+        store paint address ((decoded's image's pixels) as pointer) in out
+        return 0
+
+# Encodes RGBA pixels: format 1 PNG, 5 JPEG at the quality. Returns the byte
+# count, the bytes' address in out; 0 when nothing was written.
+exposed function paint codecs encode {pointer:pixels} width {integer:width} height {integer:height} format {integer:format} quality {integer:quality} into {pointer:out}:
+    execute:
+        set image to @intrinsic("construct", a paint canvas, width, height, pixels as a pointer to a byte)
+        if format = 5:
+            set encoded to the jpeg bytes of image quality quality
+            store paint address (encoded's bytes as pointer) in out
+            return encoded's count
+        set encoded to the png bytes of image
+        store paint address (encoded's bytes as pointer) in out
+        return encoded's count
+
+# Inflates a gzip file: the byte count (-1 when damaged), the bytes'
+# address in out.
+exposed function paint codecs gunzip {pointer:data} spanning {integer:count} into {pointer:out}:
+    execute:
+        set inflated to the gzip inflation of data spanning count
+        if inflated's valid = false:
+            return -1
+        store paint address (inflated's bytes as pointer) in out
+        return inflated's count

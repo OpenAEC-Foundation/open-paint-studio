@@ -2,6 +2,9 @@
 # Builds and tests Open Paint Studio, the native DynLex edition of OpenAEC
 # Paint Studio.
 #
+#   dynlex/build.sh codecs         the codec library dynlex/build/libpaintcodecs.a
+#                                  (run first by every command; rebuilt only
+#                                  when a decoder's source changed)
 #   dynlex/build.sh app            optimised editor (dynlex/build/open-paint-studio)
 #   dynlex/build.sh dev            unoptimised editor
 #   dynlex/build.sh test [NAME...] headless tests in dynlex/tests (all when no name)
@@ -20,7 +23,32 @@ root=${DYNLEX_ROOT:-$HOME/dynlex}
 dynlex="$root/build/dynlex"
 [[ -x $dynlex ]] || { echo "No compiler at $dynlex; set DYNLEX_ROOT." >&2; exit 1; }
 mkdir -p dynlex/build
+
+# The raster codecs (dynlex/paint/codecs.dl and what it imports) compile on
+# their own into a definition-only object, archived as libpaintcodecs.a; the
+# editor, the tests and the benchmarks link it by the name "paintcodecs"
+# through LIBRARY_PATH, so a change to the interface leaves them alone.
+codec_sources=(codecs decoded canvas jpeg png formats webp vp8 vp8_tables inflate)
+archive=dynlex/build/libpaintcodecs.a
+build_codecs() {
+    local stale=0 name
+    [[ -f $archive ]] || stale=1
+    for name in "${codec_sources[@]}"; do
+        [[ dynlex/paint/$name.dl -nt $archive ]] && stale=1
+    done
+    [[ $root/build/dynlex -nt $archive ]] && stale=1
+    (( stale )) || return 0
+    if ! "$dynlex" dynlex/paint/codecs.dl --emit-object --no-main -O2 -o dynlex/build/paintcodecs.o > dynlex/build/paintcodecs.diag 2>&1 || [[ -s dynlex/build/paintcodecs.diag ]]; then
+        echo "codec library DIAG"; head -20 dynlex/build/paintcodecs.diag; exit 1
+    fi
+    rm -f "$archive"
+    ar rcs "$archive" dynlex/build/paintcodecs.o
+    echo "Built $archive"
+}
+build_codecs
+export LIBRARY_PATH="$here/dynlex/build${LIBRARY_PATH:+:$LIBRARY_PATH}"
 case ${1:-app} in
+    codecs) ;;
     app) "$dynlex" dynlex/paint/main.dl -O2 -o dynlex/build/open-paint-studio ;;
     dev) "$dynlex" dynlex/paint/main.dl -O0 -g -o dynlex/build/open-paint-studio-dev ;;
     run) "$dynlex" dynlex/paint/main.dl -O2 -o dynlex/build/open-paint-studio

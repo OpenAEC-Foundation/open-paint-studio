@@ -1,0 +1,88 @@
+# The interface's side of the codec library (dynlex/paint/codecs.dl, built
+# into dynlex/build/libpaintcodecs.a): each function calls an exposed
+# function by its C symbol in the library "paintcodecs"; a mangling mismatch
+# fails at link time. The result block is described in codecs.dl.
+import dynlex/paint/decoded.dl
+import lib/string.dl
+
+local function a new paint codec block:
+    execute:
+        return @intrinsic("call", "libc", "calloc", a pointer to a byte, 272 as a word sized integer, 1 as a word sized integer)
+
+local function the paint address in {pointer:out}:
+    execute:
+        set held to 0 as a pointer to a byte
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, the address of held, (out as a pointer to a byte) + 8, 8 as a word sized integer)
+        return held
+
+local function the paint message in {pointer:out}:
+    execute:
+        set text to (out as a pointer to a byte) + 16
+        set size to (@intrinsic("call", "libc", "strlen", a word sized integer, text)) as an integer
+        set note to a new string buffer containing size bytes
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, the data of note, text, size as a word sized integer)
+        return note
+
+class:
+    patterns:
+        [a|] paint codec decoding
+    members:
+        recognised as a boolean
+        result as a paint decoded image
+
+# Decodes a raster file's bytes in the library; recognised is false when no
+# raster format matched (then SVG and the like remain to try).
+function the paint codec decoding of {pointer:data} spanning {integer:count} hint {integer:hint}:
+    execute:
+        set out to a new paint codec block
+        set status to @intrinsic("call", "paintcodecs", "paint_codecs_decode_3pointer8data5_spanning_3integer8count5_hint_3integer8hint5_into_3pointer8out5_callable_i8_2a__i32_i32_i8_2a_", an integer, data, count, hint, out)
+        set decoded to no decoded image because ""
+        if status = 0:
+            free paint canvas decoded's image
+            set words to out as a pointer to an integer
+            set image to @intrinsic("construct", a paint canvas, the item at 0 in words, the item at 1 in words, the paint address in out)
+            set decoded to a decoded image
+        else if status = 1:
+            free paint canvas decoded's image
+            set decoded to @intrinsic("construct", a paint decoded image, false, a new paint canvas 1 by 1 filled with the transparent paint color, the paint message in out)
+        @intrinsic("call", "libc", "free", nothing, out)
+        return @intrinsic("construct", a paint codec decoding, status != 2, decoded)
+
+class:
+    patterns:
+        [a|] paint encoded bytes
+    members:
+        bytes as a pointer to a byte
+        count as an integer
+
+local function the paint encoding of {paint canvas:image} format {integer:format} quality {integer:quality}:
+    execute:
+        set out to a new paint codec block
+        set count to @intrinsic("call", "paintcodecs", "paint_codecs_encode_3pointer8pixels5_width_3integer8width5_height_3integer8height5_format_3integer8format5_quality_3integer8quality5_into_3pointer8out5_callable_i8_2a__i32_i32_i32_i32_i8_2a_", an integer, (image's pixels) as pointer, image's width, image's height, format, quality, out)
+        set bytes to the paint address in out
+        @intrinsic("call", "libc", "free", nothing, out)
+        return @intrinsic("construct", a paint encoded bytes, bytes, count)
+
+function the png bytes of {paint canvas:image}:
+    execute:
+        return the paint encoding of image format 1 quality 0
+
+function the jpeg bytes of {paint canvas:image} quality {integer:quality}:
+    execute:
+        return the paint encoding of image format 5 quality quality
+
+class:
+    patterns:
+        [a|] paint inflated bytes
+    members:
+        bytes as a pointer to a byte
+        count as an integer
+        valid as a boolean
+
+function the gzip inflation of {pointer:data} spanning {integer:count}:
+    execute:
+        set out to a new paint codec block
+        set size to @intrinsic("call", "paintcodecs", "paint_codecs_gunzip_3pointer8data5_spanning_3integer8count5_into_3pointer8out5_callable_i8_2a__i32_i8_2a_", an integer, data, count, out)
+        set bytes to the paint address in out
+        @intrinsic("call", "libc", "free", nothing, out)
+        return @intrinsic("construct", a paint inflated bytes, bytes, size, size >= 0)
