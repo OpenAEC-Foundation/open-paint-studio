@@ -65,7 +65,7 @@ function the path chosen by {C string:command}:
 
 function the path to open:
     execute:
-        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.jpg *.JPG *.jpeg *.gif *.bmp *.BMP *.tif *.tiff *.tga *.ico *.qoi *.ppm *.pgm *.pbm *.pnm *.xbm *.xpm *.svg *.svgz *.dds *.webp *.ifcimageb *.ifcxb' 2>/dev/null"
+        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.jpg *.JPG *.jpeg *.gif *.bmp *.BMP *.tif *.tiff *.tga *.ico *.qoi *.ppm *.pgm *.pbm *.pnm *.xbm *.xpm *.svg *.svgz *.dds *.webp *.jp2 *.j2k *.j2c *.jpf *.jpx *.ifcimageb *.ifcxb' 2>/dev/null"
 
 function the path to save:
     execute:

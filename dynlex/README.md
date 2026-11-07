@@ -119,11 +119,12 @@ contents rather than its name:
 | TGA, ICO, QOI, PNM (P1–P6), XBM, XPM | `paint/formats.dl` | PPM |
 | DDS | uncompressed bit-mask layouts, BC1–BC5 and BC7 (DX9 and DX10 headers) | — |
 | WebP | lossless (all four transforms, colour cache, meta prefix codes; `paint/webp.dl`) and lossy (VP8 key frames with segments, token partitions, both loop filters; `paint/vp8.dl`), alpha plane, extended and animated files (first frame) | — |
+| JPEG 2000 | JP2 files and bare codestreams (`paint/jpeg2000.dl`): tiles, all five progression orders and order changes, precincts, quality layers, every code-block style, SOP/EPH markers, the 5/3 and 9/7 wavelets, RCT/ICT, 1–16 bit, subsampled components, sYCC, palettes and channel definitions (alpha); code-blocks and wavelet passes over all cores | — |
 | IfcImageB | the binary IFCX raster document (`paint/ifcimage.dl`: gzip, CBOR, the embedded PNG), also as the former `.ifcxb` | IfcImageB up to 4096 pixels a side and 8 megapixels, opened by the browser edition |
 | SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
-Not read yet: AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
-(BC6H), lossless and arithmetic-coded JPEG.
+Not read yet: AVIF, HEIC, JPEG XL, DDS's HDR formats (BC6H), lossless and
+arithmetic-coded JPEG, and JPEG 2000 with packed packet headers (PPM, PPT).
 
 `tests/images/make_test_images.py` writes a test set:
 - 52 variants of one test card (bit depths, palettes, alpha, interlacing, compression, EXIF orientation, misnamed files);
@@ -132,7 +133,7 @@ Not read yet: AVIF, HEIC, JPEG XL, JPEG 2000, DDS's HDR formats
 
 `bench/open_images.dl` opens them all and `tests/images/compare.py` checks
 each against an independent decoder (Pillow or gdk-pixbuf), comparing colours
-premultiplied by alpha. State on 2026-11-05: all 88 images in the formats the
+premultiplied by alpha. State on 2026-11-07: all 89 images in the formats the
 editor reads match (DDS: Pillow-encoded DXT1/3/5 and BC3, and BC1, BC4, BC5
 and BC7 files of random blocks that reach every mode and partition):
 - exactly, or within the lossy formats' tolerance;
@@ -146,8 +147,18 @@ Lossy WebP matches libwebp bit for bit: libwebp's colour conversion and
 "fancy" chroma upsampling are followed exactly, also on files from quality 1
 to 100, encoder methods 0 and 6, odd sizes, lossy alpha and a 4K photo.
 
-AVIF and JPEG 2000 are reported as not read yet, and the broken files fail
-with a readable message.
+JPEG 2000 matches OpenJPEG (through Pillow) on 33 more files: lossless ones
+exactly, lossy ones within one level, over both wavelets, every progression
+order, tiles with odd offsets, precincts, code-block sizes, layers, grey, RGB,
+alpha, 12 and 16 bit, SOP/EPH markers and palettes; subsampled chroma differs
+by up to 19 levels at colour edges, where readers upsample differently. A 4K
+photo decodes in 0.35 s lossless and 0.15 s lossy, against OpenJPEG's 1.29 s
+and 0.23 s (measured on this machine, 2026-11-07). The code-block styles other
+than the default and progression order changes are implemented to the
+standard but no encoder at hand writes them, so they are not compared.
+
+AVIF is reported as not read yet, and the broken files fail with a readable
+message.
 
 ## The interface, tested in all three editions
 

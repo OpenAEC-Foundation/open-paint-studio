@@ -7,6 +7,7 @@
 # reversible and irreversible component transforms (Annex G).
 import dynlex/paint/decoded.dl
 import lib/string.dl
+import lib/atomic.dl
 
 local function fill jp2 numbers {a pointer to an integer:table} from {string:values}:
     execute:
@@ -1334,7 +1335,9 @@ local function the jp2 mirror of {integer:spot} within {integer:size}:
         return place
 
 # One row or column of n samples: the first low ones, then the high ones,
-# in work; parity is that of the first sample's coordinate.
+# in work; parity is that of the first sample's coordinate. The signal is
+# extended symmetrically at both ends (F.3.7): the neighbour before the
+# first sample is the second, the one after the last the one before it.
 local function undo jp2 reversible line {a pointer to an integer:work} into {a pointer to an integer:result} of {integer:size} parity {integer:firstParity}:
     execute:
         if size = 1:
@@ -1344,26 +1347,53 @@ local function undo jp2 reversible line {a pointer to an integer:work} into {a p
                 store (the item at 0 in work) at result
             return nothing
         set lows to ((size + 1) - firstParity) / 2
-        loop spot from 0 to size:
-            if ((spot + firstParity) & 1) = 0:
-                store (the item at ((spot - firstParity) / 2) in work) at (result + spot)
-            else:
-                store (the item at (lows + ((spot - (1 - firstParity)) / 2)) in work) at (result + spot)
-        loop spot from 0 to size:
-            if ((spot + firstParity) & 1) = 0:
-                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in result) + (the item at (the jp2 mirror of (spot + 1) within size) in result)
-                store ((the item at spot in result) - ((sum + 2) >> 2)) at (result + spot)
-        loop spot from 0 to size:
-            if ((spot + firstParity) & 1) = 1:
-                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in result) + (the item at (the jp2 mirror of (spot + 1) within size) in result)
-                store ((the item at spot in result) + (sum >> 1)) at (result + spot)
+        set spot to firstParity
+        set index to 0
+        loop while spot < size:
+            store (the item at index in work) at (result + spot)
+            set spot to spot + 2
+            set index to index + 1
+        set spot to 1 - firstParity
+        set index to lows
+        loop while spot < size:
+            store (the item at index in work) at (result + spot)
+            set spot to spot + 2
+            set index to index + 1
+        set last to size - 1
+        set spot to firstParity
+        loop while spot < size:
+            set before to spot - 1
+            if before < 0:
+                set before to 1
+            set after to spot + 1
+            if after > last:
+                set after to last - 1
+            store ((the item at spot in result) - ((((the item at before in result) + (the item at after in result)) + 2) >> 2)) at (result + spot)
+            set spot to spot + 2
+        set spot to 1 - firstParity
+        loop while spot < size:
+            set before to spot - 1
+            if before < 0:
+                set before to 1
+            set after to spot + 1
+            if after > last:
+                set after to last - 1
+            store ((the item at spot in result) + (((the item at before in result) + (the item at after in result)) >> 1)) at (result + spot)
+            set spot to spot + 2
 
-local function lift jp2 values {a pointer to a 64 bit floating-point number:samples} of {integer:size} parity {integer:firstParity} odd {integer:oddness} by {64 bit floating-point number:factor}:
+local function lift jp2 values {a pointer to a 64 bit floating-point number:samples} of {integer:size} from {integer:first} by {64 bit floating-point number:factor}:
     execute:
-        loop spot from 0 to size:
-            if ((spot + firstParity) & 1) = oddness:
-                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in samples) + (the item at (the jp2 mirror of (spot + 1) within size) in samples)
-                store ((the item at spot in samples) - (factor * sum)) at (samples + spot)
+        set last to size - 1
+        set spot to first
+        loop while spot < size:
+            set before to spot - 1
+            if before < 0:
+                set before to 1
+            set after to spot + 1
+            if after > last:
+                set after to last - 1
+            store ((the item at spot in samples) - (factor * ((the item at before in samples) + (the item at after in samples)))) at (samples + spot)
+            set spot to spot + 2
 
 local function undo jp2 irreversible line {a pointer to a 64 bit floating-point number:work} into {a pointer to a 64 bit floating-point number:result} of {integer:size} parity {integer:firstParity}:
     execute:
@@ -1374,75 +1404,122 @@ local function undo jp2 irreversible line {a pointer to a 64 bit floating-point 
                 store (the item at 0 in work) at result
             return nothing
         set lows to ((size + 1) - firstParity) / 2
-        loop spot from 0 to size:
-            if ((spot + firstParity) & 1) = 0:
-                store ((the item at ((spot - firstParity) / 2) in work) * 1.230174104914001) at (result + spot)
-            else:
-                store ((the item at (lows + ((spot - (1 - firstParity)) / 2)) in work) / 1.230174104914001) at (result + spot)
-        lift jp2 values result of size parity firstParity odd 0 by 0.443506852043971
-        lift jp2 values result of size parity firstParity odd 1 by 0.882911075530934
-        lift jp2 values result of size parity firstParity odd 0 by -0.052980118572961
-        lift jp2 values result of size parity firstParity odd 1 by -1.586134342059924
+        set spot to firstParity
+        set index to 0
+        loop while spot < size:
+            store ((the item at index in work) * 1.230174104914001) at (result + spot)
+            set spot to spot + 2
+            set index to index + 1
+        set spot to 1 - firstParity
+        set index to lows
+        loop while spot < size:
+            store ((the item at index in work) / 1.230174104914001) at (result + spot)
+            set spot to spot + 2
+            set index to index + 1
+        lift jp2 values result of size from firstParity by 0.443506852043971
+        lift jp2 values result of size from (1 - firstParity) by 0.882911075530934
+        lift jp2 values result of size from firstParity by -0.052980118572961
+        lift jp2 values result of size from (1 - firstParity) by -1.586134342059924
 
 # The inverse transform of a tile-component, resolution by resolution
-# (2D_SR: rows, then columns). sizes: trx0, try0, trx1, try1 per resolution.
-local function undo jp2 reversible wavelet of {a pointer to an integer:samples} stride {integer:rowStride} levels {integer:levelCount} sizes {a pointer to an integer:sizeTable}:
-    execute:
-        set longest to 1
-        loop resolution from 0 to (levelCount + 1):
-            set longest to the maximum of longest and ((the item at ((resolution * 4) + 2) in sizeTable) - (the item at (resolution * 4) in sizeTable))
-            set longest to the maximum of longest and ((the item at ((resolution * 4) + 3) in sizeTable) - (the item at ((resolution * 4) + 1) in sizeTable))
-        set work to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((longest + 2) * 4) as a word sized integer)
-        set line to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((longest + 2) * 4) as a word sized integer)
-        loop resolution from 1 to (levelCount + 1):
-            set x0 to the item at (resolution * 4) in sizeTable
-            set y0 to the item at ((resolution * 4) + 1) in sizeTable
-            set across to (the item at ((resolution * 4) + 2) in sizeTable) - x0
-            set down to (the item at ((resolution * 4) + 3) in sizeTable) - y0
-            if (across > 0) and (down > 0):
-                loop row from 0 to down:
-                    loop spot from 0 to across:
-                        store (the item at ((row * rowStride) + spot) in samples) at (work + spot)
-                    undo jp2 reversible line work into line of across parity (x0 & 1)
-                    loop spot from 0 to across:
-                        store (the item at spot in line) at (samples + ((row * rowStride) + spot))
-                loop column from 0 to across:
-                    loop spot from 0 to down:
-                        store (the item at ((spot * rowStride) + column) in samples) at (work + spot)
-                    undo jp2 reversible line work into line of down parity (y0 & 1)
-                    loop spot from 0 to down:
-                        store (the item at spot in line) at (samples + ((spot * rowStride) + column))
-        @intrinsic("call", "libc", "free", nothing, work)
-        @intrinsic("call", "libc", "free", nothing, line)
+# (2D_SR: all rows, then all columns), each pass shared over the cores: a
+# part takes a range of rows or columns with buffers of its own.
+class:
+    patterns:
+        [a|] jp2 wavelet part
+    members:
+        wpSamples as a pointer to a 64 bit floating-point number
+        wpStride as an integer
+        wpAcross as an integer
+        wpDown as an integer
+        wpParity as an integer
+        wpFirst as an integer
+        wpLast as an integer
+        wpColumns as boolean
+        wpReversible as boolean
 
-local function undo jp2 irreversible wavelet of {a pointer to a 64 bit floating-point number:samples} stride {integer:rowStride} levels {integer:levelCount} sizes {a pointer to an integer:sizeTable}:
+function undo jp2 wavelet lines of {pointer:address}:
     execute:
-        set longest to 1
-        loop resolution from 0 to (levelCount + 1):
-            set longest to the maximum of longest and ((the item at ((resolution * 4) + 2) in sizeTable) - (the item at (resolution * 4) in sizeTable))
-            set longest to the maximum of longest and ((the item at ((resolution * 4) + 3) in sizeTable) - (the item at ((resolution * 4) + 1) in sizeTable))
-        set work to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, ((longest + 2) * 8) as a word sized integer)
-        set line to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, ((longest + 2) * 8) as a word sized integer)
+        set part to address as a pointer to a jp2 wavelet part
+        set across to part's wpAcross
+        set down to part's wpDown
+        set rowStride to part's wpStride
+        set longest to (the maximum of across and down) + 2
+        set work to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, (longest * 8) as a word sized integer)
+        set line to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, (longest * 8) as a word sized integer)
+        set reals to part's wpSamples
+        set integers to (part's wpSamples) as a pointer to an integer
+        set workIntegers to work as a pointer to an integer
+        set lineIntegers to line as a pointer to an integer
+        set size to across
+        set step to 1
+        set gap to rowStride
+        if part's wpColumns:
+            set size to down
+            set step to rowStride
+            set gap to 1
+        loop index from (part's wpFirst) to (part's wpLast):
+            set base to index * gap
+            if part's wpReversible:
+                loop spot from 0 to size:
+                    store (the item at (base + (spot * step)) in integers) at (workIntegers + spot)
+                undo jp2 reversible line workIntegers into lineIntegers of size parity (part's wpParity)
+                loop spot from 0 to size:
+                    store (the item at spot in lineIntegers) at (integers + (base + (spot * step)))
+            else:
+                loop spot from 0 to size:
+                    store (the item at (base + (spot * step)) in reals) at (work + spot)
+                undo jp2 irreversible line work into line of size parity (part's wpParity)
+                loop spot from 0 to size:
+                    store (the item at spot in line) at (reals + (base + (spot * step)))
+        @intrinsic("call", "libc", "free", nothing, work)
+        @intrinsic("call", "libc", "free", nothing, line)
+        return 0 as a pointer
+
+local function undo jp2 wavelet of {a pointer to a 64 bit floating-point number:samples} stride {integer:rowStride} levels {integer:levelCount} sizes {a pointer to an integer:sizeTable} reversible {boolean:exact}:
+    execute:
+        set helpers to ((@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer) clamped between 1 and 32
+        set partSize to (the size of (a jp2 wavelet part)) as an integer
+        set parts to @intrinsic("call", "libc", "calloc", a pointer to a byte, (partSize * helpers) as a word sized integer, 1 as a word sized integer)
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, helpers as a word sized integer, 8 as a word sized integer)
         loop resolution from 1 to (levelCount + 1):
             set x0 to the item at (resolution * 4) in sizeTable
             set y0 to the item at ((resolution * 4) + 1) in sizeTable
             set across to (the item at ((resolution * 4) + 2) in sizeTable) - x0
             set down to (the item at ((resolution * 4) + 3) in sizeTable) - y0
             if (across > 0) and (down > 0):
-                loop row from 0 to down:
-                    loop spot from 0 to across:
-                        store (the item at ((row * rowStride) + spot) in samples) at (work + spot)
-                    undo jp2 irreversible line work into line of across parity (x0 & 1)
-                    loop spot from 0 to across:
-                        store (the item at spot in line) at (samples + ((row * rowStride) + spot))
-                loop column from 0 to across:
-                    loop spot from 0 to down:
-                        store (the item at ((spot * rowStride) + column) in samples) at (work + spot)
-                    undo jp2 irreversible line work into line of down parity (y0 & 1)
-                    loop spot from 0 to down:
-                        store (the item at spot in line) at (samples + ((spot * rowStride) + column))
-        @intrinsic("call", "libc", "free", nothing, work)
-        @intrinsic("call", "libc", "free", nothing, line)
+                loop pass from 0 to 2:
+                    set lines to down
+                    set parity to x0 & 1
+                    if pass = 1:
+                        set lines to across
+                        set parity to y0 & 1
+                    set used to helpers
+                    if (across * down) < 65536:
+                        set used to 1
+                    set used to the minimum of used and lines
+                    loop helper from 0 to used:
+                        set job to (parts + (helper * partSize)) as a pointer to a jp2 wavelet part
+                        set job's wpSamples to samples
+                        set job's wpStride to rowStride
+                        set job's wpAcross to across
+                        set job's wpDown to down
+                        set job's wpParity to parity
+                        set job's wpFirst to (lines * helper) / used
+                        set job's wpLast to (lines * (helper + 1)) / used
+                        set job's wpColumns to pass = 1
+                        set job's wpReversible to exact
+                    loop helper from 1 to used:
+                        store 0 as a C long integer at (threads + helper)
+                        if @intrinsic("call", "libc", "pthread_create", an integer, threads + helper, 0 as a pointer, the function named "undo jp2 wavelet lines of $", (parts + (helper * partSize)) as a pointer) != 0:
+                            store 0 as a C long integer at (threads + helper)
+                            ignore undo jp2 wavelet lines of ((parts + (helper * partSize)) as a pointer)
+                    ignore undo jp2 wavelet lines of (parts as a pointer)
+                    loop helper from 1 to used:
+                        if (the item at helper in threads) != (0 as a C long integer):
+                            ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at helper in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, parts)
+        @intrinsic("call", "libc", "free", nothing, threads)
 
 # --- One tile ---
 
@@ -1549,6 +1626,40 @@ local function decode jp2 code block {integer:blockIndex} of {a pointer to a jp2
         @intrinsic("call", "libc", "free", nothing, flags)
         @intrinsic("call", "libc", "free", nothing, values)
 
+# The code-blocks of a tile, decoded over the cores: each thread takes the
+# next block number until none are left. A block writes only its own part
+# of its tile-component.
+class:
+    patterns:
+        [a|] jp2 block batch
+    members:
+        bbNext as a pointer to an integer
+        bbCount as an integer
+        bbBlocks as a pointer to an integer
+        bbTile as a pointer to a jp2 tile
+        bbStream as a pointer to a jp2 stream
+        bbCoding as a pointer to an integer
+        bbShifts as a pointer to an integer
+        bbSamples as a pointer to a C long integer
+        bbGeometry as a pointer to an integer
+        bbTable as a pointer to an integer
+        bbZero as a pointer to an integer
+
+function decode jp2 blocks from {pointer:address}:
+    execute:
+        set batch to address as a pointer to a jp2 block batch
+        loop while true:
+            set index to atomically add 1 at (batch's bbNext)
+            if index >= (batch's bbCount):
+                return 0 as a pointer
+            set blockIndex to the item at index in (batch's bbBlocks)
+            set record to ((batch's bbTile)'s jtBlocks) + (blockIndex * 12)
+            set component to the item at 11 in (((batch's bbTile)'s jtBands) + ((the item at 4 in record) * 16))
+            set geometry to batch's bbGeometry
+            set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
+            set samples to (the item at component in (batch's bbSamples)) as a pointer to a 64 bit floating-point number
+            decode jp2 code block blockIndex of (batch's bbTile) with (batch's bbStream) styles (batch's bbCoding) roi (batch's bbShifts) into (samples as a pointer to an integer) samples stride width using (batch's bbTable) (batch's bbZero)
+
 # Decodes tile number tileIndex from its bytes into the component planes.
 local function decode jp2 tile {integer:tileIndex} from {pointer:bytes} spanning {integer:count} main {a pointer to an integer:mainArea} own {a pointer to an integer:ownArea} of {a pointer to a jp2 image:image}:
     execute:
@@ -1627,13 +1738,32 @@ local function decode jp2 tile {integer:tileIndex} from {pointer:bytes} spanning
             set samples to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, ((width * height) + 1) as a word sized integer, 8 as a word sized integer)
             set address to samples as a C long integer
             store address at (tileSamples + component)
+        # The code-blocks that have data, over the cores.
+        set wanted to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((layoutState's jtBlockCount) + 1) as a word sized integer, 4 as a word sized integer)
+        set wantedCount to 0
+        set coefficients to 0
         loop blockIndex from 0 to (layoutState's jtBlockCount):
             set record to (layoutState's jtBlocks) + (blockIndex * 12)
             if (the item at 8 in record) > 0:
-                set component to the item at 11 in ((layoutState's jtBands) + ((the item at 4 in record) * 16))
-                set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
-                set samples to (the item at component in tileSamples) as a pointer to a 64 bit floating-point number
-                decode jp2 code block blockIndex of layout with (the address of stream) styles coding roi shifts into (samples as a pointer to an integer) samples stride width using (image's jiTable) (image's jiZero)
+                store blockIndex at (wanted + wantedCount)
+                set wantedCount to wantedCount + 1
+                set coefficients to coefficients + (((the item at 2 in record) - (the item at 0 in record)) * ((the item at 3 in record) - (the item at 1 in record)))
+        set next to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set batch to @intrinsic("construct", a jp2 block batch, next, wantedCount, wanted, layout, the address of stream, coding, shifts, tileSamples, geometry, image's jiTable, image's jiZero)
+        set helpers to ((@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer) clamped between 1 and 32
+        if (coefficients < 65536) or (wantedCount < 2):
+            set helpers to 1
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, helpers as a word sized integer, 8 as a word sized integer)
+        loop helper from 1 to helpers:
+            if @intrinsic("call", "libc", "pthread_create", an integer, threads + helper, 0 as a pointer, the function named "decode jp2 blocks from $", (the address of batch) as a pointer) != 0:
+                store 0 as a C long integer at (threads + helper)
+        ignore decode jp2 blocks from ((the address of batch) as a pointer)
+        loop helper from 1 to helpers:
+            if (the item at helper in threads) != (0 as a C long integer):
+                ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at helper in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, threads)
+        @intrinsic("call", "libc", "free", nothing, next)
+        @intrinsic("call", "libc", "free", nothing, wanted)
         loop component from 0 to components:
             set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
             set samples to (the item at component in tileSamples) as a pointer to a 64 bit floating-point number
@@ -1643,9 +1773,9 @@ local function decode jp2 tile {integer:tileIndex} from {pointer:bytes} spanning
             loop resolution from 0 to (levels + 1):
                 ignore @intrinsic("call", "libc", "memcpy", a pointer, resolutionSizes + (resolution * 4), (layoutState's jtResolutions) + ((first + resolution) * 16), 16 as a word sized integer)
             if (the item at (4 + (component * jp2 coding size)) in coding) = 1:
-                undo jp2 reversible wavelet of (samples as a pointer to an integer) stride width levels levels sizes resolutionSizes
+                undo jp2 wavelet of samples stride width levels levels sizes resolutionSizes reversible true
             else:
-                undo jp2 irreversible wavelet of samples stride width levels levels sizes resolutionSizes
+                undo jp2 wavelet of samples stride width levels levels sizes resolutionSizes reversible false
             @intrinsic("call", "libc", "free", nothing, resolutionSizes)
         # The component transform (Annex G) on the first three.
         set reversibleAll to true
@@ -1703,10 +1833,14 @@ local function decode jp2 tile {integer:tileIndex} from {pointer:bytes} spanning
                 loop column from 0 to width:
                     set value to 0
                     if reversible:
-                        set value to the item at ((row * width) + column) in integers
+                        set value to (the item at ((row * width) + column) in integers) + offset
                     else:
-                        set value to (the floor of ((the item at ((row * width) + column) in reals) + 0.5)) as an integer
-                    store ((value + offset) clamped between 0 and largest) at (plane + (((upper + row) * planeWidth) + (left + column)))
+                        # Rounded to nearest: truncation is the floor once
+                        # the value is no longer negative.
+                        set shifted to ((the item at ((row * width) + column) in reals) + (offset as a 64 bit floating-point number)) + 0.5
+                        if shifted > 0.0:
+                            set value to shifted as an integer
+                    store (value clamped between 0 and largest) at (plane + (((upper + row) * planeWidth) + (left + column)))
         loop component from 0 to components:
             @intrinsic("call", "libc", "free", nothing, (the item at component in tileSamples) as a pointer to an integer)
         @intrinsic("call", "libc", "free", nothing, tileSamples)
@@ -2037,6 +2171,19 @@ function the paint jp2 from {pointer:data} spanning {integer:count}:
                             set premultiplied to kind = 2
                 set canvas to an unfilled paint canvas width by height
                 set out to (canvas's pixels) as a pointer to an integer
+                # The usual case read straight from the planes: no palette,
+                # no subsampling, eight bits, no sYCC.
+                set direct to ((described's jcMappingCount) = 0) and (premultiplied = false)
+                loop role from 0 to 4:
+                    set channel to the item at role in roles
+                    if channel >= 0:
+                        if channel >= (image's jiComponents):
+                            set direct to false
+                        else:
+                            if (the item at channel in (image's jiPrecisions)) != 8:
+                                set direct to false
+                            if ((the item at channel in (image's jiPlaneWidths)) != width) or ((the item at channel in (image's jiPlaneHeights)) != height):
+                                set direct to false
                 # sYCC as the colour box says, or (as other readers assume) when
                 # no colour space is given and the chroma is subsampled.
                 set luminance to (described's jcSpace) = 18
@@ -2045,29 +2192,49 @@ function the paint jp2 from {pointer:data} spanning {integer:count}:
                     set components to image's jiComponents
                     if ((the item at 1 in steps) > (the item at 0 in steps)) or ((the item at (1 + components) in steps) > (the item at components in steps)):
                         set luminance to true
-                loop y from 0 to height:
-                    loop x from 0 to width:
-                        set red to the jp2 sample of (the item at 0 in roles) at x y in (the address of image) with (the address of described)
-                        set green to red
-                        set blue to red
-                        if colours = 3:
-                            set green to the jp2 sample of (the item at 1 in roles) at x y in (the address of image) with (the address of described)
-                            set blue to the jp2 sample of (the item at 2 in roles) at x y in (the address of image) with (the address of described)
-                            if luminance:
-                                set luma to red
-                                set cb to green - 128
-                                set cr to blue - 128
-                                set red to (luma + (((cr * 91881) + 32768) >> 16)) clamped between 0 and 255
-                                set green to (luma - ((((cb * 22554) + (cr * 46802)) + 32768) >> 16)) clamped between 0 and 255
-                                set blue to (luma + (((cb * 116130) + 32768) >> 16)) clamped between 0 and 255
+                if luminance:
+                    set direct to false
+                if direct:
+                    set planes to image's jiPlanes
+                    set redPlane to (the item at (the item at 0 in roles) in planes) as a pointer to an integer
+                    set greenPlane to redPlane
+                    set bluePlane to redPlane
+                    if colours = 3:
+                        set greenPlane to (the item at (the item at 1 in roles) in planes) as a pointer to an integer
+                        set bluePlane to (the item at (the item at 2 in roles) in planes) as a pointer to an integer
+                    set alphaPlane to redPlane
+                    set opaque to (the item at 3 in roles) < 0
+                    if opaque = false:
+                        set alphaPlane to (the item at (the item at 3 in roles) in planes) as a pointer to an integer
+                    loop spot from 0 to (width * height):
                         set alpha to 255
-                        if (the item at 3 in roles) >= 0:
-                            set alpha to the jp2 sample of (the item at 3 in roles) at x y in (the address of image) with (the address of described)
-                            if premultiplied and (alpha > 0):
-                                set red to ((red * 255) / alpha) clamped between 0 and 255
-                                set green to ((green * 255) / alpha) clamped between 0 and 255
-                                set blue to ((blue * 255) / alpha) clamped between 0 and 255
-                        store (((red | (green << 8)) | (blue << 16)) | (alpha << 24)) at (out + ((y * width) + x))
+                        if opaque = false:
+                            set alpha to the item at spot in alphaPlane
+                        store ((((the item at spot in redPlane) | ((the item at spot in greenPlane) << 8)) | ((the item at spot in bluePlane) << 16)) | (alpha << 24)) at (out + spot)
+                else:
+                    loop y from 0 to height:
+                        loop x from 0 to width:
+                            set red to the jp2 sample of (the item at 0 in roles) at x y in (the address of image) with (the address of described)
+                            set green to red
+                            set blue to red
+                            if colours = 3:
+                                set green to the jp2 sample of (the item at 1 in roles) at x y in (the address of image) with (the address of described)
+                                set blue to the jp2 sample of (the item at 2 in roles) at x y in (the address of image) with (the address of described)
+                                if luminance:
+                                    set luma to red
+                                    set cb to green - 128
+                                    set cr to blue - 128
+                                    set red to (luma + (((cr * 91881) + 32768) >> 16)) clamped between 0 and 255
+                                    set green to (luma - ((((cb * 22554) + (cr * 46802)) + 32768) >> 16)) clamped between 0 and 255
+                                    set blue to (luma + (((cb * 116130) + 32768) >> 16)) clamped between 0 and 255
+                            set alpha to 255
+                            if (the item at 3 in roles) >= 0:
+                                set alpha to the jp2 sample of (the item at 3 in roles) at x y in (the address of image) with (the address of described)
+                                if premultiplied and (alpha > 0):
+                                    set red to ((red * 255) / alpha) clamped between 0 and 255
+                                    set green to ((green * 255) / alpha) clamped between 0 and 255
+                                    set blue to ((blue * 255) / alpha) clamped between 0 and 255
+                            store (((red | (green << 8)) | (blue << 16)) | (alpha << 24)) at (out + ((y * width) + x))
                 @intrinsic("call", "libc", "free", nothing, roles)
                 set result to a decoded canvas
         loop component from 0 to (image's jiComponents):

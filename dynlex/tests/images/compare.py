@@ -43,8 +43,7 @@ def reference(path):
 
 # Formats this system's gdk-pixbuf (glycin loaders) lists but cannot read.
 unsupported = {
-               ".avif": "the editor does not read AVIF yet and says so",
-               ".jp2": "the editor does not read JPEG 2000 yet and says so"}
+               ".avif": "the editor does not read AVIF yet and says so"}
 failed = 0
 for folder in ("generated", "system"):
     for path in sorted((root / folder).iterdir()):
