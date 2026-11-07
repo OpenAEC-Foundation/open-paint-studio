@@ -1,6 +1,7 @@
 # Opening and saving images, all by the editor itself: PNG, JPEG, GIF, BMP,
-# TIFF, TGA, ICO, QOI, PNM (all six kinds), XBM, XPM, DDS, WebP and SVG (also
-# gzip-compressed), recognised by their contents rather than their names.
+# TIFF, TGA, ICO, QOI, PNM (all six kinds), XBM, XPM, DDS, WebP, JPEG 2000,
+# AVIF, IfcImageB and SVG (also gzip-compressed), recognised by their
+# contents rather than their names.
 # Written: PNG, JPEG, BMP and PPM, chosen by the extension (PNG when it
 # names none). The raster formats are read and written by the codec library
 # (dynlex/paint/codecs.dl, through codec_client.dl); SVG is drawn here.
@@ -262,7 +263,7 @@ function the paint image opened from {string:path}:
         if path ends with extension ".xpm":
             set hint to 2
         set raster to the paint codec decoding of data spanning count hint hint
-        set result to a failed paint file with "a file format the editor does not read (AVIF, HEIC and JPEG XL are not supported yet)"
+        set result to a failed paint file with "a file format the editor does not read (HEIC and JPEG XL are not supported yet)"
         if raster's recognised:
             set result to (raster's result) as a paint file
         else:

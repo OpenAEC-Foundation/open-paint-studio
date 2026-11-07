@@ -120,20 +120,26 @@ contents rather than its name:
 | DDS | uncompressed bit-mask layouts, BC1–BC5 and BC7 (DX9 and DX10 headers) | — |
 | WebP | lossless (all four transforms, colour cache, meta prefix codes; `paint/webp.dl`) and lossy (VP8 key frames with segments, token partitions, both loop filters; `paint/vp8.dl`), alpha plane, extended and animated files (first frame) | — |
 | JPEG 2000 | JP2 files and bare codestreams (`paint/jpeg2000.dl`): tiles, all five progression orders and order changes, precincts, quality layers, every code-block style, SOP/EPH markers, the 5/3 and 9/7 wavelets, RCT/ICT, 1–16 bit, subsampled components, sYCC, palettes and channel definitions (alpha); code-blocks and wavelet passes over all cores | — |
+| AVIF | still images (`paint/avif.dl`; AV1 intra decoding in `paint/av1.dl`, `av1_block.dl`, `av1_predict.dl`, `av1_filter.dl`): 8 and 10 bit, 4:2:0, 4:4:4 and grey, YCbCr and GBR, every intra prediction mode (directional with edge filtering and upsampling, smooth, Paeth, chroma from luma, palette, filter intra), all transform sizes and types, segmentation, delta quantiser and loop-filter levels, deblocking, CDEF and loop restoration (Wiener and self-guided; CDEF over all cores); alpha items, grids, irot and imir; colour from the nclx property | — |
 | IfcImageB | the binary IFCX raster document (`paint/ifcimage.dl`: gzip, CBOR, the embedded PNG), also as the former `.ifcxb` | IfcImageB up to 4096 pixels a side and 8 megapixels, opened by the browser edition |
 | SVG, SVGZ | paths, shapes, strokes, transforms, viewBox with preserveAspectRatio, `<style>` rules (type, class, id), clip paths, blur, text in the system's sans face (`paint/vector.dl`) | — |
 
-Not read yet: AVIF, HEIC, JPEG XL, DDS's HDR formats (BC6H), lossless and
-arithmetic-coded JPEG, and JPEG 2000 with packed packet headers (PPM, PPT).
+Not read yet: HEIC, JPEG XL, DDS's HDR formats (BC6H), lossless and
+arithmetic-coded JPEG, JPEG 2000 with packed packet headers (PPM, PPT), and
+AVIF with intra block copy, quantiser matrices or super-resolution (each
+says so when opened). AVIF film grain is read but not added: such an image
+opens without its grain. Clean-aperture cropping (clap) is not applied, and
+an animated AVIF opens as its still image.
 
 `tests/images/make_test_images.py` writes a test set:
-- 52 variants of one test card (bit depths, palettes, alpha, interlacing, compression, EXIF orientation, misnamed files);
+- 70 variants of one test card (bit depths, palettes, alpha, interlacing, compression, EXIF orientation, misnamed files, AVIF grids and transforms);
 - 30 images from `/usr/share`;
 - 5 broken files.
 
 `bench/open_images.dl` opens them all and `tests/images/compare.py` checks
-each against an independent decoder (Pillow or gdk-pixbuf), comparing colours
-premultiplied by alpha. State on 2026-11-07: all 89 images in the formats the
+each against an independent decoder (Pillow, libheif for AVIF, or
+gdk-pixbuf), comparing colours premultiplied by alpha. State on 2026-11-07:
+all 100 images in the formats the
 editor reads match (DDS: Pillow-encoded DXT1/3/5 and BC3, and BC1, BC4, BC5
 and BC7 files of random blocks that reach every mode and partition):
 - exactly, or within the lossy formats' tolerance;
@@ -157,8 +163,17 @@ and 0.23 s (measured on this machine, 2026-11-07). The code-block styles other
 than the default and progression order changes are implemented to the
 standard but no encoder at hand writes them, so they are not compared.
 
-AVIF is reported as not read yet, and the broken files fail with a readable
-message.
+AVIF decodes to the same planes as dav1d (through ffmpeg), sample for
+sample, on libaom files (lossless, quality 10 to 55, 4:4:4 YUV and GBR, 10-bit
+4:2:0, grey, alpha, screen content, a 4K photo, and one file per disabled
+coding tool) and a rav1e file with self-guided restoration. The colours
+match libheif within one level, as do alpha, grids, irot and imir: chroma is
+taken from the sample covering each pixel, as libheif and browsers (libyuv)
+do; libavif and ffmpeg interpolate it, so their edges differ. A 4K photo
+decodes in 0.5 s, against dav1d's 0.09 s (measured on this machine,
+2026-11-07); the tile decoding itself runs on one core.
+
+The broken files fail with a readable message.
 
 ## The interface, tested in all three editions
 

@@ -245,6 +245,8 @@ function decode av1 still from {pointer:data} spanning {integer:count} into {a p
                     allocate av1 frame for decoder
                     if (decoder's adUsingQm) = 1:
                         av1 failure of decoder as 5
+                    if (decoder's adWidth) != (decoder's adUpscaledWidth):
+                        av1 failure of decoder as 6
                     if kind = 6:
                         set headerBytes to (((inner's arPosition) + 7) >> 3) - start
                         decode av1 tile group at (start + headerBytes) spanning (payload - headerBytes) in data with decoder
@@ -900,6 +902,8 @@ function the paint avif from {pointer:data} spanning {integer:count}:
             return no decoded image because "an AVIF with intra block copy, which the editor does not read yet"
         if failure = 5:
             return no decoded image because "an AVIF with quantiser matrices, which the editor does not read yet"
+        if failure = 6:
+            return no decoded image because "an AVIF with super-resolution, which the editor does not read yet"
         return no decoded image because "the AVIF image data is damaged"
 
 function release avif file {a pointer to an avif file:parsed}:
