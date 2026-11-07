@@ -144,8 +144,11 @@ function {paint skin entry:entry} shows in {paint skin state:state}:
         if entry's opened >= 0:
             if entry's opened != state's opened:
                 return false
-        if (state's opened >= 0) and (((entry's closed >> state's opened) & 1) = 1):
-            return false
+        # Menus (0-5) and File pages (20-25) hide what they cover; dialogs
+        # (30-34) lie above a backdrop and would shift past the 32 bits.
+        if (state's opened >= 0) and (state's opened < 30):
+            if ((entry's closed >> state's opened) & 1) = 1:
+                return false
         if (entry's history = 0) and state's filled:
             return false
         if (entry's history = 1) and (state's filled = false):

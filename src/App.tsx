@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type PointerEvent, type ComponentType, type CSSProperties } from 'react';
-import { Paintbrush, Eraser, PaintBucket, Pipette, Minus, Square, Circle, Type, FilePlus2, FolderOpen, Download, Save, Grid2X2, Scan, ZoomIn, ZoomOut, Trash2, Plug, Upload, ArrowDownToLine, ChevronRight, Check, Image as ImageIcon, Clock3, Crop, RotateCw, FlipHorizontal2, Scaling, RotateCcw, FlipVertical2, MousePointer2, SlidersHorizontal, Contrast, PanelRight, Maximize2, CheckCheck } from 'lucide-react';
+import { Paintbrush, Eraser, PaintBucket, Pipette, Minus, Square, Circle, Type, FilePlus2, FolderOpen, Download, Save, Grid2X2, Scan, ZoomIn, ZoomOut, Trash2, Plug, Upload, ArrowDownToLine, ChevronRight, Check, Image as ImageIcon, Clock3, Crop, RotateCw, FlipHorizontal2, Scaling, RotateCcw, FlipVertical2, MousePointer2, SlidersHorizontal, Contrast, PanelRight, Maximize2, CheckCheck, FilePlus, FileType, Info, FileImage, ImagePlus } from 'lucide-react';
 import TitleBar from './components/TitleBar';
 import { releaseVersion } from './version';
 import { rasterIfcx, encodeRasterIfcx, readRasterIfcx } from '../shared/ifcx';
@@ -421,7 +421,7 @@ export default function App() {
     <input ref={projectInput} type="file" accept=".ifcx,.ifcxb" hidden onChange={e => void openFile(e.target.files?.[0])}/>
     <nav className="ribbon-tabs" aria-label="Ribbon">
       <RibbonTab label={t('file')} isFileTab onClick={() => setFileOpen(!fileOpen)}/>
-      {(['home'] as const).map(id => <RibbonTab key={id} label={t(id)} isActive={tab === id} onClick={() => { setTab(id); setFileOpen(false); }}/>) }
+      {(['home'] as const).map(id => <RibbonTab key={id} label={t(id)} isActive={tab === id && !fileOpen} onClick={() => { setTab(id); setFileOpen(false); }}/>) }
       <span className="ribbon-hint">{t('about')}</span>
     </nav>
     <section className={`paint-ribbon ${tab==='home'?'home-ribbon':''}`} aria-label={t(tab as 'home' | 'image' | 'view' | 'automation')}>
@@ -477,20 +477,21 @@ export default function App() {
       const titles: Record<BackstagePage, string> = { new: t('fileNew'), open: t('open'), save: t('fileSave'), export: t('fileExport'), formats: t('fileFormats'), about: t('fileAbout') };
       const leads: Record<BackstagePage, string> = { new: t('newLead'), open: t('openLead'), save: t('saveLead'), export: t('exportLead'), formats: t('formatsLead'), about: t('aboutLead') };
       return <Backstage page={filePage} onPage={page => { setFilePage(page); if (page === 'formats' && !formats.length) void supportedFormats().then(list => setFormats(list.formats)).catch(fail); }}
-        pages={{ task: [['new', titles.new], ['open', titles.open], ['save', titles.save], ['export', titles.export]], other: [['formats', titles.formats], ['about', titles.about]] }}
-        heading={titles[filePage]} lead={leads[filePage]}
-        settings={[t('fileSettings'), then(() => setModal('settings'))]} back={[t('fileBack'), close]}
-        exit={isDesktop() ? [t('fileExit'), () => void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close()).catch(fail)] : null}>
-        {filePage === 'new' && <BackstageTiles tiles={[{ title: t('new') + '…', detail: t('newCanvasDetail'), onClick: actionNew }]}/>}
-        {filePage === 'open' && <BackstageTiles tiles={[{ title: t('openImage'), detail: t('openImageDetail'), onClick: chooseFile }, { title: t('openProject'), detail: t('openProjectDetail'), onClick: then(() => projectInput.current?.click()) }]}/>}
-        {filePage === 'save' && <BackstageTiles tiles={[{ title: t('save'), detail: t('saveDetail'), onClick: then(() => void save()) }]}/>}
+        groups={[
+          [{ page: 'new', label: titles.new, icon: FilePlus }, { page: 'open', label: titles.open, icon: FolderOpen }, { page: 'save', label: titles.save, icon: Save }, { page: 'export', label: titles.export, icon: Upload }],
+          [{ page: 'formats', label: titles.formats, icon: FileType }, { label: t('fileSettings'), icon: SlidersHorizontal, onClick: then(() => setModal('settings')) }, { page: 'about', label: titles.about, icon: Info }],
+        ]}
+        heading={titles[filePage]} lead={leads[filePage]} back={[t('fileBack'), close]}>
+        {filePage === 'new' && <BackstageTiles tiles={[{ title: t('new') + '…', detail: t('newCanvasDetail'), icon: FilePlus, onClick: actionNew }]}/>}
+        {filePage === 'open' && <BackstageTiles tiles={[{ title: t('openImage'), detail: t('openImageDetail'), icon: ImagePlus, onClick: chooseFile }, { title: t('openProject'), detail: t('openProjectDetail'), icon: FolderOpen, onClick: then(() => projectInput.current?.click()) }]}/>}
+        {filePage === 'save' && <BackstageTiles tiles={[{ title: t('save'), detail: t('saveDetail'), icon: Save, onClick: then(() => void save()) }]}/>}
         {filePage === 'export' && <BackstageTiles tiles={[
-          { title: 'PNG', detail: t('exportPngDetail'), onClick: then(() => void exportPng()) },
-          { title: 'JPEG', detail: t('exportJpegDetail'), onClick: then(() => void exportOther('jpeg')) },
-          { title: 'WebP', detail: t('exportWebpDetail'), onClick: then(() => void exportOther('webp')) },
-          { title: 'SVG', detail: t('exportSvgDetail'), onClick: then(() => void exportOther('svg')) },
-          { title: 'IFCX (raster)', detail: t('exportRasterDetail'), onClick: then(() => void exportOther('ifcx')) },
-          { title: 'IFCXB (raster)', detail: t('exportRasterDetail'), onClick: then(() => void exportOther('ifcxb')) },
+          { title: 'PNG', detail: t('exportPngDetail'), icon: FileImage, onClick: then(() => void exportPng()) },
+          { title: 'JPEG', detail: t('exportJpegDetail'), icon: FileImage, onClick: then(() => void exportOther('jpeg')) },
+          { title: 'WebP', detail: t('exportWebpDetail'), icon: FileImage, onClick: then(() => void exportOther('webp')) },
+          { title: 'SVG', detail: t('exportSvgDetail'), icon: FileImage, onClick: then(() => void exportOther('svg')) },
+          { title: 'IFCX (raster)', detail: t('exportRasterDetail'), icon: FileImage, onClick: then(() => void exportOther('ifcx')) },
+          { title: 'IFCXB (raster)', detail: t('exportRasterDetail'), icon: FileImage, onClick: then(() => void exportOther('ifcxb')) },
         ]}/>}
         {filePage === 'formats' && <div className="format-list backstage-formats">{formats.map(item => <span key={item.format} title={item.description}>{item.format}</span>)}</div>}
         {filePage === 'about' && <div className="backstage-about"><strong>OpenAEC Paint Studio · {releaseVersion}</strong><p>{t('about')}</p><a href="https://github.com/OpenAEC-Foundation/OpenAEC-style-book" target="_blank" rel="noreferrer">OpenAEC style book · CC BY-SA 4.0</a></div>}

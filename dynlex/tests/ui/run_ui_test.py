@@ -179,7 +179,7 @@ steps = [
     ("file: Export page", lambda: press("page:Exporteren", -1, 22), 0.5),
     ("file: Formats page", lambda: press("page:Formaten", -1, 23), 1.5),
     ("file: About page", lambda: press("page:Over", -1, 24), 0.5),
-    ("file: return to workspace", lambda: press("file:Terug naar werkgebied", -1, 25), 0.6),
+    ("file: return to workspace", lambda: press("file:Terug", -1, 25), 0.6),
     ("file again, escape", lambda: (press("file"), time.sleep(0.4), key("Escape")), 0.6),
     # The dialogs, used.
     ("new canvas dialog", lambda: press("cmd:Nieuw canvas", -1), 0.8),
