@@ -429,116 +429,84 @@ function paste paint canvas {paint canvas:patch} into {paint canvas:image} at {i
         loop row from 0 to patch's height:
             ignore @intrinsic("call", "libc", "memcpy", a pointer, image's pixels + ((((row + y) * image's width) + x) * 4), patch's pixels + ((row * patch's width) * 4), ((patch's width * 4) as a word sized integer))
 
+# --- Whole-image work in bands of rows, spread over the processor's cores.
+# Each band runs the same per-pixel formulas as one thread would, so the
+# result does not depend on how many cores share it. ---
+
+function paint band adjust:
+    replacement: 1
+function paint band resize:
+    replacement: 2
+function paint band turn:
+    replacement: 3
+function paint band flip:
+    replacement: 4
+
+class:
+    patterns:
+        [a|] paint band job
+    members:
+        bjOperation as an integer
+        bjSource as a pointer to a byte
+        bjTarget as a pointer to a byte
+        bjWidth as an integer
+        bjHeight as an integer
+        bjTargetWidth as an integer
+        bjTargetHeight as an integer
+        bjKind as an integer
+        bjFactor as a 64 bit floating-point number
+        bjLift as a 64 bit floating-point number
+        bjAmount as a 64 bit floating-point number
+        bjLefts as a pointer to an integer
+        bjWeights as a pointer to a 64 bit floating-point number
+        bjFirst as an integer
+        bjLast as an integer
+
+local function a paint band job of {integer:operation} from {pointer:source} sized {integer:width} by {integer:height} into {pointer:target} sized {integer:targetWidth} by {integer:targetHeight}:
+    execute:
+        return @intrinsic("construct", a paint band job, operation, source as a pointer to a byte, target as a pointer to a byte, width, height, targetWidth, targetHeight, 0, 0.0, 0.0, 0.0, 0 as a pointer to an integer, 0 as a pointer to a 64 bit floating-point number, 0, 0)
+
+# A canvas of the size a new one gets, its pixels left for the caller to
+# write, every one of them.
+local function a blank paint canvas {integer:width} by {integer:height}:
+    execute:
+        set clampedWidth to width clamped between 1 and paint canvas largest side
+        set clampedHeight to height clamped between 1 and paint canvas largest side
+        if ((clampedWidth as a word sized integer) * (clampedHeight as a word sized integer)) > (paint canvas largest area as a word sized integer):
+            set clampedHeight to paint canvas largest area / clampedWidth
+        set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
+        if pixels = 0 as a pointer to a byte:
+            @intrinsic("call", "libc", "abort", nothing)
+        return the paint canvas record clampedWidth by clampedHeight at pixels
+
 local function the paint channel between {integer:low} and {integer:high} at {a 64 bit floating-point number:fraction}:
     execute:
         return (the rounded value of ((low as a 64 bit floating-point number) + (((high - low) as a 64 bit floating-point number) * fraction))) as an integer
-
-# Bilinear resampling to the new size, as the browser's smoothed drawImage does.
-function the paint canvas {paint canvas:image} resized to {integer:width} by {integer:height}:
-    execute:
-        set result to a new paint canvas width by height filled with the transparent paint color
-        set scaleX to (image's width as a 64 bit floating-point number) / (result's width as a 64 bit floating-point number)
-        set scaleY to (image's height as a 64 bit floating-point number) / (result's height as a 64 bit floating-point number)
-        # The source columns and weight of every result column, computed once.
-        set lefts to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((result's width * 2) * 4) as a word sized integer)
-        set weights to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, (result's width * 8) as a word sized integer)
-        loop column from 0 to result's width:
-            set sx to ((((column as a 64 bit floating-point number) + 0.5) * scaleX) - 0.5) clamped between 0.0 and ((image's width - 1) as a 64 bit floating-point number)
-            set x0 to (the floor of sx) as an integer
-            store (x0 * 4) at (lefts + (column * 2))
-            store ((the minimum of (x0 + 1) and (image's width - 1)) * 4) at (lefts + ((column * 2) + 1))
-            store (sx - (x0 as a 64 bit floating-point number)) at (weights + column)
-        set source to image's pixels
-        set target to result's pixels
-        set stride to image's width * 4
-        loop row from 0 to result's height:
-            set sy to ((((row as a 64 bit floating-point number) + 0.5) * scaleY) - 0.5) clamped between 0.0 and ((image's height - 1) as a 64 bit floating-point number)
-            set y0 to (the floor of sy) as an integer
-            set fy to sy - (y0 as a 64 bit floating-point number)
-            set upperRow to y0 * stride
-            set lowerRow to (the minimum of (y0 + 1) and (image's height - 1)) * stride
-            set offset to (row * result's width) * 4
-            loop column from 0 to result's width:
-                set a to the item at (column * 2) in lefts
-                set b to the item at ((column * 2) + 1) in lefts
-                set fx to the item at column in weights
-                loop channel from 0 to 4:
-                    set upper to the paint channel between (the paint channel at ((upperRow + a) + channel) in source) and (the paint channel at ((upperRow + b) + channel) in source) at fx
-                    set lower to the paint channel between (the paint channel at ((lowerRow + a) + channel) in source) and (the paint channel at ((lowerRow + b) + channel) in source) at fx
-                    store ((the paint channel between upper and lower at fy) as a byte) at (target + (offset + channel))
-                set offset to offset + 4
-        @intrinsic("call", "libc", "free", nothing, lefts)
-        @intrinsic("call", "libc", "free", nothing, weights)
-        return result
-
-# Quarter turns: clockwise when clockwise is true.
-function the paint canvas {paint canvas:image} turned clockwise {boolean:clockwise}:
-    execute:
-        set result to a new paint canvas image's height by image's width filled with the transparent paint color
-        set source to image's pixels as a pointer to an integer
-        set target to result's pixels as a pointer to an integer
-        set width to image's width
-        set height to image's height
-        loop row from 0 to height:
-            set from to row * width
-            loop column from 0 to width:
-                if clockwise:
-                    store (the item at (from + column) in source) at (target + ((column * height) + ((height - 1) - row)))
-                else:
-                    store (the item at (from + column) in source) at (target + ((((width - 1) - column) * height) + row))
-        return result
-
-function the paint canvas {paint canvas:image} flipped horizontally {boolean:horizontal}:
-    execute:
-        set result to a new paint canvas image's width by image's height filled with the transparent paint color
-        set source to image's pixels as a pointer to an integer
-        set target to result's pixels as a pointer to an integer
-        set width to image's width
-        set height to image's height
-        loop row from 0 to height:
-            set from to row * width
-            if horizontal:
-                loop column from 0 to width:
-                    store (the item at (from + column) in source) at (target + ((from + width) - (column + 1)))
-            else:
-                ignore @intrinsic("call", "libc", "memcpy", a pointer, target + (((height - 1) - row) * width), source + from, (width * 4) as a word sized integer)
-        return result
-
-# --- Colour corrections, the same formulas as shared/adjustments.ts. ---
-
-function paint adjustment adjust:
-    replacement: 0
-function paint adjustment grayscale:
-    replacement: 1
-function paint adjustment invert:
-    replacement: 2
-function paint adjustment sepia:
-    replacement: 3
 
 local function the paint byte from {a 64 bit floating-point number:value}:
     execute:
         return ((the rounded value of value) as an integer) clamped between 0 and 255
 
-# brightness, contrast and saturation run from -100 to 100 (saturation 0..200).
-function adjust paint canvas {paint canvas:image} by {integer:kind} with brightness {integer:brightness} contrast {integer:contrast} saturation {integer:saturation}:
+# Colour corrections (kind 2 inverts, 3 is sepia, as paint adjustment says),
+# the same formulas as shared/adjustments.ts, on the
+# band's rows of the image in place.
+local function adjust paint rows of {a pointer to a paint band job:job}:
     execute:
-        set scaledContrast to ((contrast clamped between -100 and 100) as a 64 bit floating-point number) * 2.55
-        set factor to (259.0 * (scaledContrast + 255.0)) / (255.0 * (259.0 - scaledContrast))
-        set lift to (brightness as a 64 bit floating-point number) * 2.55
-        set amount to (saturation as a 64 bit floating-point number) / 100.0
-        if kind = paint adjustment grayscale:
-            set amount to 0.0
-        set pixels to image's pixels
-        loop index from 0 to (image's width * image's height):
+        set factor to job's bjFactor
+        set lift to job's bjLift
+        set amount to job's bjAmount
+        set kind to job's bjKind
+        set pixels to job's bjSource
+        loop index from ((job's bjFirst) * (job's bjWidth)) to ((job's bjLast) * (job's bjWidth)):
             set offset to index * 4
             set r to (the paint channel at offset in pixels) as a 64 bit floating-point number
             set g to (the paint channel at (offset + 1) in pixels) as a 64 bit floating-point number
             set b to (the paint channel at (offset + 2) in pixels) as a 64 bit floating-point number
-            if kind = paint adjustment invert:
+            if kind = 2:
                 set r to 255.0 - r
                 set g to 255.0 - g
                 set b to 255.0 - b
-            else if kind = paint adjustment sepia:
+            else if kind = 3:
                 set a to r
                 set c to g
                 set d to b
@@ -553,3 +521,178 @@ function adjust paint canvas {paint canvas:image} by {integer:kind} with brightn
             store ((the paint byte from (((factor * (r - 128.0)) + 128.0) + lift)) as a byte) at (pixels + offset)
             store ((the paint byte from (((factor * (g - 128.0)) + 128.0) + lift)) as a byte) at (pixels + (offset + 1))
             store ((the paint byte from (((factor * (b - 128.0)) + 128.0) + lift)) as a byte) at (pixels + (offset + 2))
+
+# Bilinear resampling of the band's result rows; the source columns and
+# weights of every result column are computed once, before the bands.
+local function resize paint rows of {a pointer to a paint band job:job}:
+    execute:
+        set source to job's bjSource
+        set target to job's bjTarget
+        set lefts to job's bjLefts
+        set weights to job's bjWeights
+        set scaleY to job's bjAmount
+        set sourceHeight to job's bjHeight
+        set stride to (job's bjWidth) * 4
+        set resultWidth to job's bjTargetWidth
+        loop row from (job's bjFirst) to (job's bjLast):
+            set sy to ((((row as a 64 bit floating-point number) + 0.5) * scaleY) - 0.5) clamped between 0.0 and ((sourceHeight - 1) as a 64 bit floating-point number)
+            set y0 to (the floor of sy) as an integer
+            set fy to sy - (y0 as a 64 bit floating-point number)
+            set upperRow to y0 * stride
+            set lowerRow to (the minimum of (y0 + 1) and (sourceHeight - 1)) * stride
+            set offset to (row * resultWidth) * 4
+            loop column from 0 to resultWidth:
+                set a to the item at (column * 2) in lefts
+                set b to the item at ((column * 2) + 1) in lefts
+                set fx to the item at column in weights
+                loop channel from 0 to 4:
+                    set upper to the paint channel between (the paint channel at ((upperRow + a) + channel) in source) and (the paint channel at ((upperRow + b) + channel) in source) at fx
+                    set lower to the paint channel between (the paint channel at ((lowerRow + a) + channel) in source) and (the paint channel at ((lowerRow + b) + channel) in source) at fx
+                    store ((the paint channel between upper and lower at fy) as a byte) at (target + (offset + channel))
+                set offset to offset + 4
+
+# Quarter turns of the band's source rows: clockwise when the kind is 1.
+local function turn paint rows of {a pointer to a paint band job:job}:
+    execute:
+        set source to job's bjSource as a pointer to an integer
+        set target to job's bjTarget as a pointer to an integer
+        set width to job's bjWidth
+        set height to job's bjHeight
+        set clockwise to (job's bjKind) = 1
+        loop row from (job's bjFirst) to (job's bjLast):
+            set from to row * width
+            loop column from 0 to width:
+                if clockwise:
+                    store (the item at (from + column) in source) at (target + ((column * height) + ((height - 1) - row)))
+                else:
+                    store (the item at (from + column) in source) at (target + ((((width - 1) - column) * height) + row))
+
+# Mirrors the band's source rows: left to right when the kind is 1, else
+# top to bottom.
+local function flip paint rows of {a pointer to a paint band job:job}:
+    execute:
+        set source to job's bjSource as a pointer to an integer
+        set target to job's bjTarget as a pointer to an integer
+        set width to job's bjWidth
+        set height to job's bjHeight
+        loop row from (job's bjFirst) to (job's bjLast):
+            set from to row * width
+            if (job's bjKind) = 1:
+                loop column from 0 to width:
+                    store (the item at (from + column) in source) at (target + ((from + width) - (column + 1)))
+            else:
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, target + (((height - 1) - row) * width), source + from, (width * 4) as a word sized integer)
+
+# A thread's band: the job's rows from bjFirst up to bjLast.
+function paint band rows {pointer:address}:
+    execute:
+        set job to address as a pointer to a paint band job
+        if (job's bjOperation) = paint band adjust:
+            adjust paint rows of job
+        else if (job's bjOperation) = paint band resize:
+            resize paint rows of job
+        else if (job's bjOperation) = paint band turn:
+            turn paint rows of job
+        else:
+            flip paint rows of job
+        return 0 as a pointer
+
+# Runs the job over rows 0 up to count, in one band per core when there is
+# enough work (pixels) to share; the calling thread does the first band.
+local function run paint bands of {paint band job:template} over {integer:count} rows weighing {integer:pixels}:
+    execute:
+        set cores to (@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer
+        set parts to the minimum of (cores clamped between 1 and 32) and (count / 16)
+        set job to template
+        if (pixels < 65536) or (parts < 2):
+            set job's bjFirst to 0
+            set job's bjLast to count
+            ignore paint band rows ((the address of job) as pointer)
+            return nothing
+        set jobSize to (the size of (a paint band job)) as an integer
+        set jobs to @intrinsic("call", "libc", "calloc", a pointer to a byte, (jobSize * parts) as a word sized integer, 1 as a word sized integer)
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, parts as a word sized integer, 8 as a word sized integer)
+        loop part from 0 to parts:
+            set copy to jobs + (part * jobSize)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, (the address of job) as pointer, jobSize as a word sized integer)
+            set band to copy as a pointer to a paint band job
+            set band's bjFirst to (count * part) / parts
+            set band's bjLast to (count * (part + 1)) / parts
+            if part > 0:
+                if @intrinsic("call", "libc", "pthread_create", an integer, threads + part, 0 as a pointer, the function named "paint band rows $", copy as a pointer) != 0:
+                    # No thread: this band is done here instead.
+                    store 0 as a C long integer at (threads + part)
+                    ignore paint band rows (copy as pointer)
+        ignore paint band rows (jobs as pointer)
+        loop part from 1 to parts:
+            if (the item at part in threads) != 0 as a C long integer:
+                ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at part in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, jobs)
+        @intrinsic("call", "libc", "free", nothing, threads)
+
+# Bilinear resampling to the new size, as the browser's smoothed drawImage does.
+function the paint canvas {paint canvas:image} resized to {integer:width} by {integer:height}:
+    execute:
+        set result to a blank paint canvas width by height
+        set scaleX to (image's width as a 64 bit floating-point number) / (result's width as a 64 bit floating-point number)
+        set scaleY to (image's height as a 64 bit floating-point number) / (result's height as a 64 bit floating-point number)
+        # The source columns and weight of every result column, computed once.
+        set lefts to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((result's width * 2) * 4) as a word sized integer)
+        set weights to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, (result's width * 8) as a word sized integer)
+        loop column from 0 to result's width:
+            set sx to ((((column as a 64 bit floating-point number) + 0.5) * scaleX) - 0.5) clamped between 0.0 and ((image's width - 1) as a 64 bit floating-point number)
+            set x0 to (the floor of sx) as an integer
+            store (x0 * 4) at (lefts + (column * 2))
+            store ((the minimum of (x0 + 1) and (image's width - 1)) * 4) at (lefts + ((column * 2) + 1))
+            store (sx - (x0 as a 64 bit floating-point number)) at (weights + column)
+        set job to a paint band job of paint band resize from (image's pixels as pointer) sized (image's width) by (image's height) into (result's pixels as pointer) sized (result's width) by (result's height)
+        set job's bjLefts to lefts
+        set job's bjWeights to weights
+        set job's bjAmount to scaleY
+        run paint bands of job over (result's height) rows weighing (result's width * result's height)
+        @intrinsic("call", "libc", "free", nothing, lefts)
+        @intrinsic("call", "libc", "free", nothing, weights)
+        return result
+
+# Quarter turns: clockwise when clockwise is true.
+function the paint canvas {paint canvas:image} turned clockwise {boolean:clockwise}:
+    execute:
+        set result to a blank paint canvas image's height by image's width
+        set job to a paint band job of paint band turn from (image's pixels as pointer) sized (image's width) by (image's height) into (result's pixels as pointer) sized (result's width) by (result's height)
+        if clockwise:
+            set job's bjKind to 1
+        run paint bands of job over (image's height) rows weighing (image's width * image's height)
+        return result
+
+function the paint canvas {paint canvas:image} flipped horizontally {boolean:horizontal}:
+    execute:
+        set result to a blank paint canvas image's width by image's height
+        set job to a paint band job of paint band flip from (image's pixels as pointer) sized (image's width) by (image's height) into (result's pixels as pointer) sized (result's width) by (result's height)
+        if horizontal:
+            set job's bjKind to 1
+        run paint bands of job over (image's height) rows weighing (image's width * image's height)
+        return result
+
+# --- Colour corrections, the same formulas as shared/adjustments.ts. ---
+
+function paint adjustment adjust:
+    replacement: 0
+function paint adjustment grayscale:
+    replacement: 1
+function paint adjustment invert:
+    replacement: 2
+function paint adjustment sepia:
+    replacement: 3
+
+# brightness, contrast and saturation run from -100 to 100 (saturation 0..200).
+function adjust paint canvas {paint canvas:image} by {integer:kind} with brightness {integer:brightness} contrast {integer:contrast} saturation {integer:saturation}:
+    execute:
+        set scaledContrast to ((contrast clamped between -100 and 100) as a 64 bit floating-point number) * 2.55
+        set job to a paint band job of paint band adjust from (image's pixels as pointer) sized (image's width) by (image's height) into (image's pixels as pointer) sized (image's width) by (image's height)
+        set job's bjFactor to (259.0 * (scaledContrast + 255.0)) / (255.0 * (259.0 - scaledContrast))
+        set job's bjLift to (brightness as a 64 bit floating-point number) * 2.55
+        set job's bjAmount to (saturation as a 64 bit floating-point number) / 100.0
+        if kind = paint adjustment grayscale:
+            set job's bjAmount to 0.0
+        set job's bjKind to kind
+        run paint bands of job over (image's height) rows weighing (image's width * image's height)

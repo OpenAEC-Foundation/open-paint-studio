@@ -1,0 +1,94 @@
+# Times the whole-image operations on one image: the colour corrections,
+# resizing, quarter turns and flips on the canvas itself, and a colour
+# correction as the editor runs it (with its undo step). Prints one line per
+# operation in milliseconds; with an output folder it also writes each
+# result's raw RGBA bytes there (NAME.rgba), to compare two builds exactly.
+#
+#   pixel-ops IMAGE [OUT_DIR]
+import dynlex/paint/app.dl
+
+function the monotonic microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to (((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)) as an integer
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+function report {C string:name} taking {integer:micros} for {paint canvas:image} into {string:folder}:
+    execute:
+        print (((the string form of name) + (the string form of " ")) + (the string form of (micros / 1000))) + (the string form of " ms") as a line
+        if folder's length > 0:
+            set path to ((folder + (the string form of "/")) + (the string form of name)) + (the string form of ".rgba")
+            ignore write ((image's width * image's height) * 4) bytes from (image's pixels as pointer) to file path
+
+set arguments to the command line arguments
+set folder to the string form of ""
+if (arguments' length) > 1:
+    set folder to the argument at 1 in arguments
+set app to a new paint app 64 by 64
+set state to the address of app
+if (open (the argument at 0 in arguments) in state) = false:
+    print app's message as a line
+    return 1
+set original to app's image
+print (((the string form of "image ") + (the string form of original's width)) + (the string form of "x")) + (the string form of original's height) as a line
+report "original" taking 0 for original into folder
+
+set work to the paint copy of original
+set began to the monotonic microseconds
+adjust paint canvas work by paint adjustment adjust with brightness 20 contrast 10 saturation 120
+report "adjust" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set work to the paint copy of original
+set began to the monotonic microseconds
+adjust paint canvas work by paint adjustment grayscale with brightness 0 contrast 0 saturation 100
+report "grayscale" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set work to the paint copy of original
+set began to the monotonic microseconds
+adjust paint canvas work by paint adjustment invert with brightness 0 contrast 0 saturation 100
+report "invert" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set work to the paint copy of original
+set began to the monotonic microseconds
+adjust paint canvas work by paint adjustment sepia with brightness 0 contrast 0 saturation 100
+report "sepia" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original resized to (original's width / 2) by (original's height / 2)
+report "half-size" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original resized to ((original's width * 3) / 2) by ((original's height * 3) / 2)
+report "grow-1.5" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original turned clockwise true
+report "turn-right" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original turned clockwise false
+report "turn-left" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original flipped horizontally true
+report "flip-horizontal" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+set work to the paint canvas original flipped horizontally false
+report "flip-vertical" taking ((the monotonic microseconds) - began) for work into folder
+free paint canvas work
+
+set began to the monotonic microseconds
+adjust state by paint adjustment adjust brightness 20 contrast 10 saturation 120 named (the string form of "Adjust")
+report "editor-adjust" taking ((the monotonic microseconds) - began) for app's image into folder

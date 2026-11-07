@@ -205,9 +205,9 @@ are ready to edit; redraw is one frame at a new zoom level.
 | image | Tauri: decode / first frame / redraw | Rust: decode / first frame / redraw, peak | Open Paint Studio: decode / first frame / redraw, peak |
 |---|---|---|---|
 | 4K JPEG, 8.3 MP | 1861 / 180 / 32 ms | 47 / 8 / 5 ms, 123 MB | 36 / 6 / 4 ms, 70 MB |
-| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 61 / 6 / 4 ms, 91 MB |
+| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 65 / 6 / 4 ms, 91 MB |
 | 8K JPEG, 33 MP | 2220 / 178 / 32 ms (kept at 8.4 MP) | 128 / 8 / 6 ms, 317 MB | 118 / 6 / 4 ms, 206 MB |
-| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 191 / 6 / 4 ms, 281 MB |
+| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 195 / 6 / 4 ms, 281 MB |
 | 16K JPEG, 133 MP | refused: more than 64 megapixels | 439 / 8 / 6 ms, 1.10 GB | 428 / 7 / 4 ms, 0.75 GB |
 | 16384² JPEG, 268 MP | refused | 831 / 8 / 6 ms, 2.16 GB | 751 / 7 / 4 ms, 1.49 GB |
 
@@ -215,9 +215,26 @@ The JPEG decoder runs the inverse DCT and colour conversion over all cores.
 The PNG decoder inflates on one thread (eight input bytes at a time, a
 10-bit code lookup, matches copied eight bytes at a time; as fast as zlib on
 these files) while a second unfilters and places the rows as they arrive,
-with a branchless Paeth predictor; the compressed data is joined in place.
-With libpng the same files took 107 and 419 ms. The canvas is sampled at screen resolution over all cores,
+with a branchless Paeth predictor, each row in a buffer of its own because
+the inflater still copies from the bytes it wrote; the compressed data is
+joined in place. With libpng the same files took 107 and 419 ms. (Until
+2026-11-07 the rows were unfiltered in place, which gave wrong pixels in
+images with 1 MB or more of image data; the PNG figures above were measured
+again after the fix.) The canvas is sampled at screen resolution over all cores,
 so redraws stay at 4 ms however large the image.
+
+The whole-image operations (colour corrections, grayscale, invert, sepia,
+resizing, quarter turns and flips) run in bands of rows over all cores, with
+results byte for byte the same as on one thread (`bench/pixel_ops.dl`,
+2026-11-07, 16 threads, best of three):
+
+| operation | 4K, one thread → all cores | 8K, one thread → all cores |
+|---|---|---|
+| colour correction | 63 → 12 ms | 253 → 40 ms |
+| grayscale / invert / sepia | 63 / 39 / 59 → 13 / 8 / 12 ms | 255 / 155 / 235 → 42 / 28 / 38 ms |
+| half size / grow 1.5× | 81 / 578 → 12 / 87 ms | 361 / 2443 → 44 / 323 ms |
+| quarter turn / flip | 9 / 3 → 4 / 3 ms | 55 / 31 → 31 / 15 ms |
+| colour correction in the editor, with its undo step | 72 → 24 ms | 301 → 88 ms |
 
 **Code** (the browser editor at `3cb049c`)
 
