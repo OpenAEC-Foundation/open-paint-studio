@@ -38,6 +38,8 @@ function paint save command:
     replacement: 102
 function paint save as command:
     replacement: 103
+function paint save ifcimage command:
+    replacement: 135
 function paint undo command:
     replacement: 104
 function paint redo command:

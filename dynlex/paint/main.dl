@@ -65,13 +65,20 @@ function the path chosen by {C string:command}:
 
 function the path to open:
     execute:
-        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.jpg *.JPG *.jpeg *.gif *.bmp *.BMP *.tif *.tiff *.tga *.ico *.qoi *.ppm *.pgm *.pbm *.pnm *.xbm *.xpm *.svg *.svgz' 2>/dev/null"
+        return the path chosen by "zenity --file-selection --title='Open image' --file-filter='Images | *.png *.PNG *.jpg *.JPG *.jpeg *.gif *.bmp *.BMP *.tif *.tiff *.tga *.ico *.qoi *.ppm *.pgm *.pbm *.pnm *.xbm *.xpm *.svg *.svgz *.dds *.webp *.ifcimageb *.ifcxb' 2>/dev/null"
 
 function the path to save:
     execute:
-        set chosen to the path chosen by "zenity --file-selection --save --confirm-overwrite --title='Save image' --filename=painting.png --file-filter='PNG | *.png' --file-filter='BMP | *.bmp' --file-filter='PPM | *.ppm' 2>/dev/null"
+        set chosen to the path chosen by "zenity --file-selection --save --confirm-overwrite --title='Save image' --filename=painting.png --file-filter='PNG | *.png' --file-filter='JPEG | *.jpg' --file-filter='BMP | *.bmp' --file-filter='PPM | *.ppm' --file-filter='IfcImageB | *.ifcimageb' 2>/dev/null"
         if (chosen's length > 0) and ((the paint format of chosen) = paint format unknown):
             return chosen + (the string form of ".png")
+        return chosen
+
+function the path to save an ifcimage:
+    execute:
+        set chosen to the path chosen by "zenity --file-selection --save --confirm-overwrite --title='Save IfcImageB' --filename=painting.ifcimageb --file-filter='IfcImageB | *.ifcimageb' 2>/dev/null"
+        if (chosen's length > 0) and ((the paint format of chosen) != paint format ifcimage):
+            return chosen + (the string form of ".ifcimageb")
         return chosen
 
 # --- Fonts: the system's DejaVu Sans, else Liberation Sans or Noto Sans. ---
@@ -166,6 +173,8 @@ function the command of action {string:action}:
             return paint save command
         if ((name = (the string form of "PNG")) or (name = (the string form of "JPEG"))) or ((name = (the string form of "WebP")) or (name = (the string form of "PNG exporteren"))):
             return paint save as command
+        if (name = (the string form of "IfcImageB")) or (name = (the string form of "IFCXB (raster)")):
+            return paint save ifcimage command
         if name = (the string form of "Undo"):
             return paint undo command
         if name = (the string form of "Redo"):
@@ -508,6 +517,8 @@ loop while window remains open:
                     set command to paint save command
                 else if ((name = (the string form of "PNG")) or (name = (the string form of "JPEG"))) or (name = (the string form of "WebP")):
                     set command to paint save as command
+                else if (name = (the string form of "IfcImageB")) or (name = (the string form of "IFCXB (raster)")):
+                    set command to paint save ifcimage command
                 else:
                     set shell's status to (name + (the string form of " hoort bij de browsereditie"))
             else if action = (the string form of "dialog:close"):
@@ -763,6 +774,11 @@ loop while window remains open:
         set chosen to the path to save
         if chosen's length > 0:
             ignore save state to chosen
+    else if command = paint save ifcimage command:
+        set chosen to the path to save an ifcimage
+        if chosen's length > 0:
+            if (save state to chosen) = false:
+                set app's message to the string form of "IfcImageB niet opgeslagen: het formaat houdt afbeeldingen tot 4096 pixels per zijde en 8 megapixel"
     else if command = paint zoom in command:
         zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) + 10) percent around centerX centerY in width by height in (the address of shell)
         set canvasChanged to true

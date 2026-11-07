@@ -210,6 +210,14 @@
       },
       {
         "ext": [
+          "ifcimageb"
+        ],
+        "mimeType": "application/x-ifcimageb",
+        "name": "IfcImageB image",
+        "role": "Editor"
+      },
+      {
+        "ext": [
           "ifcxb"
         ],
         "mimeType": "application/x-ifcxb",

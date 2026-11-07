@@ -14,6 +14,7 @@ import dynlex/paint/png.dl
 import dynlex/paint/formats.dl
 import dynlex/paint/webp.dl
 import dynlex/paint/inflate.dl
+import dynlex/paint/ifcimage.dl
 import lib/string.dl
 
 local function store paint address {pointer:address} in {pointer:out}:
@@ -89,6 +90,14 @@ local function the paint raster from {pointer:data} spanning {integer:count} hin
         if ((first = 82) and (second = 73)) and (count > 12):
             if (the byte 8 in data) = 87:
                 return a paint raster attempt of (the paint webp from data spanning count)
+        # IfcImageB (and the older .ifcxb): tagged CBOR, mostly in gzip; other
+        # gzip data (SVGZ) is left to the interface.
+        if ((first = 31) and (second = 139)) or ((first = 217) and ((second = 217) and (third = 247))):
+            set document to the ifcimage document of data spanning count
+            if document's valid:
+                set image to the paint ifcimage from cbor (document's bytes as pointer) spanning (document's count)
+                @intrinsic("call", "libc", "free", nothing, document's bytes)
+                return a paint raster attempt of image
         if (first = 35) and (second = 100):
             return a paint raster attempt of (the paint xbm from data spanning count)
         if ((first = 47) and (second = 42)) and ((hint & 2) != 0):
@@ -124,6 +133,25 @@ exposed function paint codecs encode {pointer:pixels} width {integer:width} heig
             store paint address (encoded's bytes as pointer) in out
             return encoded's count
         set encoded to the png bytes of image
+        store paint address (encoded's bytes as pointer) in out
+        return encoded's count
+
+# Writes the IfcImageB file of RGBA pixels, named by title and author (C
+# strings): the byte count, the bytes' address in out; -1 with the message in
+# out when the image is beyond the browser edition's limits.
+exposed function paint codecs ifcimage {pointer:pixels} width {integer:width} height {integer:height} named {pointer:title} by {pointer:author} into {pointer:out}:
+    execute:
+        set image to @intrinsic("construct", a paint canvas, width, height, pixels as a pointer to a byte)
+        set titleSize to (@intrinsic("call", "libc", "strlen", a word sized integer, title)) as an integer
+        set authorSize to (@intrinsic("call", "libc", "strlen", a word sized integer, author)) as an integer
+        set titleText to a new string buffer containing titleSize bytes
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, the data of titleText, title, titleSize as a word sized integer)
+        set authorText to a new string buffer containing authorSize bytes
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, the data of authorText, author, authorSize as a word sized integer)
+        set encoded to the ifcimage bytes of image named titleText by authorText
+        if encoded's valid = false:
+            store paint message (the string form of "IfcImageB holds images up to 4096 pixels a side and 8 megapixels") in out
+            return -1
         store paint address (encoded's bytes as pointer) in out
         return encoded's count
 
