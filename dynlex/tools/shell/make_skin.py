@@ -214,7 +214,7 @@ def face(family, weight, text=""):
     if any(ord(ch) not in INTER_LATIN for ch in text):
         return "fallback"
     if "grotesk" in f:
-        return "grotesk"
+        return "grotesk500" if int(weight) < 600 else "grotesk"
     if "mono" in f:
         return "mono"
     w = int(weight)
@@ -442,7 +442,7 @@ def with_followers(es):
     return out
 
 # --- DynLex output ---
-FACES = {"inter400": 0, "inter500": 1, "inter600": 2, "grotesk": 3, "mono": 4, "fallback": 5}
+FACES = {"inter400": 0, "inter500": 1, "inter600": 2, "grotesk": 3, "mono": 4, "fallback": 5, "grotesk500": 6}
 KINDS = {"rect": 1, "image": 2, "text": 3, "hit": 4, "control": 5, "ring": 6}
 ALIGN = {"l": 0, "c": 1, "r": 2, "wrap": 3, "follow": 4, "wrapc": 5}
 
@@ -473,6 +473,12 @@ def main():
     hist_keys = set(key(e) for e in hist)
     opened = {i: entries(f"Start-open{i}", Sizes(f"Start-open{i}"), details) for i in range(len(details))}
     opened_keys = {i: set(key(e) for e in es) for i, es in opened.items()}
+    # The File pages (opened 20 + page) hide what they do not show, such as
+    # the active ribbon tab.
+    page_keys = {}
+    while (measured / f"{W0}x{H0}-backstage{len(page_keys)}.json").exists():
+        n = len(page_keys)
+        page_keys[20 + n] = set(key(e) for e in entries(f"backstage{n}", Sizes(f"backstage{n}"), details))
     out = []   # (Cond, entry, path)
     for e, p in zip(base, base.paths):
         k = key(e)
@@ -480,7 +486,7 @@ def main():
         c = Cond(tab=tab)
         if k not in hist_keys:
             c.history = 0
-        for i, ks in opened_keys.items():
+        for i, ks in list(opened_keys.items()) + list(page_keys.items()):
             if k not in ks:
                 c.closed |= 1 << i
         out.append((c, e, p))

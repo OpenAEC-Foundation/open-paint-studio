@@ -366,6 +366,11 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
         set header to @intrinsic("construct", a paint png header, width, height, depth, colour, interlaced, channels)
         set image to an unfilled paint canvas width by height
         set zeros to @intrinsic("call", "libc", "calloc", a pointer to a byte, ((((width * bitsPerPixel) + 7) / 8) + 8) as a word sized integer, 1 as a word sized integer)
+        # Rows are unfiltered in two rows of their own, never in place: the
+        # inflating thread still copies its matches from the bytes it wrote.
+        set lineSize to (((width * bitsPerPixel) + 7) / 8) + 16
+        set lineA to @intrinsic("call", "libc", "malloc", a pointer to a byte, lineSize as a word sized integer)
+        set lineB to @intrinsic("call", "libc", "malloc", a pointer to a byte, lineSize as a word sized integer)
         set at to 0
         set damaged to false
         loop pass from 0 to passes:
@@ -393,8 +398,11 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
                         # Rows that never arrived stay as the allocation
                         # left them; the image is refused below.
                         set at to at
-                    set rowStart to raw + at
+                    set rowStart to lineA
+                    if (lineIndex & 1) = 1:
+                        set rowStart to lineB
                     if damaged = false:
+                        ignore @intrinsic("call", "libc", "memcpy", a pointer, rowStart, raw + at, (1 + rowBytes) as a word sized integer)
                         unfilter (rowStart as pointer) of rowBytes by step after previous
                     if damaged:
                         set direct to direct
@@ -411,6 +419,8 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
         @intrinsic("call", "libc", "free", nothing, cells)
         @intrinsic("call", "libc", "free", nothing, raw)
         @intrinsic("call", "libc", "free", nothing, zeros)
+        @intrinsic("call", "libc", "free", nothing, lineA)
+        @intrinsic("call", "libc", "free", nothing, lineB)
         if damaged:
             free paint canvas image
             return no decoded image because "the PNG's image data is damaged"

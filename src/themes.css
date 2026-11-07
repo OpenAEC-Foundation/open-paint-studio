@@ -34,6 +34,8 @@
   --theme-border: rgba(54, 54, 62, 0.12);
   --theme-border-subtle: rgba(54, 54, 62, 0.06);
   --theme-text: #36363E;
+  --theme-row-hover: rgba(54, 54, 62, 0.05);
+  --theme-row-pressed: rgba(54, 54, 62, 0.09);
   --theme-text-secondary: rgba(54, 54, 62, 0.65);
   --theme-text-muted: rgba(54, 54, 62, 0.5);
   --theme-text-faint: rgba(54, 54, 62, 0.35);
@@ -138,6 +140,8 @@
   --theme-border: rgba(217, 119, 6, 0.25);
   --theme-border-subtle: rgba(217, 119, 6, 0.15);
   --theme-text: #FAFAF9;
+  --theme-row-hover: rgba(250, 250, 249, 0.06);
+  --theme-row-pressed: rgba(250, 250, 249, 0.10);
   --theme-text-secondary: rgba(250, 250, 249, 0.6);
   --theme-text-muted: rgba(250, 250, 249, 0.5);
   --theme-text-faint: rgba(250, 250, 249, 0.4);
@@ -233,6 +237,8 @@
   --theme-border: rgba(217, 119, 6, 0.2);
   --theme-border-subtle: rgba(217, 119, 6, 0.15);
   --theme-text: #FAFAF9;
+  --theme-row-hover: rgba(250, 250, 249, 0.06);
+  --theme-row-pressed: rgba(250, 250, 249, 0.10);
   --theme-text-secondary: rgba(250, 250, 249, 0.6);
   --theme-text-muted: rgba(250, 250, 249, 0.5);
   --theme-text-faint: rgba(250, 250, 249, 0.4);
@@ -328,6 +334,8 @@
   --theme-border: rgba(96, 165, 250, 0.20);
   --theme-border-subtle: rgba(96, 165, 250, 0.12);
   --theme-text: #E0E7FF;
+  --theme-row-hover: rgba(224, 231, 255, 0.06);
+  --theme-row-pressed: rgba(224, 231, 255, 0.10);
   --theme-text-secondary: rgba(224, 231, 255, 0.65);
   --theme-text-muted: rgba(224, 231, 255, 0.50);
   --theme-text-faint: rgba(224, 231, 255, 0.35);
@@ -423,6 +431,8 @@
   --theme-border: #FFD700;
   --theme-border-subtle: rgba(255, 215, 0, 0.5);
   --theme-text: #FFFFFF;
+  --theme-row-hover: rgba(255, 255, 255, 0.10);
+  --theme-row-pressed: rgba(255, 255, 255, 0.16);
   --theme-text-secondary: #FFFFFF;
   --theme-text-muted: #E5E5E5;
   --theme-text-faint: #C0C0C0;

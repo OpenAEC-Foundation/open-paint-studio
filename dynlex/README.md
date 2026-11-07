@@ -50,7 +50,12 @@ interface fonts (Inter, Space Grotesk; SIL Open Font License) ship in
    every visible box, text line, icon, image and control: its rectangle and
    computed style, for each ribbon tab, each open menu, the file panel and an
    empty and a filled history, at 1440 × 940, 1200 × 940 and 1440 × 800
-   (`tools/shell/measurements/`).
+   (`tools/shell/measurements/`). Each size gets a fresh window opened at that
+   size, because GTK does not reliably resize a window or view on Xvfb
+   without a window manager. The script stops with an error if the page
+   comes out at another size. It sets full hinting in the GTK settings, so
+   the text widths are those the native shell draws on any display (a bare
+   Xvfb otherwise gives fractional, narrower widths).
 2. `tools/shell/make_skin.py` compares the states and sizes and writes
    `paint/skin_data.dl`: the elements in paint order, each with the condition
    under which it shows and how its rectangle follows the window. Boxes with
@@ -87,7 +92,7 @@ linear values for an sRGB swapchain, so not every sRGB colour is reachable
 | Tools | brush, eraser, fill, picker, line, rectangle, ellipse, text, select; Bijsnijden crops; Escape cancels what is under way (stroke, shape, text, menu) and selects |
 | Window | its own title bar, as the desktop build: drag to move, double click or the button to maximise, minimise, close |
 | Ribbon | Bestand and Start, as in the original: every command sits on Start, the view and API commands as small icon buttons beside the Beeld group; the five menus open and close |
-| File | the File page of the OpenAEC Blueprint (a 260-pixel page list, the chosen page's action tiles, Settings, Return and Exit): New, Open, Save, Export, Formats, About |
+| File | the File screen of the OpenAEC Blueprint (`openaec-ui` `file_nav_row`, `task_tile`): Back first, then a 260-pixel column of 40-pixel rows with icons (New, Open, Save, Export; Formats, Settings, About), the active one with a 3-pixel accent bar and tint; beside it the page's heading in Space Grotesk Medium and task tiles with a 40-pixel icon tile, at most 620 pixels wide |
 | Dialogs | New canvas (name, size, presets, background), Resize, Colour corrections (three sliders), Settings and API, with focus rings, typing, spin buttons, selects and sliders; Enter applies, Escape closes |
 | Properties | size (spin box), opacity (slider), "Vectorobjecten behouden" (off flattens the history to one step, as in the original) |
 | Colours | the 30 swatches and, behind the colour well, a full colour picker: saturation and brightness field, hue bar, HEX and R, G, B |
@@ -232,9 +237,9 @@ are ready to edit; redraw is one frame at a new zoom level.
 | image | Tauri: decode / first frame / redraw | Rust: decode / first frame / redraw, peak | Open Paint Studio: decode / first frame / redraw, peak |
 |---|---|---|---|
 | 4K JPEG, 8.3 MP | 1861 / 180 / 32 ms | 47 / 8 / 5 ms, 123 MB | 36 / 6 / 4 ms, 70 MB |
-| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 61 / 6 / 4 ms, 91 MB |
+| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 65 / 6 / 4 ms, 91 MB |
 | 8K JPEG, 33 MP | 2220 / 178 / 32 ms (kept at 8.4 MP) | 128 / 8 / 6 ms, 317 MB | 118 / 6 / 4 ms, 206 MB |
-| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 191 / 6 / 4 ms, 281 MB |
+| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 195 / 6 / 4 ms, 281 MB |
 | 16K JPEG, 133 MP | refused: more than 64 megapixels | 439 / 8 / 6 ms, 1.10 GB | 428 / 7 / 4 ms, 0.75 GB |
 | 16384² JPEG, 268 MP | refused | 831 / 8 / 6 ms, 2.16 GB | 751 / 7 / 4 ms, 1.49 GB |
 
@@ -242,9 +247,26 @@ The JPEG decoder runs the inverse DCT and colour conversion over all cores.
 The PNG decoder inflates on one thread (eight input bytes at a time, a
 10-bit code lookup, matches copied eight bytes at a time; as fast as zlib on
 these files) while a second unfilters and places the rows as they arrive,
-with a branchless Paeth predictor; the compressed data is joined in place.
-With libpng the same files took 107 and 419 ms. The canvas is sampled at screen resolution over all cores,
+with a branchless Paeth predictor, each row in a buffer of its own because
+the inflater still copies from the bytes it wrote; the compressed data is
+joined in place. With libpng the same files took 107 and 419 ms. (Until
+2026-11-07 the rows were unfiltered in place, which gave wrong pixels in
+images with 1 MB or more of image data; the PNG figures above were measured
+again after the fix.) The canvas is sampled at screen resolution over all cores,
 so redraws stay at 4 ms however large the image.
+
+The whole-image operations (colour corrections, grayscale, invert, sepia,
+resizing, quarter turns and flips) run in bands of rows over all cores, with
+results byte for byte the same as on one thread (`bench/pixel_ops.dl`,
+2026-11-07, 16 threads, best of three):
+
+| operation | 4K, one thread → all cores | 8K, one thread → all cores |
+|---|---|---|
+| colour correction | 63 → 12 ms | 253 → 40 ms |
+| grayscale / invert / sepia | 63 / 39 / 59 → 13 / 8 / 12 ms | 255 / 155 / 235 → 42 / 28 / 38 ms |
+| half size / grow 1.5× | 81 / 578 → 12 / 87 ms | 361 / 2443 → 44 / 323 ms |
+| quarter turn / flip | 9 / 3 → 4 / 3 ms | 55 / 31 → 31 / 15 ms |
+| colour correction in the editor, with its undo step | 72 → 24 ms | 301 → 88 ms |
 
 **Code** (the browser editor at `3cb049c`)
 

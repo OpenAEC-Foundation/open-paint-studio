@@ -1,7 +1,7 @@
 export const labels = {
   en: {
     zoomIn: 'Zoom in', zoomOut: 'Zoom out',
-    fileBack: 'Return to workspace', fileExit: 'Exit', fileSettings: 'Settings…', fileFormats: 'Formats', fileAbout: 'About', fileSave: 'Save', fileExport: 'Export', fileNew: 'New',
+    fileBack: 'Back', fileSettings: 'Settings', fileFormats: 'Formats', fileAbout: 'About', fileSave: 'Save', fileExport: 'Export', fileNew: 'New',
     newLead: 'Start an empty canvas.', newCanvasDetail: 'Choose its name, size and background.',
     openLead: 'Open an image or an IFCX document. Large images are scaled to fit.', openImage: 'Image…', openImageDetail: 'PNG, JPEG, WebP, GIF, TIFF, HEIC, AVIF, PSD, SVG, RAW and more',
     openProject: 'IFCX document…', openProjectDetail: 'A Paint Studio document with its layers and history',
@@ -27,7 +27,7 @@ export const labels = {
   },
   nl: {
     zoomIn: 'Inzoomen', zoomOut: 'Uitzoomen',
-    fileBack: 'Terug naar werkgebied', fileExit: 'Afsluiten', fileSettings: 'Instellingen…', fileFormats: 'Formaten', fileAbout: 'Over', fileSave: 'Opslaan', fileExport: 'Exporteren', fileNew: 'Nieuw',
+    fileBack: 'Terug', fileSettings: 'Instellingen', fileFormats: 'Formaten', fileAbout: 'Over', fileSave: 'Opslaan', fileExport: 'Exporteren', fileNew: 'Nieuw',
     newLead: 'Begin een leeg canvas.', newCanvasDetail: 'Kies de naam, grootte en achtergrond.',
     openLead: 'Open een afbeelding of een IFCX-document. Grote afbeeldingen worden passend gemaakt.', openImage: 'Afbeelding…', openImageDetail: 'PNG, JPEG, WebP, GIF, TIFF, HEIC, AVIF, PSD, SVG, RAW en meer',
     openProject: 'IFCX-document…', openProjectDetail: 'Een Paint Studio-document met lagen en geschiedenis',

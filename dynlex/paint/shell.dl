@@ -22,6 +22,7 @@ class:
         display as a paint face
         mono as a paint face
         fallback as a paint face
+        displayMedium as a paint face
         images as a pointer to a list
         keys as a pointer to a list
         tab as an integer
@@ -53,6 +54,7 @@ function a new paint shell with fonts in {string:folder}:
         set medium to a paint face from (folder + (the string form of "/inter-latin-500-normal.woff2"))
         set semibold to a paint face from (folder + (the string form of "/inter-latin-600-normal.woff2"))
         set display to a paint face from (folder + (the string form of "/space-grotesk-latin-700-normal.woff2"))
+        set displayMedium to a paint face from (folder + (the string form of "/space-grotesk-latin-500-normal.woff2"))
         set mono to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf")
         # What fontconfig gives the browser for characters Inter's subset lacks.
         set fallback to a paint face from (the string form of "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
@@ -62,7 +64,7 @@ function a new paint shell with fonts in {string:folder}:
         loop index from 0 to ((the length of (skin's entries)) + 1):
             append (a new paint canvas 1 by 1 filled with the transparent paint color) to images
             append (the string form of "") to keys
-        return @intrinsic("construct", a paint shell, skin, regular, medium, semibold, display, mono, fallback, images, keys, 0, -1, the string form of "", the string form of "Concept opgeslagen op dit apparaat", the string form of "", a new paint canvas 1 by 1 filled with the transparent paint color, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of "", 0, false, true, an empty list of a string, an empty list of a string, the string form of "", the string form of "Untitled", 0, 0, 0, 0, the string form of "")
+        return @intrinsic("construct", a paint shell, skin, regular, medium, semibold, display, mono, fallback, displayMedium, images, keys, 0, -1, the string form of "", the string form of "Concept opgeslagen op dit apparaat", the string form of "", a new paint canvas 1 by 1 filled with the transparent paint color, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of "", 0, false, true, an empty list of a string, an empty list of a string, the string form of "", the string form of "Untitled", 0, 0, 0, 0, the string form of "")
 
 function the face numbered {integer:number} in {a pointer to a paint shell:shell}:
     execute:
@@ -76,6 +78,8 @@ function the face numbered {integer:number} in {a pointer to a paint shell:shell
             return the address of (shell's mono)
         if number = 5:
             return the address of (shell's fallback)
+        if number = 6:
+            return the address of (shell's displayMedium)
         return the address of (shell's regular)
 
 # The runtime presents to an sRGB swapchain but takes linear values: the

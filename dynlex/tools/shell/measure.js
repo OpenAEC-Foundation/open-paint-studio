@@ -48,6 +48,11 @@ window.__dump4 = function () {
 // { name: dump }; with history: also three strokes and the filled state.
 window.__measureAll = async (withHistory) => {
   const out = {}; const sz = `${innerWidth}x${innerHeight}`;
+  // WebKit may send the page a mouse move when the window appears; one move to
+  // the canvas corner puts the status bar's position back at 0, 0.
+  { const canvases = [...document.querySelectorAll('canvas')]; const top = canvases[canvases.length - 1]; const r = top.getBoundingClientRect();
+    top.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: r.x, clientY: r.y, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    await new Promise(r => setTimeout(r, 100)); }
   const tabs = [...document.querySelectorAll('nav.ribbon-tabs button')].map(b => b.textContent.trim()).filter(t => t !== 'Bestand');
   for (const name of tabs) { await __tab(name); out[`${sz}-${name}`] = __dump4(); }
   await __tab('Start');

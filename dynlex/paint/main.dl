@@ -475,7 +475,7 @@ loop while window remains open:
                             set app's size to (app's size - 1) clamped between 1 and 200
             else if (action = (the string form of "opacity")) or (action = (the string form of "zoomslider")):
                 set shell's dragging to action
-            else if ((action = (the string form of "cmd:Settings")) or (action = (the string form of "menu:Instellingen"))) or (action = (the string form of "file:Instellingen…")):
+            else if ((action = (the string form of "cmd:Settings")) or (action = (the string form of "menu:Instellingen"))) or (action = (the string form of "file:Instellingen")):
                 open dialog paint dialog settings for app in (the address of shell)
                 set closing to false
             else if action = (the string form of "cmd:Formaat wijzigen"):
@@ -505,10 +505,8 @@ loop while window remains open:
                     set filePage to 5
                 set shell's opened to 20 + filePage
                 set closing to false
-            else if action = (the string form of "file:Terug naar werkgebied"):
+            else if action = (the string form of "file:Terug"):
                 set shell's opened to -1
-            else if action = (the string form of "file:Afsluiten"):
-                request that window close
             else if action has (the string form of "tile:") at offset 0:
                 set name to the substring of action from 5 spanning (action's length - 5) bytes
                 if name = (the string form of "Afbeelding…"):
