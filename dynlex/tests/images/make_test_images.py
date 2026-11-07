@@ -103,6 +103,9 @@ save("tga-rle.tga", rgb, compression="tga_rle")
 save("ico-multi.ico", rgba.resize((64, 64)), sizes=[(16, 16), (32, 32), (64, 64)])
 save("qoi-rgba.qoi", rgba)
 save("jp2-rgb.jp2", rgb)
+save("jp2-lossy.jp2", rgb, quality_mode="rates", quality_layers=[20], irreversible=True)
+save("jp2-rgba-tiled.jp2", rgba, tile_size=(32, 32), progression="RPCL")
+save("j2k-gray.j2k", gray)
 save("xbm-mono.xbm", gray.convert("1"))
 save("dds-rgba.dds", rgba)
 save("dds-dxt1.dds", rgb, pixel_format="DXT1")
@@ -138,6 +141,79 @@ try:
             print("skip", name, error)
 except Exception as error:
     print("skip gdk-pixbuf savers", error)
+# AVIF through ffmpeg's AV1 encoder: lossless 4:4:4, 10-bit 4:2:0 and grey.
+for name, args in (("avif-444-lossless.avif", ["-pix_fmt", "yuv444p", "-crf", "0"]),
+                   ("avif-10bit.avif", ["-pix_fmt", "yuv420p10le", "-crf", "30"]),
+                   ("avif-gray.avif", ["-pix_fmt", "gray", "-crf", "20"])):
+    try:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(out / "png-rgb.png"), "-c:v", "libaom-av1",
+                        "-still-picture", "1", *args, str(out / name)], check=True)
+        made.append(name)
+    except Exception as error:
+        print("skip", name, error)
+# AVIF containers ffmpeg does not write: a 2 x 2 grid whose last tiles
+# overhang, a quarter turn (irot), a mirror (imir) and a grid with both. The
+# tiles are 4:4:4 AV1 from ffmpeg (OBU streams); the HEIF boxes are built
+# here.
+def heif_box(kind, body):
+    return struct.pack(">I", 8 + len(body)) + kind + body
+def heif_full(kind, version, flags, body):
+    return heif_box(kind, bytes([version]) + flags.to_bytes(3, "big") + body)
+def av1_tile(im, scratch):
+    im.save(scratch / "tile.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(scratch / "tile.png"), "-c:v", "libaom-av1", "-still-picture", "1",
+                    "-pix_fmt", "yuv444p", "-crf", "20", "-f", "obu", str(scratch / "tile.obu")], check=True)
+    return (scratch / "tile.obu").read_bytes()
+def heif_avif(name, tiles, columns, rows, size, transforms, scratch):
+    grid = len(tiles) > 1
+    datas = [av1_tile(t, scratch) for t in tiles]
+    ids = list(range(2, 2 + len(tiles))) if grid else [1]
+    infe = [heif_full(b"infe", 2, 0, struct.pack(">HH", 1, 0) + b"grid\0")] if grid else []
+    infe += [heif_full(b"infe", 2, 1 if grid else 0, struct.pack(">HH", i, 0) + b"av01\0") for i in ids]
+    iinf = heif_full(b"iinf", 0, 0, struct.pack(">H", len(infe)) + b"".join(infe))
+    description = bytes([0, 0, rows - 1, columns - 1]) + struct.pack(">HH", *size)
+    # Properties: 1 tile ispe, 2 av1C (profile 1: 4:4:4), 3 colr, then the
+    # grid's ispe and the transforms.
+    props = [heif_box(b"ispe", bytes(4) + struct.pack(">II", *tiles[0].size)), heif_box(b"av1C", bytes([0x81, 0x3F, 0, 0])),
+             heif_box(b"colr", b"nclx" + struct.pack(">HHHB", 1, 13, 6, 0))]
+    if grid:
+        props.append(heif_box(b"ispe", bytes(4) + struct.pack(">II", *size)))
+    first = len(props) + 1
+    props += [heif_box(kind, bytes([value])) for kind, value in transforms]
+    moves = [0x80 | (first + k) for k in range(len(transforms))]
+    entries = [struct.pack(">HB", i, 3 + (0 if grid else len(moves))) + bytes([1, 0x82, 3] + ([] if grid else moves)) for i in ids]
+    if grid:
+        entries.append(struct.pack(">HB", 1, 2 + len(moves)) + bytes([4, 3] + moves))
+    iprp = heif_box(b"iprp", heif_box(b"ipco", b"".join(props)) + heif_full(b"ipma", 0, 0, struct.pack(">I", len(entries)) + b"".join(entries)))
+    iref = heif_full(b"iref", 0, 0, heif_box(b"dimg", struct.pack(">HH", 1, len(ids)) + b"".join(struct.pack(">H", i) for i in ids))) if grid else b""
+    head = heif_full(b"hdlr", 0, 0, bytes(4) + b"pict" + bytes(13)) + heif_full(b"pitm", 0, 0, struct.pack(">H", 1))
+    def assemble(offsets):
+        # iloc version 1: the grid description in idat (construction method 1).
+        items = [struct.pack(">HHHHII", 1, 1, 0, 1, 0, len(description))] if grid else []
+        items += [struct.pack(">HHHHII", i, 0, 0, 1, at, len(d)) for i, at, d in zip(ids, offsets, datas)]
+        iloc = heif_full(b"iloc", 1, 0, bytes([0x44, 0]) + struct.pack(">H", len(items)) + b"".join(items))
+        idat = heif_box(b"idat", description) if grid else b""
+        return heif_box(b"ftyp", b"avif" + bytes(4) + b"mif1avifmiaf") + heif_full(b"meta", 0, 0, head + iloc + iinf + iref + iprp + idat)
+    at = len(assemble([0] * len(datas))) + 8
+    offsets = []
+    for d in datas:
+        offsets.append(at); at += len(d)
+    (out / name).write_bytes(assemble(offsets) + heif_box(b"mdat", b"".join(datas)))
+    made.append(name)
+try:
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        scratch = Path(folder)
+        w, h = rgb.size
+        tw, th = (w + 1) // 2 + 2, (h + 1) // 2 + 2
+        padded = Image.new("RGB", (tw * 2, th * 2)); padded.paste(rgb)
+        quarters = [padded.crop((c * tw, r * th, c * tw + tw, r * th + th)) for r in range(2) for c in range(2)]
+        heif_avif("avif-grid.avif", quarters, 2, 2, (w, h), [], scratch)
+        heif_avif("avif-irot.avif", [rgb], 1, 1, (w, h), [(b"irot", 1)], scratch)
+        heif_avif("avif-imir.avif", [rgb], 1, 1, (w, h), [(b"imir", 1)], scratch)
+        heif_avif("avif-grid-irot-imir.avif", quarters, 2, 2, (w, h), [(b"irot", 3), (b"imir", 0)], scratch)
+except Exception as error:
+    print("skip AVIF grid and transforms", error)
 # Vector: SVG and gzipped SVGZ.
 svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}"><rect width="{w}" height="{h}" fill="#f3f4f6"/><rect x="4" y="4" width="17" height="17" fill="#dc2626"/><circle cx="38" cy="18" r="12" fill="#2563eb"/><text x="8" y="52" font-size="14" fill="#111">SVG</text></svg>"""
 (out / "svg-card.svg").write_text(svg); made.append("svg-card.svg")

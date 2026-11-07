@@ -226,12 +226,12 @@ function run av1 deblocking in {a pointer to an av1 decoder:decoder}:
 
 # --- CDEF (7.15) ---
 
-function av1 cdef direction at {integer:row} {integer:column} into {a pointer to an integer:result} in {a pointer to an av1 decoder:decoder}:
+function av1 cdef direction at {integer:row} {integer:column} into {a pointer to an integer:result} working in {a pointer to an integer:scratch} of {a pointer to an av1 decoder:decoder}:
     execute:
-        set partial to (decoder's adScratch) + 8500
+        set partial to scratch
         loop index from 0 to 120:
             store 0 at (partial + index)
-        set cost to (decoder's adScratch) + 8620
+        set cost to scratch + 120
         loop index from 0 to 8:
             store 0 at (cost + index)
         set samples to decoder's adPlaneY
@@ -297,18 +297,19 @@ function av1 cdef direction at {integer:row} {integer:column} into {a pointer to
         store bestDirection at result
         store ((bestCost - (the item at ((bestDirection + 4) & 7) in cost)) >> 10) at (result + 1)
 
-function the av1 constrained {integer:difference} within {integer:threshold} damping {integer:damping}:
+# The constrained difference, with the damping's shift worked out already.
+function the av1 constrained {integer:difference} within {integer:threshold} shifted {integer:adjust}:
     execute:
-        if threshold = 0:
-            return 0
-        set adjust to the maximum of 0 and (damping - (av1 log of threshold))
         set magnitude to the absolute value of difference
         set value to the minimum of magnitude and (the maximum of 0 and (threshold - (magnitude >> adjust)))
         if difference < 0:
             return 0 - value
         return value
 
-function av1 cdef filter of plane {integer:plane} at {integer:row} {integer:column} strengths {integer:primary} {integer:secondary} damping {integer:damping} direction {integer:direction} into {a pointer to an integer:target} in {a pointer to an av1 decoder:decoder}:
+# Filters one 8 x 8 block (in luma) of the plane into target. directions
+# holds the spec's Cdef_Directions as 32 numbers (dy, dx per direction and
+# distance).
+function av1 cdef filter of plane {integer:plane} at {integer:row} {integer:column} strengths {integer:primary} {integer:secondary} damping {integer:damping} direction {integer:direction} using {a pointer to an integer:directions} working in {a pointer to an integer:scratch} into {a pointer to an integer:target} of {a pointer to an av1 decoder:decoder}:
     execute:
         set shift to (decoder's adBitDepth) - 8
         set subX to 0
@@ -322,46 +323,76 @@ function av1 cdef filter of plane {integer:plane} at {integer:row} {integer:colu
         set height to 8 >> subY
         set samples to the av1 plane plane of decoder
         set stride to the av1 stride of plane in decoder
-        set directions to the string form of "-1 1 -2 2 0 1 -1 2 0 1 0 2 0 1 1 2 1 1 2 2 1 0 2 1 1 0 2 0 1 0 2 -1"
+        # The six taps: the primary direction at distances 1 and 2, then
+        # the two secondary directions; each as dy, dx, weight, strength.
+        set taps to scratch + 140
         set strengthBit to (primary >> shift) & 1
-        set primaryTaps to the string form of "4 2 3 3"
+        loop pick from 0 to 3:
+            set which to direction
+            if pick = 1:
+                set which to (direction - 2) & 7
+            if pick = 2:
+                set which to (direction + 2) & 7
+            loop k from 0 to 2:
+                set tap to taps + (((pick * 2) + k) * 4)
+                store (the item at (((which * 2) + k) * 2) in directions) at tap
+                store (the item at ((((which * 2) + k) * 2) + 1) in directions) at (tap + 1)
+                if pick = 0:
+                    # Cdef_Pri_Taps: 4 2 for even strengths, 3 3 for odd.
+                    set weight to 4 - (k * 2)
+                    if strengthBit = 1:
+                        set weight to 3
+                    store weight at (tap + 2)
+                    store primary at (tap + 3)
+                else:
+                    store (2 - k) at (tap + 2)
+                    store secondary at (tap + 3)
+        set primaryShift to 0
+        if primary > 0:
+            set primaryShift to the maximum of 0 and (damping - (av1 log of primary))
+        set secondaryShift to 0
+        if secondary > 0:
+            set secondaryShift to the maximum of 0 and (damping - (av1 log of secondary))
+        # Away from the frame's edges every tap is inside it.
+        set inside to ((row >= 1) and (column >= 1)) and (((row + 3) <= (decoder's adMiRows)) and ((column + 3) <= (decoder's adMiCols)))
         loop i from 0 to height:
+            set y to y0 + i
             loop j from 0 to width:
-                set x to the item at (((y0 + i) * stride) + (x0 + j)) in samples
+                set x to x0 + j
+                set centre to the item at ((y * stride) + x) in samples
                 set sum to 0
-                set largest to x
-                set smallest to x
-                loop k from 0 to 2:
+                set largest to centre
+                set smallest to centre
+                loop t from 0 to 6:
+                    set tap to taps + (t * 4)
+                    set threshold to the item at 3 in tap
+                    set adjust to secondaryShift
+                    if t < 2:
+                        set adjust to primaryShift
+                    set dy to the item at 0 in tap
+                    set dx to the item at 1 in tap
                     set sign to -1
                     loop while sign <= 1:
-                        loop pick from 0 to 3:
-                            set which to direction
-                            if pick = 1:
-                                set which to (direction - 2) & 7
-                            if pick = 2:
-                                set which to (direction + 2) & 7
-                            set dy to the av1 signed number (((which * 2) + k) * 2) in directions
-                            set dx to the av1 signed number ((((which * 2) + k) * 2) + 1) in directions
-                            set sampleY to (y0 + i) + (sign * dy)
-                            set sampleX to (x0 + j) + (sign * dx)
+                        set sampleY to y + (sign * dy)
+                        set sampleX to x + (sign * dx)
+                        set available to inside
+                        if available = false:
                             set candidateRow to (sampleY << subY) >> 2
                             set candidateColumn to (sampleX << subX) >> 2
-                            if (((candidateRow >= 0) and (candidateRow < (decoder's adMiRows))) and ((candidateColumn >= 0) and (candidateColumn < (decoder's adMiCols)))):
-                                set p to the item at ((sampleY * stride) + sampleX) in samples
-                                if pick = 0:
-                                    set sum to sum + ((the av1 number ((strengthBit * 2) + k) in primaryTaps) * (the av1 constrained (p - x) within primary damping damping))
-                                else:
-                                    set tap to 2
-                                    if k = 1:
-                                        set tap to 1
-                                    set sum to sum + (tap * (the av1 constrained (p - x) within secondary damping damping))
-                                set largest to the maximum of largest and p
-                                set smallest to the minimum of smallest and p
+                            set available to ((candidateRow >= 0) and (candidateRow < (decoder's adMiRows))) and ((candidateColumn >= 0) and (candidateColumn < (decoder's adMiCols)))
+                        if available:
+                            set p to the item at ((sampleY * stride) + sampleX) in samples
+                            if threshold != 0:
+                                set sum to sum + ((the item at 2 in tap) * (the av1 constrained (p - centre) within threshold shifted adjust))
+                            if p > largest:
+                                set largest to p
+                            if p < smallest:
+                                set smallest to p
                         set sign to sign + 2
                 set negative to 0
                 if sum < 0:
                     set negative to 1
-                store ((x + (((8 + sum) - negative) >> 4)) clamped between smallest and largest) at (target + (((y0 + i) * stride) + (x0 + j)))
+                store ((centre + (((8 + sum) - negative) >> 4)) clamped between smallest and largest) at (target + ((y * stride) + x))
 
 function the av1 signed number {integer:wanted} in {string:listing}:
     execute:
@@ -389,6 +420,80 @@ function the av1 signed number {integer:wanted} in {string:listing}:
                 set inNumber to false
         return 0
 
+# CDEF over the frame: helpers take 64-row bands (superblock rows) in turn,
+# reading the deblocked planes and writing the copies.
+class:
+    patterns:
+        [an|] av1 cdef batch
+    members:
+        cbNext as a pointer to an integer
+        cbBands as an integer
+        cbDecoder as a pointer to an av1 decoder
+        cbCopies as a pointer to a C long integer
+        cbDirections as a pointer to an integer
+
+function run av1 cdef bands from {pointer:address}:
+    execute:
+        set batch to address as a pointer to an av1 cdef batch
+        set decoder to batch's cbDecoder
+        set copies to batch's cbCopies
+        set directions to batch's cbDirections
+        set scratch to @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer)
+        set result to scratch + 130
+        set planes to decoder's adPlanes
+        set strengths to decoder's adCdefStrengths
+        set coefficientShift to (decoder's adBitDepth) - 8
+        loop while true:
+            set band to atomically add 1 at (batch's cbNext)
+            if band >= (batch's cbBands):
+                @intrinsic("call", "libc", "free", nothing, scratch)
+                return 0 as a pointer
+            set row to band * 16
+            set lastRow to the minimum of (row + 16) and (decoder's adMiRows)
+            loop while row < lastRow:
+                set column to 0
+                loop while column < (decoder's adMiCols):
+                    set index to the item at (((row >> 4) * (decoder's adCdefColumns)) + (column >> 4)) in (decoder's adCdefIndex)
+                    set allSkip to true
+                    loop dy from 0 to 2:
+                        loop dx from 0 to 2:
+                            if ((row + dy) < (decoder's adMiRows)) and ((column + dx) < (decoder's adMiCols)):
+                                if (the av1 mi field 3 at (row + dy) (column + dx) of decoder) = 0:
+                                    set allSkip to false
+                    if (index != -1) and (allSkip = false):
+                        av1 cdef direction at row column into result working in scratch of decoder
+                        set lumaDirection to the item at 0 in result
+                        set variance to the item at 1 in result
+                        set primary to (the item at (index * 4) in strengths) << coefficientShift
+                        set secondary to (the item at ((index * 4) + 1) in strengths) << coefficientShift
+                        set direction to lumaDirection
+                        if primary = 0:
+                            set direction to 0
+                        set varianceStrength to 0
+                        if (variance >> 6) > 0:
+                            set varianceStrength to the minimum of (av1 log of (variance >> 6)) and 12
+                        set adjusted to 0
+                        if variance > 0:
+                            set adjusted to ((primary * (4 + varianceStrength)) + 8) >> 4
+                        set damping to (decoder's adCdefDamping) + coefficientShift
+                        av1 cdef filter of plane 0 at row column strengths adjusted secondary damping damping direction direction using directions working in scratch into ((the item at 0 in copies) as a pointer to an integer) of decoder
+                        if planes > 1:
+                            set primary to (the item at ((index * 4) + 2) in strengths) << coefficientShift
+                            set secondary to (the item at ((index * 4) + 3) in strengths) << coefficientShift
+                            set direction to 0
+                            if primary != 0:
+                                # Subsampling one way only turns the direction.
+                                set direction to lumaDirection
+                                if ((decoder's adSubX) = 1) and ((decoder's adSubY) = 0):
+                                    set direction to the item at lumaDirection in (directions + 32)
+                                if ((decoder's adSubX) = 0) and ((decoder's adSubY) = 1):
+                                    set direction to the item at lumaDirection in (directions + 40)
+                            set damping to ((decoder's adCdefDamping) + coefficientShift) - 1
+                            av1 cdef filter of plane 1 at row column strengths primary secondary damping damping direction direction using directions working in scratch into ((the item at 1 in copies) as a pointer to an integer) of decoder
+                            av1 cdef filter of plane 2 at row column strengths primary secondary damping damping direction direction using directions working in scratch into ((the item at 2 in copies) as a pointer to an integer) of decoder
+                    set column to column + 2
+                set row to row + 2
+
 function run av1 cdef in {a pointer to an av1 decoder:decoder}:
     execute:
         if (((decoder's adCodedLossless) = 1) or ((decoder's adAllowIntrabc) = 1)) or ((decoder's adCdefEnabled) = 0):
@@ -404,49 +509,29 @@ function run av1 cdef in {a pointer to an av1 decoder:decoder}:
             set copy to @intrinsic("call", "libc", "malloc", a pointer to an integer, (count * 4) as a word sized integer)
             ignore @intrinsic("call", "libc", "memcpy", a pointer, copy, the av1 plane plane of decoder, (count * 4) as a word sized integer)
             store (copy as a C long integer) at (copies + plane)
-        set result to (decoder's adScratch) + 8700
-        set strengths to decoder's adCdefStrengths
-        set coefficientShift to (decoder's adBitDepth) - 8
-        set row to 0
-        loop while row < (decoder's adMiRows):
-            set column to 0
-            loop while column < (decoder's adMiCols):
-                set index to the item at (((row >> 4) * (decoder's adCdefColumns)) + (column >> 4)) in (decoder's adCdefIndex)
-                set allSkip to true
-                loop dy from 0 to 2:
-                    loop dx from 0 to 2:
-                        if ((row + dy) < (decoder's adMiRows)) and ((column + dx) < (decoder's adMiCols)):
-                            if (the av1 mi field 3 at (row + dy) (column + dx) of decoder) = 0:
-                                set allSkip to false
-                if (index != -1) and (allSkip = false):
-                    av1 cdef direction at row column into result in decoder
-                    set lumaDirection to the item at 0 in result
-                    set variance to the item at 1 in result
-                    set primary to (the item at (index * 4) in strengths) << coefficientShift
-                    set secondary to (the item at ((index * 4) + 1) in strengths) << coefficientShift
-                    set direction to lumaDirection
-                    if primary = 0:
-                        set direction to 0
-                    set varianceStrength to 0
-                    if (variance >> 6) > 0:
-                        set varianceStrength to the minimum of (av1 log of (variance >> 6)) and 12
-                    set adjusted to 0
-                    if variance > 0:
-                        set adjusted to ((primary * (4 + varianceStrength)) + 8) >> 4
-                    set damping to (decoder's adCdefDamping) + coefficientShift
-                    av1 cdef filter of plane 0 at row column strengths adjusted secondary damping damping direction direction into ((the item at 0 in copies) as a pointer to an integer) in decoder
-                    if planes > 1:
-                        set primary to (the item at ((index * 4) + 2) in strengths) << coefficientShift
-                        set secondary to (the item at ((index * 4) + 3) in strengths) << coefficientShift
-                        set direction to 0
-                        if primary != 0:
-                            set table to the string form of "0 1 2 3 4 5 6 7 1 2 2 2 3 4 6 0 7 0 2 4 5 6 6 6 0 1 2 3 4 5 6 7"
-                            set direction to the av1 number ((((decoder's adSubX) * 16) + ((decoder's adSubY) * 8)) + lumaDirection) in table
-                        set damping to ((decoder's adCdefDamping) + coefficientShift) - 1
-                        av1 cdef filter of plane 1 at row column strengths primary secondary damping damping direction direction into ((the item at 1 in copies) as a pointer to an integer) in decoder
-                        av1 cdef filter of plane 2 at row column strengths primary secondary damping damping direction direction into ((the item at 2 in copies) as a pointer to an integer) in decoder
-                set column to column + 2
-            set row to row + 2
+        # Cdef_Directions (dy, dx per direction and distance), then the
+        # chroma directions for 4:2:2 and 4:4:0.
+        set listing to the string form of "-1 1 -2 2 0 1 -1 2 0 1 0 2 0 1 1 2 1 1 2 2 1 0 2 1 1 0 2 0 1 0 2 -1 7 0 2 4 5 6 6 6 1 2 2 2 3 4 6 0"
+        set directions to @intrinsic("call", "libc", "calloc", a pointer to an integer, 48 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 48:
+            store (the av1 signed number index in listing) at (directions + index)
+        set next to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set bands to ((decoder's adMiRows) + 15) >> 4
+        set batch to @intrinsic("construct", an av1 cdef batch, next, bands, decoder, copies, directions)
+        set helpers to ((@intrinsic("call", "libc", "sysconf", a C long integer, 84)) as an integer) clamped between 1 and 32
+        if ((decoder's adMiRows) * (decoder's adMiCols)) < 16384:
+            set helpers to 1
+        set helpers to the minimum of helpers and bands
+        set threads to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, helpers as a word sized integer, 8 as a word sized integer)
+        loop helper from 1 to helpers:
+            if @intrinsic("call", "libc", "pthread_create", an integer, threads + helper, 0 as a pointer, the function named "run av1 cdef bands from $", (the address of batch) as a pointer) != 0:
+                store 0 as a C long integer at (threads + helper)
+        ignore run av1 cdef bands from ((the address of batch) as a pointer)
+        loop helper from 1 to helpers:
+            if (the item at helper in threads) != (0 as a C long integer):
+                ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at helper in threads, 0 as a pointer)
+        @intrinsic("call", "libc", "free", nothing, threads)
+        @intrinsic("call", "libc", "free", nothing, next)
         # The filtered copies become the frame.
         loop plane from 0 to planes:
             set copy to (the item at plane in copies) as a pointer to an integer
@@ -460,6 +545,7 @@ function run av1 cdef in {a pointer to an av1 decoder:decoder}:
                 @intrinsic("call", "libc", "free", nothing, decoder's adPlaneV)
                 set decoder's adPlaneV to copy
         @intrinsic("call", "libc", "free", nothing, copies)
+        @intrinsic("call", "libc", "free", nothing, directions)
 
 # --- Loop restoration (7.17) ---
 # The frame after CDEF is the source; rows above and below a unit's 64-row

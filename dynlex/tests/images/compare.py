@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Compares what the editor decoded (build/images/decoded/NAME.png, written
 by bench/open_images.dl) with an independent reference decode of each file:
-Pillow where it reads the format, gdk-pixbuf (through PyGObject) otherwise.
+Pillow where it reads the format, libheif (with libaom) for AVIF, gdk-pixbuf
+(through PyGObject) otherwise.
 Fully transparent pixels compare by alpha only. XBM goes to gdk-pixbuf, which
 draws set bits black as browsers do (Pillow inverts them), and a 32-bit BMP
 keeps its fourth byte as alpha, as WebKit does (Pillow drops it). Prints one line per image and
 exits non-zero when any differs beyond the tolerance for its kind of format."""
-import sys, warnings
+import ctypes, sys, warnings
 warnings.filterwarnings("ignore")
 from pathlib import Path
 from PIL import Image, ImageOps, ImageChops
@@ -24,8 +25,38 @@ def pixbuf_reference(path):
     im = Image.frombytes(mode, (buf.get_width(), buf.get_height()), buf.read_pixel_bytes().get_data(), "raw", mode, buf.get_rowstride())
     return im.convert("RGBA"), "gdk-pixbuf"
 
+def libheif_reference(path):
+    h = ctypes.CDLL("libheif.so.1")
+    class Error(ctypes.Structure):
+        _fields_ = [("code", ctypes.c_int), ("subcode", ctypes.c_int), ("message", ctypes.c_char_p)]
+    for name in ("heif_context_read_from_file", "heif_context_get_primary_image_handle", "heif_decode_image"):
+        getattr(h, name).restype = Error
+    h.heif_context_alloc.restype = ctypes.c_void_p
+    h.heif_image_get_plane_readonly.restype = ctypes.POINTER(ctypes.c_uint8)
+    context = ctypes.c_void_p(h.heif_context_alloc())
+    error = h.heif_context_read_from_file(context, str(path).encode(), None)
+    if error.code:
+        raise RuntimeError(error.message.decode())
+    handle, image = ctypes.c_void_p(), ctypes.c_void_p()
+    h.heif_context_get_primary_image_handle(context, ctypes.byref(handle))
+    alpha = h.heif_image_handle_has_alpha_channel(handle)
+    # heif_colorspace_RGB = 1; heif_chroma_interleaved_RGB = 10, _RGBA = 11.
+    error = h.heif_decode_image(handle, ctypes.byref(image), 1, 11 if alpha else 10, None)
+    if error.code:
+        raise RuntimeError(error.message.decode())
+    w = h.heif_image_get_width(image, 10)   # heif_channel_interleaved
+    hh = h.heif_image_get_height(image, 10)
+    stride = ctypes.c_int()
+    plane = h.heif_image_get_plane_readonly(image, 10, ctypes.byref(stride))
+    mode = "RGBA" if alpha else "RGB"
+    im = Image.frombytes(mode, (w, hh), ctypes.string_at(plane, stride.value * hh), "raw", mode, stride.value).convert("RGBA")
+    h.heif_image_release(image); h.heif_image_handle_release(handle); h.heif_context_free(context)
+    return im, "libheif"
+
 def reference(path):
-    if path.suffix.lower() in (".svg", ".svgz", ".avif", ".xpm", ".jxl", ".heic", ".xbm"):
+    if path.suffix.lower() == ".avif":
+        return libheif_reference(path)
+    if path.suffix.lower() in (".svg", ".svgz", ".xpm", ".jxl", ".heic", ".xbm"):
         return pixbuf_reference(path)
     try:
         im = Image.open(path)
@@ -42,8 +73,7 @@ def reference(path):
         return pixbuf_reference(path)
 
 # Formats this system's gdk-pixbuf (glycin loaders) lists but cannot read.
-unsupported = {
-               ".avif": "the editor does not read AVIF yet and says so"}
+unsupported = {}
 failed = 0
 for folder in ("generated", "system"):
     for path in sorted((root / folder).iterdir()):

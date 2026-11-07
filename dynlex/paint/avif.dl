@@ -568,6 +568,63 @@ function a new av1 decoder:
         set memory to @intrinsic("call", "libc", "calloc", a pointer to a byte, ((the size of (an av1 decoder)) as an integer) as a word sized integer, 1 as a word sized integer)
         return memory as a pointer to an av1 decoder
 
+# Frees what decoding allocated, then the decoder (tile data is not its own).
+function release av1 decoder {a pointer to an av1 decoder:finished}:
+    execute:
+        @intrinsic("call", "libc", "free", nothing, finished's adOperatingIdc)
+        @intrinsic("call", "libc", "free", nothing, finished's adModelForPoint)
+        @intrinsic("call", "libc", "free", nothing, finished's adDeltaQ)
+        @intrinsic("call", "libc", "free", nothing, finished's adQmLevels)
+        @intrinsic("call", "libc", "free", nothing, finished's adSegFeatureOn)
+        @intrinsic("call", "libc", "free", nothing, finished's adSegFeatureData)
+        @intrinsic("call", "libc", "free", nothing, finished's adLosslessSegments)
+        @intrinsic("call", "libc", "free", nothing, finished's adLfLevels)
+        @intrinsic("call", "libc", "free", nothing, finished's adLfRefDeltas)
+        @intrinsic("call", "libc", "free", nothing, finished's adLfModeDeltas)
+        @intrinsic("call", "libc", "free", nothing, finished's adCdefStrengths)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrTypes)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrSizes)
+        @intrinsic("call", "libc", "free", nothing, finished's adGrain)
+        @intrinsic("call", "libc", "free", nothing, finished's adColStarts)
+        @intrinsic("call", "libc", "free", nothing, finished's adRowStarts)
+        @intrinsic("call", "libc", "free", nothing, finished's adCdf)
+        @intrinsic("call", "libc", "free", nothing, finished's adCdfStart)
+        @intrinsic("call", "libc", "free", nothing, finished's adCdfOffsets)
+        @intrinsic("call", "libc", "free", nothing, finished's adMi)
+        @intrinsic("call", "libc", "free", nothing, finished's adTxTypes)
+        @intrinsic("call", "libc", "free", nothing, finished's adLfTxSizes)
+        @intrinsic("call", "libc", "free", nothing, finished's adCdefIndex)
+        @intrinsic("call", "libc", "free", nothing, finished's adAboveLevel)
+        @intrinsic("call", "libc", "free", nothing, finished's adAboveDc)
+        @intrinsic("call", "libc", "free", nothing, finished's adLeftLevel)
+        @intrinsic("call", "libc", "free", nothing, finished's adLeftDc)
+        @intrinsic("call", "libc", "free", nothing, finished's adBlockDecoded)
+        @intrinsic("call", "libc", "free", nothing, finished's adPlaneY)
+        @intrinsic("call", "libc", "free", nothing, finished's adPlaneU)
+        @intrinsic("call", "libc", "free", nothing, finished's adPlaneV)
+        @intrinsic("call", "libc", "free", nothing, finished's adBlock)
+        @intrinsic("call", "libc", "free", nothing, finished's adDeltaLf)
+        @intrinsic("call", "libc", "free", nothing, finished's adQuant)
+        @intrinsic("call", "libc", "free", nothing, finished's adDequant)
+        @intrinsic("call", "libc", "free", nothing, finished's adScratch)
+        @intrinsic("call", "libc", "free", nothing, finished's adPalette)
+        @intrinsic("call", "libc", "free", nothing, finished's adColorMap)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrUnits)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrUnitCols)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrUnitRows)
+        @intrinsic("call", "libc", "free", nothing, finished's adLrRefs)
+        @intrinsic("call", "libc", "free", nothing, finished's adScans)
+        @intrinsic("call", "libc", "free", nothing, finished's adScanOffsets)
+        @intrinsic("call", "libc", "free", nothing, finished's adDcSteps)
+        @intrinsic("call", "libc", "free", nothing, finished's adAcSteps)
+        @intrinsic("call", "libc", "free", nothing, finished's adSmoothWeights)
+        @intrinsic("call", "libc", "free", nothing, finished's adDerivatives)
+        @intrinsic("call", "libc", "free", nothing, finished's adSignificance)
+        @intrinsic("call", "libc", "free", nothing, finished's adBoolCdf)
+        @intrinsic("call", "libc", "free", nothing, finished's adPaletteAbove)
+        @intrinsic("call", "libc", "free", nothing, finished's adPaletteLeft)
+        @intrinsic("call", "libc", "free", nothing, finished)
+
 # --- YUV to RGB ---
 
 # Kr and Kb of the matrix coefficients (ITU-T H.273); BT.601 when not said.
@@ -603,35 +660,37 @@ function the avif sample at {integer:x} {integer:y} of plane {integer:plane} in 
             return the item at ((y * stride) + x) in samples
         return the item at (((y >> (decoder's adSubY)) * stride) + (x >> (decoder's adSubX))) in samples
 
-function the paint avif from {pointer:data} spanning {integer:count}:
+# Draws the AV1 item into the canvas with its top left corner at (left, top),
+# clipped to the canvas: its colour (opaque), or with masking only its first
+# plane as the alpha of what is there. Colour comes from the item's colr
+# property, else the primary item's, else the sequence header. Gives 0, or
+# the decoder's failure code.
+function draw avif item {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file} onto {paint canvas:canvas} at {integer:left} {integer:top} masking {boolean:alphaOnly}:
     execute:
-        if count < 16:
-            return no decoded image because "the AVIF file is damaged"
-        set file to @intrinsic("construct", an avif file, calloc av1 integers 256, 0, calloc av1 integers 12288, 0, calloc av1 integers 768, 0, calloc av1 integers 2048, 0, calloc av1 integers 4096, 0, 0, 0, 0)
-        read avif boxes from 0 until count in data into (the address of file)
-        set primary to file's afPrimary
-        set slot to the avif slot of item primary in (the address of file)
-        if (slot < 0) or ((the item at ((slot * 4) + 1) in (file's afItems)) != (the avif four of (the string form of "av01"))):
-            if (slot >= 0) and ((the item at ((slot * 4) + 1) in (file's afItems)) = (the avif four of (the string form of "grid"))):
-                return no decoded image because "a tiled (grid) AVIF, which the editor does not read yet"
-            return no decoded image because "the AVIF file holds no AV1 image"
         set decoder to a new av1 decoder
-        decode avif item primary from data spanning count in (the address of file) into decoder
-        if (decoder's adFailed) != 0:
-            set reason to decoder's adFailed
-            if reason = 4:
-                return no decoded image because "an AVIF with intra block copy, which the editor does not read yet"
-            if reason = 5:
-                return no decoded image because "an AVIF with quantiser matrices, which the editor does not read yet"
-            return no decoded image because "the AVIF image data is damaged"
-        set width to decoder's adUpscaledWidth
-        set height to decoder's adHeight
-        set box to the avif property (the string form of "ispe") of item primary in (the address of file)
-        if box >= 0:
-            set width to the minimum of width and (the big-endian word (box + 12) in data)
-            set height to the minimum of height and (the big-endian word (box + 16) in data)
-        if (a paint canvas width by height fits) = false:
-            return no decoded image because "the AVIF image is larger than the editor can use"
+        decode avif item id from data spanning count in file into decoder
+        set failure to decoder's adFailed
+        if failure != 0:
+            release av1 decoder decoder
+            return failure
+        set canvasWidth to canvas's width
+        set width to the minimum of (decoder's adUpscaledWidth) and (canvasWidth - left)
+        set height to the minimum of (decoder's adHeight) and ((canvas's height) - top)
+        set out to (canvas's pixels) as a pointer to an integer
+        set depth to decoder's adBitDepth
+        set fullRange to decoder's adFullRange
+        if alphaOnly:
+            set alphaLargest to (1 << depth) - 1
+            loop y from 0 to height:
+                loop x from 0 to width:
+                    set value to the item at ((y * (decoder's adStrideY)) + x) in (decoder's adPlaneY)
+                    if fullRange = 0:
+                        set value to (((value - (16 << (depth - 8))) * alphaLargest) + ((219 << (depth - 8)) / 2)) / (219 << (depth - 8))
+                    set value to ((value * 255) + (alphaLargest / 2)) / alphaLargest
+                    set spot to out + (((top + y) * canvasWidth) + (left + x))
+                    store (((the item at 0 in spot) & 16777215) | ((value clamped between 0 and 255) << 24)) at spot
+            release av1 decoder decoder
+            return 0
         # The planes as dav1d writes them, for comparing (debugging only).
         set dumpPath to @intrinsic("call", "libc", "getenv", a pointer, "PAINT_AV1_DUMP")
         if dumpPath != 0 as a pointer:
@@ -648,15 +707,14 @@ function the paint avif from {pointer:data} spanning {integer:count}:
                         store value at (decoder's adScratch)
                         ignore @intrinsic("call", "libc", "fwrite", a word sized integer, decoder's adScratch, 2 as a word sized integer, 1 as a word sized integer, dumpFile)
             ignore @intrinsic("call", "libc", "fclose", an integer, dumpFile)
-        # Colour: the colr box's nclx over the sequence header.
         set matrix to decoder's adMatrix
-        set fullRange to decoder's adFullRange
-        set colour to the avif property (the string form of "colr") of item primary in (the address of file)
+        set colour to the avif property (the string form of "colr") of item id in file
+        if colour < 0:
+            set colour to the avif property (the string form of "colr") of item (file's afPrimary) in file
         if colour >= 0:
             if the bytes (colour + 8) in data spell "nclx":
                 set matrix to the big-endian half (colour + 16) in data
                 set fullRange to (the byte (colour + 18) in data) >> 7
-        set depth to decoder's adBitDepth
         set largest to ((1 << depth) - 1) as a 64 bit floating-point number
         set red to the avif red weight of matrix
         set blue to the avif blue weight of matrix
@@ -669,8 +727,6 @@ function the paint avif from {pointer:data} spanning {integer:count}:
             set lumaScale to 1.0 / ((219 << (depth - 8)) as a 64 bit floating-point number)
             set chromaScale to 1.0 / ((224 << (depth - 8)) as a 64 bit floating-point number)
         set middle to (1 << (depth - 1)) as a 64 bit floating-point number
-        set canvas to an unfilled paint canvas width by height
-        set out to (canvas's pixels) as a pointer to an integer
         loop y from 0 to height:
             loop x from 0 to width:
                 set luma to (((the avif sample at x y of plane 0 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
@@ -678,12 +734,16 @@ function the paint avif from {pointer:data} spanning {integer:count}:
                 set g to luma
                 set b to luma
                 if (decoder's adPlanes) = 3:
-                    set cb to (((the avif sample at x y of plane 1 in decoder) as a 64 bit floating-point number) - middle) * chromaScale
-                    set cr to (((the avif sample at x y of plane 2 in decoder) as a 64 bit floating-point number) - middle) * chromaScale
+                    # Each chroma sample covers the pixels it was subsampled
+                    # from, as libheif and browsers (libyuv) upsample.
+                    set first to (the avif sample at x y of plane 1 in decoder) as a 64 bit floating-point number
+                    set second to (the avif sample at x y of plane 2 in decoder) as a 64 bit floating-point number
+                    set cb to (first - middle) * chromaScale
+                    set cr to (second - middle) * chromaScale
                     if matrix = 0:
                         set g to luma
-                        set b to (((the avif sample at x y of plane 1 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
-                        set r to (((the avif sample at x y of plane 2 in decoder) as a 64 bit floating-point number) - lumaOffset) * lumaScale
+                        set b to (first - lumaOffset) * lumaScale
+                        set r to (second - lumaOffset) * lumaScale
                     else:
                         set r to luma + ((2.0 * (1.0 - red)) * cr)
                         set b to luma + ((2.0 * (1.0 - blue)) * cb)
@@ -691,21 +751,161 @@ function the paint avif from {pointer:data} spanning {integer:count}:
                 set rr to ((the floor of ((r * 255.0) + 0.5)) as an integer) clamped between 0 and 255
                 set gg to ((the floor of ((g * 255.0) + 0.5)) as an integer) clamped between 0 and 255
                 set bb to ((the floor of ((b * 255.0) + 0.5)) as an integer) clamped between 0 and 255
-                store (((rr | (gg << 8)) | (bb << 16)) | -16777216) at (out + ((y * width) + x))
-        # Alpha from the auxiliary item.
+                store (((rr | (gg << 8)) | (bb << 16)) | -16777216) at (out + (((top + y) * canvasWidth) + (left + x)))
+        release av1 decoder decoder
+        return 0
+
+class:
+    patterns:
+        [an|] avif size
+    members:
+        w as an integer
+        h as an integer
+
+# The size of an image item: its ispe property, or what decoding it gives.
+function the avif size of item {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file}:
+    execute:
+        set box to the avif property (the string form of "ispe") of item id in file
+        if box >= 0:
+            return @intrinsic("construct", an avif size, the big-endian word (box + 12) in data, the big-endian word (box + 16) in data)
+        set decoder to a new av1 decoder
+        decode avif item id from data spanning count in file into decoder
+        set measured to @intrinsic("construct", an avif size, decoder's adUpscaledWidth, decoder's adHeight)
+        if (decoder's adFailed) != 0:
+            set measured to @intrinsic("construct", an avif size, 0, 0)
+        release av1 decoder decoder
+        return measured
+
+# The canvas size an image item makes: a grid's output size, else its own.
+function the avif canvas size of item {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file}:
+    execute:
+        set slot to the avif slot of item id in file
+        if (the item at ((slot * 4) + 1) in (file's afItems)) = (the avif four of (the string form of "grid")):
+            set total to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+            set description to the avif data of item id from data spanning count in file counting total
+            set measured to @intrinsic("construct", an avif size, 0, 0)
+            set wide to ((the byte 1 in description) & 1) = 1
+            if wide and ((the item at 0 in total) >= 12):
+                set measured to @intrinsic("construct", an avif size, the big-endian word 4 in description, the big-endian word 8 in description)
+            else if (wide = false) and ((the item at 0 in total) >= 8):
+                set measured to @intrinsic("construct", an avif size, the big-endian half 4 in description, the big-endian half 6 in description)
+            @intrinsic("call", "libc", "free", nothing, description)
+            @intrinsic("call", "libc", "free", nothing, total)
+            return measured
+        return the avif size of item id from data spanning count in file
+
+# Draws an image item onto the canvas: an AV1 item, or a grid's tiles (its
+# dimg references, row by row). Gives 0 or a failure code (7: not an image).
+function draw avif image {integer:id} from {pointer:data} spanning {integer:count} in {a pointer to an avif file:file} onto {paint canvas:canvas} masking {boolean:alphaOnly}:
+    execute:
+        set slot to the avif slot of item id in file
+        if slot < 0:
+            return 7
+        set kind to the item at ((slot * 4) + 1) in (file's afItems)
+        if kind = (the avif four of (the string form of "av01")):
+            return draw avif item id from data spanning count in file onto canvas at 0 0 masking alphaOnly
+        if kind != (the avif four of (the string form of "grid")):
+            return 7
+        set total to @intrinsic("call", "libc", "calloc", a pointer to an integer, 1 as a word sized integer, 4 as a word sized integer)
+        set description to the avif data of item id from data spanning count in file counting total
+        set columns to 0
+        if (the item at 0 in total) >= 8:
+            set columns to (the byte 3 in description) + 1
+        @intrinsic("call", "libc", "free", nothing, description)
+        @intrinsic("call", "libc", "free", nothing, total)
+        if columns = 0:
+            return 1
+        set tile to 0
+        set tileWidth to 0
+        set tileHeight to 0
+        loop reference from 0 to (file's afReferenceCount):
+            set record to (file's afReferences) + (reference * 4)
+            if ((the item at 0 in record) = (the avif four of (the string form of "dimg"))) and ((the item at 1 in record) = id):
+                set part to the item at 2 in record
+                if tile = 0:
+                    set measured to the avif size of item part from data spanning count in file
+                    set tileWidth to measured's w
+                    set tileHeight to measured's h
+                if (tileWidth < 1) or (tileHeight < 1):
+                    return 1
+                set failure to draw avif item part from data spanning count in file onto canvas at ((the remainder of tile divided by columns) * tileWidth) ((tile / columns) * tileHeight) masking alphaOnly
+                if failure != 0:
+                    return failure
+                set tile to tile + 1
+        if tile = 0:
+            return 1
+        return 0
+
+function the paint avif from {pointer:data} spanning {integer:count}:
+    execute:
+        if count < 16:
+            return no decoded image because "the AVIF file is damaged"
+        set file to @intrinsic("construct", an avif file, calloc av1 integers 256, 0, calloc av1 integers 12288, 0, calloc av1 integers 768, 0, calloc av1 integers 2048, 0, calloc av1 integers 4096, 0, 0, 0, 0)
+        read avif boxes from 0 until count in data into (the address of file)
+        set primary to file's afPrimary
+        set slot to the avif slot of item primary in (the address of file)
+        set kind to 0
+        if slot >= 0:
+            set kind to the item at ((slot * 4) + 1) in (file's afItems)
+        if (kind != (the avif four of (the string form of "av01"))) and (kind != (the avif four of (the string form of "grid"))):
+            release avif file (the address of file)
+            return no decoded image because "the AVIF file holds no AV1 image"
+        set measured to the avif canvas size of item primary from data spanning count in (the address of file)
+        set width to measured's w
+        set height to measured's h
+        if (width < 1) or (height < 1):
+            release avif file (the address of file)
+            return no decoded image because "the AVIF image data is damaged"
+        if (a paint canvas width by height fits) = false:
+            release avif file (the address of file)
+            return no decoded image because "the AVIF image is larger than the editor can use"
+        set canvas to a new paint canvas width by height filled with the transparent paint color
+        set failure to draw avif image primary from data spanning count in (the address of file) onto canvas masking false
         set alphaItem to the avif alpha item of (the address of file) in data
-        if alphaItem >= 0:
-            set alpha to a new av1 decoder
-            decode avif item alphaItem from data spanning count in (the address of file) into alpha
-            if (alpha's adFailed) = 0:
-                set alphaDepth to alpha's adBitDepth
-                set alphaLargest to (1 << alphaDepth) - 1
-                loop y from 0 to (the minimum of height and (alpha's adHeight)):
-                    loop x from 0 to (the minimum of width and (alpha's adUpscaledWidth)):
-                        set value to the item at ((y * (alpha's adStrideY)) + x) in (alpha's adPlaneY)
-                        if (alpha's adFullRange) = 0:
-                            set value to (((value - (16 << (alphaDepth - 8))) * alphaLargest) + ((219 << (alphaDepth - 8)) / 2)) / (219 << (alphaDepth - 8))
-                        set value to ((value * 255) + (alphaLargest / 2)) / alphaLargest
-                        set pixel to (the item at ((y * width) + x) in out) & 16777215
-                        store (pixel | ((value clamped between 0 and 255) << 24)) at (out + ((y * width) + x))
-        return a decoded canvas
+        if (failure = 0) and (alphaItem >= 0):
+            # An alpha plane that does not decode leaves the image opaque.
+            ignore draw avif image alphaItem from data spanning count in (the address of file) onto canvas masking true
+        # The transformative properties, in the order they are associated.
+        if failure = 0:
+            loop association from 0 to (file's afAssociationCount):
+                if (the item at (association * 2) in (file's afAssociations)) = primary:
+                    set index to (the item at ((association * 2) + 1) in (file's afAssociations)) - 1
+                    if (index >= 0) and (index < (file's afPropertyCount)):
+                        set code to the item at ((index * 3) + 2) in (file's afProperties)
+                        set box to the item at (index * 3) in (file's afProperties)
+                        set changed to canvas
+                        if code = (the avif four of (the string form of "irot")):
+                            # Quarter turns anticlockwise.
+                            set turns to (the byte (box + 8) in data) & 3
+                            if turns = 1:
+                                set changed to the paint canvas canvas turned clockwise false
+                            else if turns = 2:
+                                set mirrored to the paint canvas canvas flipped horizontally true
+                                set changed to the paint canvas mirrored flipped horizontally false
+                                free paint canvas mirrored
+                            else if turns = 3:
+                                set changed to the paint canvas canvas turned clockwise true
+                        else if code = (the avif four of (the string form of "imir")):
+                            # Axis 0 swaps top and bottom, 1 left and right (as
+                            # libavif and libheif read it; EXIF orientations 4 and 2).
+                            set changed to the paint canvas canvas flipped horizontally (((the byte (box + 8) in data) & 1) = 1)
+                        if changed's pixels != canvas's pixels:
+                            free paint canvas canvas
+                            set canvas to changed
+        release avif file (the address of file)
+        if failure = 0:
+            return a decoded canvas
+        free paint canvas canvas
+        if failure = 4:
+            return no decoded image because "an AVIF with intra block copy, which the editor does not read yet"
+        if failure = 5:
+            return no decoded image because "an AVIF with quantiser matrices, which the editor does not read yet"
+        return no decoded image because "the AVIF image data is damaged"
+
+function release avif file {a pointer to an avif file:parsed}:
+    execute:
+        @intrinsic("call", "libc", "free", nothing, parsed's afItems)
+        @intrinsic("call", "libc", "free", nothing, parsed's afExtents)
+        @intrinsic("call", "libc", "free", nothing, parsed's afProperties)
+        @intrinsic("call", "libc", "free", nothing, parsed's afAssociations)
+        @intrinsic("call", "libc", "free", nothing, parsed's afReferences)
