@@ -1,0 +1,39 @@
+# THROWAWAY SPIKE (spikes/gpu): how long a DynLex window drawn through the
+# Vulkan runtime (lib/graphics.dl) takes to its first presented frame, and
+# what it then holds in memory. Prints CLOCK_MONOTONIC stamps in
+# microseconds at each step; spikes/gpu/measure.py turns them into
+# milliseconds since the process was spawned.
+import lib/graphics.dl
+
+function the monotonic microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to ((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+function stamp {C string:name}:
+    execute:
+        print (the string form of name) + ((the string form of " ") + (the string form of the monotonic microseconds)) as a line
+        ignore @intrinsic("call", "libc", "fflush", an integer, 0 as a pointer)
+
+stamp "main"
+set window to a new window with width 1440 and height 940
+stamp "window"
+set the title of window to "Open Paint Studio GPU spike"
+set frame to a new graphics frame in window with background red 0.98, green 0.98, blue 0.976 and alpha 1.0
+use screen coordinates in frame
+draw a rectangle at x 0 and y 0 with width 1440 and height 42 in color red 54, green 54 and blue 62 in frame
+display frame
+stamp "presented"
+print the graphics device name of window as a line
+set frames to 0
+loop while (window remains open) and (frames < 240):
+    set frame to a new graphics frame in window with background red 0.98, green 0.98, blue 0.976 and alpha 1.0
+    use screen coordinates in frame
+    draw a rectangle at x 0 and y 0 with width 1440 and height 42 in color red 54, green 54 and blue 62 in frame
+    display frame
+    set frames to frames + 1
+stamp "done"
+close window

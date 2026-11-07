@@ -1,0 +1,20 @@
+# THROWAWAY SPIKE (spikes/gpu): the CPU cost of whole-image operations on a
+# large image today, for comparison with a GPU path.
+import dynlex/paint/app.dl
+
+function the monotonic microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to ((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+set arguments to the command line arguments
+set app to a new paint app 64 by 64
+set state to the address of app
+ignore open (the argument at 0 in arguments) in state
+set began to the monotonic microseconds
+adjust state by 0 brightness 20 contrast 10 saturation 120 named (the string form of "adjust")
+set adjusted to (the monotonic microseconds) - began
+print ((the string form of "adjust-ms ") + (the string form of (adjusted / 1000))) as a line

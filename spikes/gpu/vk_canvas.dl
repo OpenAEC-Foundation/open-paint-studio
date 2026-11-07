@@ -1,0 +1,71 @@
+# THROWAWAY SPIKE (spikes/gpu): a large canvas on the GPU through the DynLex
+# Vulkan runtime. Decodes an image with the editor's own codecs, uploads it
+# as one RGBA texture, then draws it zoomed and panned for 240 frames (FIFO,
+# so at most one frame per refresh). Prints CLOCK_MONOTONIC stamps for
+# spikes/gpu/measure.py and the slowest and mean frame.
+#
+#   vk-canvas IMAGE
+import lib/graphics.dl
+import lib/texture.dl
+import dynlex/paint/files.dl
+
+function the monotonic microseconds:
+    execute:
+        set buffer to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 1, buffer)
+        set result to ((the item at 0 in buffer) * 1000000) + ((the item at 1 in buffer) / 1000)
+        @intrinsic("call", "libc", "free", nothing, buffer)
+        return result
+
+function stamp {C string:name}:
+    execute:
+        print ((the string form of name) + ((the string form of " ") + (the string form of the monotonic microseconds))) as a line
+        ignore @intrinsic("call", "libc", "fflush", an integer, 0 as a pointer)
+
+stamp "main"
+set arguments to the command line arguments
+set opened to the paint image opened from (the argument at 0 in arguments)
+if opened's valid = false:
+    print opened's message as a line
+    return 1
+stamp "decoded"
+set window to a new window with width 1440 and height 940
+stamp "window"
+set image to opened's image
+set resource to @intrinsic("call", "dynlex_graphics", "dynlex_graphics_texture_create_rgba8", a pointer to a byte, window, image's width, image's height, image's pixels)
+if resource = 0 as a pointer to a byte:
+    print (the current graphics error message) as a line
+    return 1
+set canvas to @intrinsic("construct", a graphics texture, resource, image's width, image's height)
+stamp "uploaded"
+set fitted to 1360.0 / (image's width as a floating-point number)
+set frames to 0
+set slowest to 0
+set total to 0
+loop while (window remains open) and (frames < 240):
+    set began to the monotonic microseconds
+    # Zoom from the fitted view to 4x and back while panning across.
+    set phase to (frames as a floating-point number) / 240.0
+    set zoom to fitted * (1.0 + (6.0 * phase))
+    set shownWidth to (image's width as a floating-point number) * zoom
+    set shownHeight to (image's height as a floating-point number) * zoom
+    set left to 40.0 - ((shownWidth - 1360.0) * phase)
+    set top to 80.0 - ((shownHeight - 800.0) * phase)
+    set frame to a new graphics frame in window with background red 0.91, green 0.91, blue 0.9 and alpha 1.0
+    use screen coordinates in frame
+    draw canvas from x left, y top to x (left + shownWidth), y (top + shownHeight) in color red 255, green 255 and blue 255 in frame
+    draw a rectangle at x 0 and y 0 with width 1440 and height 42 in color red 54, green 54 and blue 62 in frame
+    display frame
+    if frames = 0:
+        stamp "first-canvas-frame"
+    set took to (the monotonic microseconds) - began
+    if frames > 0:
+        set total to total + took
+        if took > slowest:
+            set slowest to took
+    set frames to frames + 1
+stamp "done"
+print ((the string form of "frame-mean-us ") + (the string form of (total / (frames - 1)))) as a line
+print ((the string form of "frame-max-us ") + (the string form of slowest)) as a line
+release canvas
+close window
