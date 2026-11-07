@@ -28,7 +28,7 @@ mkdir -p dynlex/build
 # their own into a definition-only object, archived as libpaintcodecs.a; the
 # editor, the tests and the benchmarks link it by the name "paintcodecs"
 # through LIBRARY_PATH, so a change to the interface leaves them alone.
-codec_sources=(codecs decoded canvas jpeg png formats webp vp8 vp8_tables inflate ifcimage)
+codec_sources=(codecs decoded canvas jpeg png formats webp vp8 vp8_tables inflate ifcimage jpeg2000)
 archive=dynlex/build/libpaintcodecs.a
 build_codecs() {
     local stale=0 name

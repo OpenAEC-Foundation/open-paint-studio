@@ -1,0 +1,2089 @@
+# JPEG 2000 (ITU-T T.800 | ISO/IEC 15444-1), read by the editor itself: the
+# JP2 file format's boxes (Annex I) and the codestream (Annex A) with its
+# tiles, all five progression orders and progression order changes (B.12),
+# packet headers with tag trees (B.10), the MQ decoder (Annex C), the three
+# coding passes with every code-block style (Annex D), dequantisation
+# (Annex E), the inverse 5/3 and 9/7 wavelet transforms (Annex F) and the
+# reversible and irreversible component transforms (Annex G).
+import dynlex/paint/decoded.dl
+import lib/string.dl
+
+local function fill jp2 numbers {a pointer to an integer:table} from {string:values}:
+    execute:
+        set index to 0
+        set value to 0
+        set inNumber to false
+        loop cursor from 0 to (values' length + 1):
+            set character to 32
+            if cursor < values' length:
+                set character to ((the character at cursor in values) as an integer) & 255
+            if (character >= 48) and (character <= 57):
+                set value to (value * 10) + (character - 48)
+                set inNumber to true
+            else if inNumber:
+                store value at (table + index)
+                set index to index + 1
+                set value to 0
+                set inNumber to false
+
+# Table C.2: Qe, the next state after an MPS, after an LPS, and whether an
+# LPS switches the MPS, for the 47 states.
+local function the jp2 probability states:
+    execute:
+        return the string form of "22017 1 1 1 13313 2 6 0 6145 3 9 0 2753 4 12 0 1313 5 29 0 545 38 33 0 22017 7 6 1 21505 8 14 0 18433 9 14 0 14337 10 14 0 12289 11 17 0 9217 12 18 0 7169 13 20 0 5633 29 21 0 22017 15 14 1 21505 16 14 0 20737 17 15 0 18433 18 16 0 14337 19 17 0 13313 20 18 0 12289 21 19 0 10241 22 19 0 9217 23 20 0 8705 24 21 0 7169 25 22 0 6145 26 23 0 5633 27 24 0 5121 28 25 0 4609 29 26 0 4353 30 27 0 2753 31 28 0 2497 32 29 0 2209 33 30 0 1313 34 31 0 1089 35 32 0 673 36 33 0 545 37 34 0 321 38 35 0 273 39 36 0 133 40 37 0 73 41 38 0 37 42 39 0 21 43 40 0 9 44 41 0 5 45 42 0 1 45 43 0 22017 46 46 0"
+
+local function the jp2 c mask:
+    replacement: 4294967295 as a C long integer
+
+# --- The MQ decoder (Annex C) and raw (bypass) bits ---
+
+class:
+    patterns:
+        [a|] jp2 coder
+    members:
+        mqBytes as a pointer to a byte
+        mqAt as an integer
+        mqEnd as an integer
+        mqA as an integer
+        mqC as a C long integer
+        mqCt as an integer
+        mqStates as a pointer to an integer
+        mqTable as a pointer to an integer
+
+# Bytes past the end of a segment read as 0xFF, a marker to the decoder.
+local function the mq byte {integer:spot} of {a pointer to a jp2 coder:coder}:
+    execute:
+        if spot < (coder's mqEnd):
+            return ((the item at spot in (coder's mqBytes)) as an integer) & 255
+        return 255
+
+local function feed {a pointer to a jp2 coder:coder}:
+    execute:
+        set current to the mq byte (coder's mqAt) of coder
+        if current = 255:
+            if (the mq byte ((coder's mqAt) + 1) of coder) > 143:
+                set coder's mqC to (coder's mqC) + (65280 as a C long integer)
+                set coder's mqCt to 8
+            else:
+                set coder's mqAt to (coder's mqAt) + 1
+                set coder's mqC to (coder's mqC) + (((the mq byte (coder's mqAt) of coder) << 9) as a C long integer)
+                set coder's mqCt to 7
+        else:
+            set coder's mqAt to (coder's mqAt) + 1
+            set coder's mqC to (coder's mqC) + (((the mq byte (coder's mqAt) of coder) << 8) as a C long integer)
+            set coder's mqCt to 8
+
+local function start mq decoding of {a pointer to a jp2 coder:coder} from {integer:first} until {integer:last}:
+    execute:
+        set coder's mqAt to first
+        set coder's mqEnd to last
+        set coder's mqC to ((the mq byte first of coder) << 16) as a C long integer
+        feed coder
+        set coder's mqC to ((coder's mqC) << 7) & (the jp2 c mask)
+        set coder's mqCt to (coder's mqCt) - 7
+        set coder's mqA to 32768
+
+local function start raw decoding of {a pointer to a jp2 coder:coder} from {integer:first} until {integer:last}:
+    execute:
+        set coder's mqAt to first
+        set coder's mqEnd to last
+        set coder's mqC to 0 as a C long integer
+        set coder's mqCt to 0
+
+# The initial states (Table D.7): uniform 46, run-length 3, no significant
+# neighbour 4, everything else 0, every MPS 0.
+local function reset jp2 contexts of {a pointer to a jp2 coder:coder}:
+    execute:
+        loop slot from 0 to 38:
+            store 0 at ((coder's mqStates) + slot)
+        store 4 at (coder's mqStates)
+        store 3 at ((coder's mqStates) + 17)
+        store 46 at ((coder's mqStates) + 18)
+
+local function renormalise {a pointer to a jp2 coder:coder}:
+    execute:
+        set going to true
+        loop while going:
+            if (coder's mqCt) = 0:
+                feed coder
+            set coder's mqA to (coder's mqA) << 1
+            set coder's mqC to ((coder's mqC) << 1) & (the jp2 c mask)
+            set coder's mqCt to (coder's mqCt) - 1
+            set going to ((coder's mqA) & 32768) = 0
+
+local function the mq decision for {integer:label} of {a pointer to a jp2 coder:coder}:
+    execute:
+        set states to coder's mqStates
+        set table to coder's mqTable
+        set state to the item at label in states
+        set sense to the item at (label + 19) in states
+        set qe to the item at (state * 4) in table
+        set coder's mqA to (coder's mqA) - qe
+        set result to sense
+        if (((coder's mqC) >> 16) as an integer) < qe:
+            if (coder's mqA) < qe:
+                set coder's mqA to qe
+                store (the item at ((state * 4) + 1) in table) at (states + label)
+            else:
+                set coder's mqA to qe
+                set result to 1 - sense
+                if (the item at ((state * 4) + 3) in table) = 1:
+                    store (1 - sense) at (states + (label + 19))
+                store (the item at ((state * 4) + 2) in table) at (states + label)
+            renormalise coder
+        else:
+            set coder's mqC to (coder's mqC) - ((qe << 16) as a C long integer)
+            if ((coder's mqA) & 32768) = 0:
+                if (coder's mqA) < qe:
+                    set result to 1 - sense
+                    if (the item at ((state * 4) + 3) in table) = 1:
+                        store (1 - sense) at (states + (label + 19))
+                    store (the item at ((state * 4) + 2) in table) at (states + label)
+                else:
+                    store (the item at ((state * 4) + 1) in table) at (states + label)
+                renormalise coder
+        return result
+
+local function the raw decision of {a pointer to a jp2 coder:coder}:
+    execute:
+        if (coder's mqCt) = 0:
+            if (coder's mqC) = (255 as a C long integer):
+                if (the mq byte (coder's mqAt) of coder) > 143:
+                    set coder's mqC to 255 as a C long integer
+                    set coder's mqCt to 8
+                else:
+                    set coder's mqC to (the mq byte (coder's mqAt) of coder) as a C long integer
+                    set coder's mqAt to (coder's mqAt) + 1
+                    set coder's mqCt to 7
+            else:
+                set coder's mqC to (the mq byte (coder's mqAt) of coder) as a C long integer
+                set coder's mqAt to (coder's mqAt) + 1
+                set coder's mqCt to 8
+        set coder's mqCt to (coder's mqCt) - 1
+        return (((coder's mqC) >> (coder's mqCt)) as an integer) & 1
+
+local function the jp2 decision for {integer:label} raw {boolean:bypassed} of {a pointer to a jp2 coder:coder}:
+    execute:
+        if bypassed:
+            return the raw decision of coder
+        return the mq decision for label of coder
+
+# --- The coding passes (Annex D) ---
+# Flags per coefficient, with a border of one: 1 significant, 2 negative,
+# 4 coded in this bit-plane's significance pass, 8 refined before.
+# Coefficients are kept doubled: significant at plane p means 3 * 2^p (the
+# middle of [2^p, 2^(p+1))), each refinement moves it by 2^q.
+
+class:
+    patterns:
+        [a|] jp2 block
+    members:
+        jbWidth as an integer
+        jbHeight as an integer
+        jbFlags as a pointer to an integer
+        jbData as a pointer to an integer
+        jbOrient as an integer
+        jbCausal as boolean
+        jbCoder as a pointer to a jp2 coder
+        jbZero as a pointer to an integer
+
+# Table D.1, for orientation 0 LL, 1 HL (offset in x), 2 LH (offset in y),
+# 3 HH; HL counts its vertical neighbours first.
+local function the jp2 zero context of {integer:orient} {integer:across} {integer:upright} {integer:diagonal}:
+    execute:
+        if orient = 3:
+            set sides to across + upright
+            if diagonal >= 3:
+                return 8
+            if diagonal = 2:
+                if sides >= 1:
+                    return 7
+                return 6
+            if diagonal = 1:
+                if sides >= 2:
+                    return 5
+                if sides = 1:
+                    return 4
+                return 3
+            if sides >= 2:
+                return 2
+            return sides
+        set first to across
+        set second to upright
+        if orient = 1:
+            set first to upright
+            set second to across
+        if first = 2:
+            return 8
+        if first = 1:
+            if second >= 1:
+                return 7
+            if diagonal >= 1:
+                return 6
+            return 5
+        if second = 2:
+            return 4
+        if second = 1:
+            return 3
+        if diagonal >= 2:
+            return 2
+        return diagonal
+
+local function a jp2 zero context table:
+    execute:
+        set contexts to @intrinsic("call", "libc", "calloc", a pointer to an integer, 180 as a word sized integer, 4 as a word sized integer)
+        loop orient from 0 to 4:
+            loop across from 0 to 3:
+                loop upright from 0 to 3:
+                    loop diagonal from 0 to 5:
+                        store (the jp2 zero context of orient across upright diagonal) at (contexts + ((((orient * 45) + (across * 15)) + (upright * 5)) + diagonal))
+        return contexts
+
+# Counts of significant neighbours: across | upright << 4 | diagonal << 8.
+# With the vertically causal style, the stripe below counts as empty.
+local function the jp2 neighbourhood at {integer:spot} row {integer:line} of {a pointer to a jp2 block:block}:
+    execute:
+        set flags to block's jbFlags
+        set stride to (block's jbWidth) + 2
+        set across to ((the item at (spot - 1) in flags) & 1) + ((the item at (spot + 1) in flags) & 1)
+        set upright to (the item at (spot - stride) in flags) & 1
+        set diagonal to ((the item at ((spot - stride) - 1) in flags) & 1) + ((the item at ((spot - stride) + 1) in flags) & 1)
+        set lower to true
+        if block's jbCausal:
+            set lower to (line & 3) != 3
+        if lower:
+            set upright to upright + ((the item at (spot + stride) in flags) & 1)
+            set diagonal to (diagonal + ((the item at ((spot + stride) - 1) in flags) & 1)) + ((the item at ((spot + stride) + 1) in flags) & 1)
+        return (across | (upright << 4)) | (diagonal << 8)
+
+local function the jp2 sign share of {integer:flag}:
+    execute:
+        if (flag & 1) = 0:
+            return 0
+        if (flag & 2) != 0:
+            return -1
+        return 1
+
+# Table D.3: the sign context (9 to 13) | the prediction bit << 8.
+local function the jp2 sign context at {integer:spot} row {integer:line} of {a pointer to a jp2 block:block}:
+    execute:
+        set flags to block's jbFlags
+        set stride to (block's jbWidth) + 2
+        set across to ((the jp2 sign share of (the item at (spot - 1) in flags)) + (the jp2 sign share of (the item at (spot + 1) in flags))) clamped between -1 and 1
+        set upright to the jp2 sign share of (the item at (spot - stride) in flags)
+        set lower to true
+        if block's jbCausal:
+            set lower to (line & 3) != 3
+        if lower:
+            set upright to upright + (the jp2 sign share of (the item at (spot + stride) in flags))
+        set upright to upright clamped between -1 and 1
+        if across = 1:
+            return 12 + upright
+        if across = -1:
+            return (12 - upright) | 256
+        if upright = 1:
+            return 10
+        if upright = -1:
+            return 10 | 256
+        return 9
+
+local function make jp2 coefficient {integer:spot} at {integer:place} significant below {integer:plane} sign {integer:negative} in {a pointer to a jp2 block:block}:
+    execute:
+        set flags to block's jbFlags
+        store ((the item at spot in flags) | (1 | (negative << 1))) at (flags + spot)
+        set magnitude to 3 << plane
+        if negative = 1:
+            set magnitude to 0 - magnitude
+        store magnitude at ((block's jbData) + place)
+
+# The sign of a coefficient that just became significant.
+local function decode jp2 sign at {integer:spot} into {integer:place} on row {integer:line} for bit {integer:plane} raw {boolean:bypassed} in {a pointer to a jp2 block:block}:
+    execute:
+        set negative to 0
+        if bypassed:
+            set negative to the raw decision of (block's jbCoder)
+        else:
+            set signing to the jp2 sign context at spot row line of block
+            set negative to (the mq decision for (signing & 255) of (block's jbCoder)) ^ (signing >> 8)
+        make jp2 coefficient spot at place significant below plane sign negative in block
+
+local function run jp2 significance pass at {integer:plane} raw {boolean:bypassed} on {a pointer to a jp2 block:block}:
+    execute:
+        set width to block's jbWidth
+        set height to block's jbHeight
+        set stride to width + 2
+        set flags to block's jbFlags
+        set zero to (block's jbZero) + ((block's jbOrient) * 45)
+        set top to 0
+        loop while top < height:
+            set bottom to the minimum of (top + 4) and height
+            loop column from 0 to width:
+                loop line from top to bottom:
+                    set spot to (((line + 1) * stride) + column) + 1
+                    if ((the item at spot in flags) & 1) = 0:
+                        set around to the jp2 neighbourhood at spot row line of block
+                        if around != 0:
+                            set label to the item at ((((around & 15) * 15) + (((around >> 4) & 15) * 5)) + (around >> 8)) in zero
+                            if (the jp2 decision for label raw bypassed of (block's jbCoder)) = 1:
+                                decode jp2 sign at spot into ((line * width) + column) on row line for bit plane raw bypassed in block
+                            store ((the item at spot in flags) | 4) at (flags + spot)
+            set top to top + 4
+
+local function run jp2 refinement pass at {integer:plane} raw {boolean:bypassed} on {a pointer to a jp2 block:block}:
+    execute:
+        set width to block's jbWidth
+        set height to block's jbHeight
+        set stride to width + 2
+        set flags to block's jbFlags
+        set step to 1 << plane
+        set top to 0
+        loop while top < height:
+            set bottom to the minimum of (top + 4) and height
+            loop column from 0 to width:
+                loop line from top to bottom:
+                    set spot to (((line + 1) * stride) + column) + 1
+                    set flag to the item at spot in flags
+                    if (flag & 5) = 1:
+                        set label to 16
+                        if (flag & 8) = 0:
+                            set label to 14
+                            if (the jp2 neighbourhood at spot row line of block) != 0:
+                                set label to 15
+                        set refined to the jp2 decision for label raw bypassed of (block's jbCoder)
+                        set place to (line * width) + column
+                        set value to the item at place in (block's jbData)
+                        set change to step
+                        if refined = 0:
+                            set change to 0 - step
+                        if value < 0:
+                            set value to value - change
+                        else:
+                            set value to value + change
+                        store value at ((block's jbData) + place)
+                        store (flag | 8) at (flags + spot)
+            set top to top + 4
+
+local function run jp2 cleanup pass at {integer:plane} with symbols {boolean:segmented} on {a pointer to a jp2 block:block}:
+    execute:
+        set width to block's jbWidth
+        set height to block's jbHeight
+        set stride to width + 2
+        set flags to block's jbFlags
+        set coder to block's jbCoder
+        set zero to (block's jbZero) + ((block's jbOrient) * 45)
+        set top to 0
+        loop while top < height:
+            set bottom to the minimum of (top + 4) and height
+            loop column from 0 to width:
+                set first to top
+                if (bottom - top) = 4:
+                    set quiet to true
+                    loop checkLine from top to bottom:
+                        set checkSpot to (((checkLine + 1) * stride) + column) + 1
+                        if ((the item at checkSpot in flags) & 5) != 0:
+                            set quiet to false
+                        else if (the jp2 neighbourhood at checkSpot row checkLine of block) != 0:
+                            set quiet to false
+                    if quiet:
+                        if (the mq decision for 17 of coder) = 0:
+                            set first to bottom
+                        else:
+                            set runLength to (the mq decision for 18 of coder) << 1
+                            set runLength to runLength | (the mq decision for 18 of coder)
+                            set hitLine to top + runLength
+                            set hitSpot to (((hitLine + 1) * stride) + column) + 1
+                            decode jp2 sign at hitSpot into ((hitLine * width) + column) on row hitLine for bit plane raw false in block
+                            set first to hitLine + 1
+                set scanLine to first
+                loop while scanLine < bottom:
+                    set scanSpot to (((scanLine + 1) * stride) + column) + 1
+                    if ((the item at scanSpot in flags) & 5) = 0:
+                        set around to the jp2 neighbourhood at scanSpot row scanLine of block
+                        set label to the item at ((((around & 15) * 15) + (((around >> 4) & 15) * 5)) + (around >> 8)) in zero
+                        if (the mq decision for label of coder) = 1:
+                            decode jp2 sign at scanSpot into ((scanLine * width) + column) on row scanLine for bit plane raw false in block
+                    set scanLine to scanLine + 1
+            set top to top + 4
+        # Ready for the next bit-plane.
+        loop flagSpot from 0 to ((width + 2) * (height + 2)):
+            store ((the item at flagSpot in flags) & -5) at (flags + flagSpot)
+        if segmented:
+            loop symbol from 0 to 4:
+                ignore the mq decision for 18 of coder
+
+# Decodes a code-block's passes from its segments (start, end and pass count
+# of each, in segments). The top bit-plane is top; style is the code-block
+# style byte.
+local function decode jp2 passes {integer:count} from {integer:top} with style {integer:blockStyle} and segments {a pointer to an integer:segmentTable} in {a pointer to a jp2 block:block}:
+    execute:
+        set coder to block's jbCoder
+        set bypass to (blockStyle & 1) != 0
+        reset jp2 contexts of coder
+        set segment to -1
+        set left to 0
+        loop pass from 0 to count:
+            set kind to 2
+            set plane to top
+            if pass > 0:
+                set kind to the remainder of (pass - 1) divided by 3
+                set plane to top - ((pass + 2) / 3)
+            set bypassed to (bypass and (pass >= 10)) and (kind != 2)
+            if left = 0:
+                set segment to segment + 1
+                set left to the item at ((segment * 3) + 2) in segments
+                if bypassed:
+                    start raw decoding of coder from (the item at (segment * 3) in segmentTable) until (the item at ((segment * 3) + 1) in segmentTable)
+                else:
+                    start mq decoding of coder from (the item at (segment * 3) in segmentTable) until (the item at ((segment * 3) + 1) in segmentTable)
+            if plane >= 0:
+                if kind = 0:
+                    run jp2 significance pass at plane raw bypassed on block
+                else if kind = 1:
+                    run jp2 refinement pass at plane raw bypassed on block
+                else:
+                    run jp2 cleanup pass at plane with symbols ((blockStyle & 32) != 0) on block
+            set left to left - 1
+            if (blockStyle & 2) != 0:
+                reset jp2 contexts of coder
+
+# --- Packet headers (B.10): bits with stuffing after 0xFF, tag trees ---
+
+class:
+    patterns:
+        [a|] jp2 bit reader
+    members:
+        brBytes as a pointer to a byte
+        brAt as an integer
+        brEnd as an integer
+        brLast as an integer
+        brCount as an integer
+
+local function the jp2 header bit of {a pointer to a jp2 bit reader:reader}:
+    execute:
+        if (reader's brCount) = 0:
+            set reader's brCount to 8
+            if (reader's brLast) = 255:
+                set reader's brCount to 7
+            set reader's brLast to 0
+            if (reader's brAt) < (reader's brEnd):
+                set reader's brLast to ((the item at (reader's brAt) in (reader's brBytes)) as an integer) & 255
+            set reader's brAt to (reader's brAt) + 1
+        set reader's brCount to (reader's brCount) - 1
+        return ((reader's brLast) >> (reader's brCount)) & 1
+
+local function the jp2 header value of {integer:count} bits from {a pointer to a jp2 bit reader:reader}:
+    execute:
+        set gathered to 0
+        loop index from 0 to count:
+            set gathered to (gathered << 1) | (the jp2 header bit of reader)
+        return gathered
+
+local function align jp2 header of {a pointer to a jp2 bit reader:reader}:
+    execute:
+        if (reader's brLast) = 255:
+            set reader's brAt to (reader's brAt) + 1
+        set reader's brLast to 0
+        set reader's brCount to 0
+
+local function the jp2 tree size of {integer:across} by {integer:down}:
+    execute:
+        if (across < 1) or (down < 1):
+            return 0
+        set total to 0
+        set levelWidth to across
+        set levelHeight to down
+        set going to true
+        loop while going:
+            set total to total + (levelWidth * levelHeight)
+            if (levelWidth = 1) and (levelHeight = 1):
+                set going to false
+            set levelWidth to (levelWidth + 1) / 2
+            set levelHeight to (levelHeight + 1) / 2
+        return total
+
+local function the jp2 tree levels of {integer:across} by {integer:down}:
+    execute:
+        set depthCount to 1
+        set levelWidth to across
+        set levelHeight to down
+        loop while (levelWidth > 1) or (levelHeight > 1):
+            set levelWidth to (levelWidth + 1) / 2
+            set levelHeight to (levelHeight + 1) / 2
+            set depthCount to depthCount + 1
+        return depthCount
+
+# The node of leaf (x, y) at a level of the tree.
+local function the jp2 tree node at level {integer:depth} for {integer:x} {integer:y} of {integer:across} by {integer:down}:
+    execute:
+        set offset to 0
+        set levelWidth to across
+        set levelHeight to down
+        loop step from 0 to depth:
+            set offset to offset + (levelWidth * levelHeight)
+            set levelWidth to (levelWidth + 1) / 2
+            set levelHeight to (levelHeight + 1) / 2
+        return (offset + ((y >> depth) * levelWidth)) + (x >> depth)
+
+local function set up jp2 tree at {integer:base} of {integer:across} by {integer:down} in {a pointer to an integer:pool}:
+    execute:
+        set total to the jp2 tree size of across by down
+        loop node from 0 to total:
+            store 1073741824 at (pool + (base + node))
+            store 0 at (pool + ((base + total) + node))
+
+# Whether leaf (x, y) holds a value below the threshold, reading what the
+# header gives on the way (B.10.2).
+local function the jp2 tree at {integer:base} of {integer:across} by {integer:down} holds {integer:x} {integer:y} below {integer:threshold} from {a pointer to a jp2 bit reader:reader} in {a pointer to an integer:pool}:
+    execute:
+        set total to the jp2 tree size of across by down
+        set low to 0
+        set level to (the jp2 tree levels of across by down) - 1
+        set found to 1073741824
+        loop while level >= 0:
+            set node to the jp2 tree node at level level for x y of across by down
+            set nodeLow to the item at ((base + total) + node) in pool
+            if low > nodeLow:
+                set nodeLow to low
+            else:
+                set low to nodeLow
+            set value to the item at (base + node) in pool
+            loop while (low < threshold) and (low < value):
+                if (the jp2 header bit of reader) = 1:
+                    set value to low
+                else:
+                    set low to low + 1
+            store value at (pool + (base + node))
+            store low at (pool + ((base + total) + node))
+            set found to value
+            set level to level - 1
+        return found < threshold
+
+# --- Growing lists of integers ---
+
+class:
+    patterns:
+        [a|] jp2 list
+    members:
+        jlItems as a pointer to an integer
+        jlCount as an integer
+        jlCapacity as an integer
+
+local function a new jp2 list:
+    execute:
+        return @intrinsic("construct", a jp2 list, @intrinsic("call", "libc", "malloc", a pointer to an integer, 4096 as a word sized integer), 0, 1024)
+
+local function append {integer:value} to jp2 list {a pointer to a jp2 list:target}:
+    execute:
+        if (target's jlCount) >= (target's jlCapacity):
+            set target's jlCapacity to (target's jlCapacity) * 2
+            set target's jlItems to @intrinsic("call", "libc", "realloc", a pointer to an integer, target's jlItems, ((target's jlCapacity) * 4) as a word sized integer)
+        store value at ((target's jlItems) + (target's jlCount))
+        set target's jlCount to (target's jlCount) + 1
+
+# --- Parameters ---
+# A parameter area holds what one header (the main header, or a tile's
+# first tile-part header) says, for at most 16 components:
+#   0 COD given, 1..40 the coding style: 1 levels, 2 xcb, 3 ycb, 4 style,
+#     5 transform (1 = 5/3), 6..38 precinct exponents ppx | ppy << 8
+#   41.. COC given per component, 57.. their coding styles (40 each)
+#   697 QCD given, 698.. the quantisation: style, guard bits, count,
+#     then expn << 16 | mantissa per band (104 in all)
+#   802.. QCC given per component, 818.. their quantisation (104 each)
+#   2482.. RGN given per component, 2498.. the ROI shifts
+#   2514 COD's progression given, 2515 order, 2516 layers, 2517 MCT,
+#     2518 Scod
+#   2519 POC count, 2520.. 32 changes of 7: rs, cs, layer end, re, ce, order
+
+local function jp2 area size:
+    replacement: 2744
+local function jp2 coding size:
+    replacement: 40
+local function jp2 quant size:
+    replacement: 104
+local function jp2 largest components:
+    replacement: 16
+
+local function the jp2 component field size for {integer:components}:
+    execute:
+        if components < 257:
+            return 1
+        return 2
+
+# SPcod / SPcoc into a coding style at offset in the area.
+local function read jp2 coding style from {integer:start} until {integer:finish} precincts {boolean:defined} in {pointer:data} into {a pointer to an integer:area} at {integer:offset}:
+    execute:
+        if (start + 5) > finish:
+            return false
+        set levels to the byte start in data
+        if levels > 32:
+            return false
+        store levels at (area + offset)
+        store ((the byte (start + 1) in data) + 2) at (area + (offset + 1))
+        store ((the byte (start + 2) in data) + 2) at (area + (offset + 2))
+        store (the byte (start + 3) in data) at (area + (offset + 3))
+        store (the byte (start + 4) in data) at (area + (offset + 4))
+        loop resolution from 0 to (levels + 1):
+            set exponents to 15 | (15 << 8)
+            if defined:
+                if (start + (5 + resolution)) < finish:
+                    set packed to the byte (start + (5 + resolution)) in data
+                    set exponents to (packed & 15) | ((packed >> 4) << 8)
+            store exponents at (area + ((offset + 5) + resolution))
+        return true
+
+local function read jp2 quantisation from {integer:start} until {integer:finish} in {pointer:data} into {a pointer to an integer:area} at {integer:offset}:
+    execute:
+        if start >= finish:
+            return false
+        set packed to the byte start in data
+        set style to packed & 31
+        store style at (area + offset)
+        store (packed >> 5) at (area + (offset + 1))
+        set count to 0
+        set cursor to start + 1
+        loop while (cursor < finish) and (count < 97):
+            if style = 0:
+                store (((the byte cursor in data) >> 3) << 16) at (area + ((offset + 3) + count))
+                set cursor to cursor + 1
+            else:
+                if (cursor + 1) < finish:
+                    set value to the big-endian half cursor in data
+                    store (((value >> 11) << 16) | (value & 2047)) at (area + ((offset + 3) + count))
+                set cursor to cursor + 2
+            set count to count + 1
+        store count at (area + (offset + 2))
+        return true
+
+# Reads the markers of a header (main or tile-part) from cursor up to SOT
+# or SOD into the area; returns where it stopped, -1 when damaged, -2 for
+# packed packet headers (PPM, PPT), which this reader does not take.
+local function read jp2 markers from {integer:cursor} until {integer:finish} in {pointer:data} components {integer:componentCount} into {a pointer to an integer:area}:
+    execute:
+        set at to cursor
+        set field to the jp2 component field size for componentCount
+        loop while (at + 4) <= finish:
+            set marker to the big-endian half at in data
+            if (marker = 65424) or (marker = 65427):
+                return at
+            set size to the big-endian half (at + 2) in data
+            set start to at + 4
+            set stop to (at + 2) + size
+            if (size < 2) or (stop > finish):
+                return -1
+            if marker = 65362:
+                # COD
+                if (start + 5) > stop:
+                    return -1
+                set scod to the byte start in data
+                store 1 at (area + 2514)
+                store (the byte (start + 1) in data) at (area + 2515)
+                store (the big-endian half (start + 2) in data) at (area + 2516)
+                store (the byte (start + 4) in data) at (area + 2517)
+                store scod at (area + 2518)
+                if (read jp2 coding style from (start + 5) until stop precincts ((scod & 1) != 0) in data into area at 1) = false:
+                    return -1
+                store 1 at area
+            else if marker = 65363:
+                # COC
+                set component to the byte start in data
+                if field = 2:
+                    set component to the big-endian half start in data
+                if component < jp2 largest components:
+                    set scoc to the byte (start + field) in data
+                    if (read jp2 coding style from ((start + field) + 1) until stop precincts ((scoc & 1) != 0) in data into area at (57 + (component * jp2 coding size))) = false:
+                        return -1
+                    store 1 at (area + (41 + component))
+            else if marker = 65372:
+                # QCD
+                if (read jp2 quantisation from start until stop in data into area at 698) = false:
+                    return -1
+                store 1 at (area + 697)
+            else if marker = 65373:
+                # QCC
+                set component to the byte start in data
+                if field = 2:
+                    set component to the big-endian half start in data
+                if component < jp2 largest components:
+                    if (read jp2 quantisation from (start + field) until stop in data into area at (818 + (component * jp2 quant size))) = false:
+                        return -1
+                    store 1 at (area + (802 + component))
+            else if marker = 65374:
+                # RGN
+                set component to the byte start in data
+                if field = 2:
+                    set component to the big-endian half start in data
+                if component < jp2 largest components:
+                    store 1 at (area + (2482 + component))
+                    store (the byte ((start + field) + 1) in data) at (area + (2498 + component))
+            else if marker = 65375:
+                # POC
+                set entry to 5 + (2 * field)
+                set changes to (stop - start) / entry
+                set kept to the minimum of changes and 32
+                store kept at (area + 2519)
+                loop change from 0 to kept:
+                    set origin to start + (change * entry)
+                    set base to 2520 + (change * 7)
+                    store (the byte origin in data) at (area + base)
+                    if field = 1:
+                        store (the byte (origin + 1) in data) at (area + (base + 1))
+                        store (the big-endian half (origin + 2) in data) at (area + (base + 2))
+                        store (the byte (origin + 4) in data) at (area + (base + 3))
+                        store (the byte (origin + 5) in data) at (area + (base + 4))
+                        store (the byte (origin + 6) in data) at (area + (base + 5))
+                    else:
+                        store (the big-endian half (origin + 1) in data) at (area + (base + 1))
+                        store (the big-endian half (origin + 3) in data) at (area + (base + 2))
+                        store (the byte (origin + 5) in data) at (area + (base + 3))
+                        store (the big-endian half (origin + 6) in data) at (area + (base + 4))
+                        store (the byte (origin + 8) in data) at (area + (base + 5))
+            else if (marker = 65376) or (marker = 65377):
+                return -2
+            set at to stop
+        return at
+
+# --- Tile geometry ---
+
+local function the jp2 ceiling of {integer:numerator} over {integer:divisor}:
+    execute:
+        if numerator >= 0:
+            return (numerator + (divisor - 1)) / divisor
+        return 0 - ((0 - numerator) / divisor)
+
+local function the jp2 floor of {integer:numerator} over {integer:divisor}:
+    execute:
+        if numerator >= 0:
+            return numerator / divisor
+        return 0 - (((0 - numerator) + (divisor - 1)) / divisor)
+
+local function the jp2 floor log of {integer:value}:
+    execute:
+        set result to 0
+        set rest to value
+        loop while rest > 1:
+            set rest to rest >> 1
+            set result to result + 1
+        return result
+
+# The tables of one tile, built by lay out jp2 tile:
+#   resolutions (16 per entry): 0 trx0, 1 try0, 2 trx1, 3 try1, 4 ppx,
+#     5 ppy, 6 precincts across, 7 precincts down, 8 first precinct,
+#     9 bands, 10 first band, 11 component, 12 resolution
+#   bands (16): 0 orient, 1 tbx0, 2 tby0, 3 tbx1, 4 tby1, 5 xcb, 6 ycb,
+#     7 band number, 8 x offset, 9 y offset, 10 bit-planes Mb, 11 component
+#   precincts (16): per band (5 each) code-blocks across, down, first
+#     code-block, inclusion tree, zero bit-plane tree; 15 layers done
+#   code-blocks (12): 0 x0, 1 y0, 2 x1, 3 y1, 4 band, 5 included,
+#     6 bit-planes, 7 Lblock, 8 passes, 9 passes in the segment,
+#     10 segments, 11 last chunk
+class:
+    patterns:
+        [a|] jp2 tile
+    members:
+        jtResolutions as a pointer to an integer
+        jtBands as a pointer to an integer
+        jtPrecincts as a pointer to an integer
+        jtBlocks as a pointer to an integer
+        jtTrees as a pointer to an integer
+        jtResolutionCount as an integer
+        jtBandCount as an integer
+        jtPrecinctCount as an integer
+        jtBlockCount as an integer
+        jtTreeCount as an integer
+        jtFirstResolution as a pointer to an integer
+        jtSteps as a pointer to a 64 bit floating-point number
+
+# The coding style and quantisation of each component, from the tile's
+# area over the main one, a component's own over the default (A.6).
+local function resolve jp2 parameters for {integer:components} from {a pointer to an integer:main} and {a pointer to an integer:own} into {a pointer to an integer:coding} and {a pointer to an integer:quant}:
+    execute:
+        loop component from 0 to components:
+            set source to main + 1
+            if (the item at (41 + component) in main) = 1:
+                set source to main + (57 + (component * jp2 coding size))
+            if (the item at 0 in own) = 1:
+                set source to own + 1
+            if (the item at (41 + component) in own) = 1:
+                set source to own + (57 + (component * jp2 coding size))
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, coding + (component * jp2 coding size), source, ((jp2 coding size) * 4) as a word sized integer)
+            set origin to main + 698
+            if (the item at (802 + component) in main) = 1:
+                set origin to main + (818 + (component * jp2 quant size))
+            if (the item at 697 in own) = 1:
+                set origin to own + 698
+            if (the item at (802 + component) in own) = 1:
+                set origin to own + (818 + (component * jp2 quant size))
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, quant + (component * jp2 quant size), origin, ((jp2 quant size) * 4) as a word sized integer)
+
+# Builds (filling) or counts the tile's resolutions, bands, precincts and
+# code-blocks. geometry: tcx0, tcy0, tcx1, tcy1 per component (4 each);
+# precision per component.
+local function lay out jp2 blocks of {a pointer to a jp2 tile:tile} for {integer:components} geometry {a pointer to an integer:tileGeometry} coding {a pointer to an integer:codingStyles} quant {a pointer to an integer:quantStyles} precisions {a pointer to an integer:precisionList} filling {boolean:filled}:
+    execute:
+        set resolutionCount to 0
+        set bandCount to 0
+        set precinctCount to 0
+        set blockCount to 0
+        set treeCount to 0
+        loop component from 0 to components:
+            set style to codingStyles + (component * jp2 coding size)
+            set levels to the item at 0 in style
+            set tcx0 to the item at (component * 4) in tileGeometry
+            set tcy0 to the item at ((component * 4) + 1) in tileGeometry
+            set tcx1 to the item at ((component * 4) + 2) in tileGeometry
+            set tcy1 to the item at ((component * 4) + 3) in tileGeometry
+            if filled:
+                store resolutionCount at ((tile's jtFirstResolution) + component)
+            loop resolution from 0 to (levels + 1):
+                set scale to 1 << (levels - resolution)
+                set trx0 to the jp2 ceiling of tcx0 over scale
+                set try0 to the jp2 ceiling of tcy0 over scale
+                set trx1 to the jp2 ceiling of tcx1 over scale
+                set try1 to the jp2 ceiling of tcy1 over scale
+                set exponents to the item at (5 + resolution) in style
+                set ppx to exponents & 255
+                set ppy to exponents >> 8
+                set across to 0
+                set down to 0
+                if (trx1 > trx0) and (try1 > try0):
+                    set across to (the jp2 ceiling of trx1 over (1 << ppx)) - (trx0 >> ppx)
+                    set down to (the jp2 ceiling of try1 over (1 << ppy)) - (try0 >> ppy)
+                set bands to 3
+                if resolution = 0:
+                    set bands to 1
+                if filled:
+                    set entry to (tile's jtResolutions) + (resolutionCount * 16)
+                    store trx0 at entry
+                    store try0 at (entry + 1)
+                    store trx1 at (entry + 2)
+                    store try1 at (entry + 3)
+                    store ppx at (entry + 4)
+                    store ppy at (entry + 5)
+                    store across at (entry + 6)
+                    store down at (entry + 7)
+                    store precinctCount at (entry + 8)
+                    store bands at (entry + 9)
+                    store bandCount at (entry + 10)
+                    store component at (entry + 11)
+                    store resolution at (entry + 12)
+                # The bands of this resolution.
+                set firstBand to bandCount
+                loop band from 0 to bands:
+                    set orient to band + 1
+                    if resolution = 0:
+                        set orient to 0
+                    set xob to orient & 1
+                    set yob to orient >> 1
+                    set depth to levels - resolution
+                    if resolution > 0:
+                        set depth to (levels - resolution) + 1
+                    set shift to 1 << depth
+                    set half to 0
+                    if depth > 0:
+                        set half to 1 << (depth - 1)
+                    set tbx0 to the jp2 ceiling of (tcx0 - (xob * half)) over shift
+                    set tby0 to the jp2 ceiling of (tcy0 - (yob * half)) over shift
+                    set tbx1 to the jp2 ceiling of (tcx1 - (xob * half)) over shift
+                    set tby1 to the jp2 ceiling of (tcy1 - (yob * half)) over shift
+                    set sizeX to ppx
+                    set sizeY to ppy
+                    if resolution > 0:
+                        set sizeX to ppx - 1
+                        set sizeY to ppy - 1
+                    set xcb to the minimum of (the item at 1 in style) and sizeX
+                    set ycb to the minimum of (the item at 2 in style) and sizeY
+                    if filled:
+                        set entry to (tile's jtBands) + (bandCount * 16)
+                        set offsetX to 0
+                        set offsetY to 0
+                        if resolution > 0:
+                            set lowScale to 1 << (levels - (resolution - 1))
+                            if xob = 1:
+                                set offsetX to (the jp2 ceiling of tcx1 over lowScale) - (the jp2 ceiling of tcx0 over lowScale)
+                            if yob = 1:
+                                set offsetY to (the jp2 ceiling of tcy1 over lowScale) - (the jp2 ceiling of tcy0 over lowScale)
+                        set number to 0
+                        if resolution > 0:
+                            set number to ((resolution - 1) * 3) + orient
+                        set q to quantStyles + (component * jp2 quant size)
+                        set exponent to 0
+                        set mantissa to 0
+                        if (the item at 0 in q) = 1:
+                            set exponent to ((the item at 3 in q) >> 16) - (levels - depth)
+                            if resolution = 0:
+                                set exponent to (the item at 3 in q) >> 16
+                            set mantissa to (the item at 3 in q) & 65535
+                        else if number < (the item at 2 in q):
+                            set exponent to (the item at (3 + number) in q) >> 16
+                            set mantissa to (the item at (3 + number) in q) & 65535
+                        set gain to 0
+                        if orient = 1:
+                            set gain to 1
+                        if orient = 2:
+                            set gain to 1
+                        if orient = 3:
+                            set gain to 2
+                        set range to (the item at component in precisionList) + gain
+                        set step to (@intrinsic("call", "libc", "ldexp", a 64 bit floating-point number, 1.0, range - exponent)) * (1.0 + ((mantissa as a 64 bit floating-point number) / 2048.0))
+                        store step at ((tile's jtSteps) + bandCount)
+                        store orient at entry
+                        store tbx0 at (entry + 1)
+                        store tby0 at (entry + 2)
+                        store tbx1 at (entry + 3)
+                        store tby1 at (entry + 4)
+                        store xcb at (entry + 5)
+                        store ycb at (entry + 6)
+                        store number at (entry + 7)
+                        store offsetX at (entry + 8)
+                        store offsetY at (entry + 9)
+                        store (((the item at 1 in q) + exponent) - 1) at (entry + 10)
+                        store component at (entry + 11)
+                    set bandCount to bandCount + 1
+                # The precincts and their code-blocks.
+                loop precinctY from 0 to down:
+                    loop precinctX from 0 to across:
+                        set gx to precinctX + (trx0 >> ppx)
+                        set gy to precinctY + (try0 >> ppy)
+                        loop band from 0 to bands:
+                            set sizeX to ppx
+                            set sizeY to ppy
+                            if resolution > 0:
+                                set sizeX to ppx - 1
+                                set sizeY to ppy - 1
+                            set xcb to the minimum of (the item at 1 in style) and sizeX
+                            set ycb to the minimum of (the item at 2 in style) and sizeY
+                            # The band's bounds again (the counting pass has no table).
+                            set orient to band + 1
+                            if resolution = 0:
+                                set orient to 0
+                            set xob to orient & 1
+                            set yob to orient >> 1
+                            set depth to levels - resolution
+                            if resolution > 0:
+                                set depth to (levels - resolution) + 1
+                            set shift to 1 << depth
+                            set half to 0
+                            if depth > 0:
+                                set half to 1 << (depth - 1)
+                            set tbx0 to the jp2 ceiling of (tcx0 - (xob * half)) over shift
+                            set tby0 to the jp2 ceiling of (tcy0 - (yob * half)) over shift
+                            set tbx1 to the jp2 ceiling of (tcx1 - (xob * half)) over shift
+                            set tby1 to the jp2 ceiling of (tcy1 - (yob * half)) over shift
+                            set rx0 to the maximum of (gx << sizeX) and tbx0
+                            set ry0 to the maximum of (gy << sizeY) and tby0
+                            set rx1 to the minimum of ((gx + 1) << sizeX) and tbx1
+                            set ry1 to the minimum of ((gy + 1) << sizeY) and tby1
+                            set blocksAcross to 0
+                            set blocksDown to 0
+                            if (rx1 > rx0) and (ry1 > ry0):
+                                set blocksAcross to (the jp2 ceiling of rx1 over (1 << xcb)) - (rx0 >> xcb)
+                                set blocksDown to (the jp2 ceiling of ry1 over (1 << ycb)) - (ry0 >> ycb)
+                            set treeNodes to the jp2 tree size of blocksAcross by blocksDown
+                            if filled:
+                                set slot to ((tile's jtPrecincts) + (precinctCount * 16)) + (band * 5)
+                                store blocksAcross at slot
+                                store blocksDown at (slot + 1)
+                                store blockCount at (slot + 2)
+                                store treeCount at (slot + 3)
+                                store (treeCount + (2 * treeNodes)) at (slot + 4)
+                                set up jp2 tree at treeCount of blocksAcross by blocksDown in (tile's jtTrees)
+                                set up jp2 tree at (treeCount + (2 * treeNodes)) of blocksAcross by blocksDown in (tile's jtTrees)
+                                loop blockY from 0 to blocksDown:
+                                    loop blockX from 0 to blocksAcross:
+                                        set bx to blockX + (rx0 >> xcb)
+                                        set by to blockY + (ry0 >> ycb)
+                                        set record to (tile's jtBlocks) + ((blockCount + ((blockY * blocksAcross) + blockX)) * 12)
+                                        store (the maximum of (bx << xcb) and rx0) at record
+                                        store (the maximum of (by << ycb) and ry0) at (record + 1)
+                                        store (the minimum of ((bx + 1) << xcb) and rx1) at (record + 2)
+                                        store (the minimum of ((by + 1) << ycb) and ry1) at (record + 3)
+                                        store (firstBand + band) at (record + 4)
+                                        store 3 at (record + 7)
+                                        store -1 at (record + 11)
+                            set blockCount to blockCount + (blocksAcross * blocksDown)
+                            set treeCount to treeCount + (4 * treeNodes)
+                        set precinctCount to precinctCount + 1
+                set resolutionCount to resolutionCount + 1
+        set tile's jtResolutionCount to resolutionCount
+        set tile's jtBandCount to bandCount
+        set tile's jtPrecinctCount to precinctCount
+        set tile's jtBlockCount to blockCount
+        set tile's jtTreeCount to treeCount
+
+# --- Packets ---
+
+# Chunks of code-block data (6 each): code-block, offset, length, passes,
+# starts a segment, the code-block's previous chunk.
+class:
+    patterns:
+        [a|] jp2 stream
+    members:
+        jsData as a pointer to a byte
+        jsAt as an integer
+        jsEnd as an integer
+        jsChunks as a pointer to a jp2 list
+        jsScod as an integer
+        jsBroken as boolean
+
+# The most passes a codeword segment holds (D.4.1, D.6).
+local function the jp2 segment limit for {integer:segmentNumber} style {integer:blockStyle}:
+    execute:
+        if (blockStyle & 4) != 0:
+            return 1
+        if (blockStyle & 1) != 0:
+            if segmentNumber = 0:
+                return 10
+            if (segmentNumber & 1) = 1:
+                return 2
+            return 1
+        return 109
+
+local function the jp2 pass count from {a pointer to a jp2 bit reader:reader}:
+    execute:
+        if (the jp2 header bit of reader) = 0:
+            return 1
+        if (the jp2 header bit of reader) = 0:
+            return 2
+        set value to the jp2 header value of 2 bits from reader
+        if value != 3:
+            return 3 + value
+        set value to the jp2 header value of 5 bits from reader
+        if value != 31:
+            return 6 + value
+        return 37 + (the jp2 header value of 7 bits from reader)
+
+# Reads one packet: its header, then where each contribution's bytes lie.
+local function read jp2 packet of layer {integer:layerNumber} precinct {integer:precinctNumber} resolution {integer:resolutionNumber} style {integer:blockStyle} in {a pointer to a jp2 tile:tile} from {a pointer to a jp2 stream:stream}:
+    execute:
+        set data to stream's jsData
+        if ((stream's jsScod) & 2) != 0:
+            if ((stream's jsAt) + 6) <= (stream's jsEnd):
+                if (the big-endian half (stream's jsAt) in (data as pointer)) = 65425:
+                    set stream's jsAt to (stream's jsAt) + 6
+        set state to @intrinsic("construct", a jp2 bit reader, data, stream's jsAt, stream's jsEnd, 0, 0)
+        set reader to the address of state
+        set entry to (tile's jtResolutions) + (resolutionNumber * 16)
+        set bands to the item at 9 in entry
+        set firstBand to the item at 10 in entry
+        set chunks to stream's jsChunks
+        set firstChunk to chunks' jlCount
+        if (the jp2 header bit of reader) = 1:
+            loop band from 0 to bands:
+                set slot to ((tile's jtPrecincts) + (precinctNumber * 16)) + (band * 5)
+                set blocksAcross to the item at 0 in slot
+                set blocksDown to the item at 1 in slot
+                set firstBlock to the item at 2 in slot
+                set inclusion to the item at 3 in slot
+                set zeroTree to the item at 4 in slot
+                loop blockY from 0 to blocksDown:
+                    loop blockX from 0 to blocksAcross:
+                        set record to (tile's jtBlocks) + ((firstBlock + ((blockY * blocksAcross) + blockX)) * 12)
+                        set included to false
+                        set fresh to (the item at 5 in record) = 0
+                        if fresh:
+                            set included to the jp2 tree at inclusion of blocksAcross by blocksDown holds blockX blockY below (layerNumber + 1) from reader in (tile's jtTrees)
+                        else:
+                            set included to (the jp2 header bit of reader) = 1
+                        if included:
+                            if fresh:
+                                set planes to 0
+                                loop while (the jp2 tree at zeroTree of blocksAcross by blocksDown holds blockX blockY below planes from reader in (tile's jtTrees)) = false:
+                                    set planes to planes + 1
+                                    if planes > 64:
+                                        set stream's jsBroken to true
+                                        return nothing
+                                set bandEntry to (tile's jtBands) + ((firstBand + band) * 16)
+                                store (((the item at 10 in bandEntry) + 1) - planes) at (record + 6)
+                                store 1 at (record + 5)
+                            set fresh to false
+                            set added to the jp2 pass count from reader
+                            loop while (the jp2 header bit of reader) = 1:
+                                store ((the item at 7 in record) + 1) at (record + 7)
+                            # The lengths, one per codeword segment touched.
+                            set remaining to added
+                            loop while remaining > 0:
+                                set segment to (the item at 10 in record) - 1
+                                set limit to the jp2 segment limit for segment style blockStyle
+                                set starting to 0
+                                if (segment < 0) or ((the item at 9 in record) >= limit):
+                                    set segment to segment + 1
+                                    store (segment + 1) at (record + 10)
+                                    store 0 at (record + 9)
+                                    set limit to the jp2 segment limit for segment style blockStyle
+                                    set starting to 1
+                                set taken to the minimum of (limit - (the item at 9 in record)) and remaining
+                                set length to the jp2 header value of ((the item at 7 in record) + (the jp2 floor log of taken)) bits from reader
+                                append (firstBlock + ((blockY * blocksAcross) + blockX)) to jp2 list chunks
+                                append 0 to jp2 list chunks
+                                append length to jp2 list chunks
+                                append taken to jp2 list chunks
+                                append starting to jp2 list chunks
+                                append (the item at 11 in record) to jp2 list chunks
+                                store (((chunks' jlCount) / 6) - 1) at (record + 11)
+                                store ((the item at 9 in record) + taken) at (record + 9)
+                                store ((the item at 8 in record) + taken) at (record + 8)
+                                set remaining to remaining - taken
+        align jp2 header of reader
+        set stream's jsAt to state's brAt
+        if ((stream's jsScod) & 4) != 0:
+            if ((stream's jsAt) + 2) <= (stream's jsEnd):
+                if (the big-endian half (stream's jsAt) in (data as pointer)) = 65426:
+                    set stream's jsAt to (stream's jsAt) + 2
+        # The packet's body: the contributions in header order.
+        set index to firstChunk
+        loop while index < (chunks' jlCount):
+            set length to the item at (index + 2) in (chunks' jlItems)
+            if ((stream's jsAt) + length) > (stream's jsEnd):
+                set length to the maximum of 0 and ((stream's jsEnd) - (stream's jsAt))
+                store length at ((chunks' jlItems) + (index + 2))
+                set stream's jsBroken to true
+            store (stream's jsAt) at ((chunks' jlItems) + (index + 1))
+            set stream's jsAt to (stream's jsAt) + length
+            set index to index + 6
+
+# --- Progression (B.12) ---
+
+# Precinct entries (6 each): resolution entry, precinct, component,
+# resolution, y and x of the point on the reference grid where a
+# position-led order reaches it.
+local function gather jp2 precincts of {a pointer to a jp2 tile:tile} from {integer:tx0} {integer:ty0} with {a pointer to an integer:spacingTable} into {a pointer to a jp2 list:entryList}:
+    execute:
+        loop resolutionIndex from 0 to (tile's jtResolutionCount):
+            set entry to (tile's jtResolutions) + (resolutionIndex * 16)
+            set component to the item at 11 in entry
+            set resolution to the item at 12 in entry
+            set levels to the item at (component * 4) in spacingTable
+            set dx to the item at ((component * 4) + 1) in spacingTable
+            set dy to the item at ((component * 4) + 2) in spacingTable
+            set ppx to the item at 4 in entry
+            set ppy to the item at 5 in entry
+            set across to the item at 6 in entry
+            set down to the item at 7 in entry
+            loop precinctY from 0 to down:
+                loop precinctX from 0 to across:
+                    set gx to precinctX + ((the item at 0 in entry) >> ppx)
+                    set gy to precinctY + ((the item at 1 in entry) >> ppy)
+                    set px to ((gx << ppx) << (levels - resolution)) * dx
+                    set py to ((gy << ppy) << (levels - resolution)) * dy
+                    append resolutionIndex to jp2 list entryList
+                    append ((the item at 8 in entry) + ((precinctY * across) + precinctX)) to jp2 list entryList
+                    append component to jp2 list entryList
+                    append resolution to jp2 list entryList
+                    append ((the maximum of py and ty0) - ty0) to jp2 list entryList
+                    append ((the maximum of px and tx0) - tx0) to jp2 list entryList
+
+# Whether precinct entry a comes after b in the order (1 RLCP is not
+# position-led: entries keep r, c, k; 2 RPCL r y x c; 3 PCRL y x c r;
+# 4 CPRL c y x r).
+local function jp2 entry {integer:first} follows {integer:second} in order {integer:orderCode} of {a pointer to an integer:items}:
+    execute:
+        set a to first * 6
+        set b to second * 6
+        set keys to @intrinsic("call", "libc", "calloc", a pointer to an integer, 10 as a word sized integer, 4 as a word sized integer)
+        if orderCode = 2:
+            store (the item at (a + 3) in items) at keys
+            store (the item at (a + 4) in items) at (keys + 1)
+            store (the item at (a + 5) in items) at (keys + 2)
+            store (the item at (a + 2) in items) at (keys + 3)
+            store (the item at (b + 3) in items) at (keys + 5)
+            store (the item at (b + 4) in items) at (keys + 6)
+            store (the item at (b + 5) in items) at (keys + 7)
+            store (the item at (b + 2) in items) at (keys + 8)
+        else if orderCode = 3:
+            store (the item at (a + 4) in items) at keys
+            store (the item at (a + 5) in items) at (keys + 1)
+            store (the item at (a + 2) in items) at (keys + 2)
+            store (the item at (a + 3) in items) at (keys + 3)
+            store (the item at (b + 4) in items) at (keys + 5)
+            store (the item at (b + 5) in items) at (keys + 6)
+            store (the item at (b + 2) in items) at (keys + 7)
+            store (the item at (b + 3) in items) at (keys + 8)
+        else:
+            store (the item at (a + 2) in items) at keys
+            store (the item at (a + 4) in items) at (keys + 1)
+            store (the item at (a + 5) in items) at (keys + 2)
+            store (the item at (a + 3) in items) at (keys + 3)
+            store (the item at (b + 2) in items) at (keys + 5)
+            store (the item at (b + 4) in items) at (keys + 6)
+            store (the item at (b + 5) in items) at (keys + 7)
+            store (the item at (b + 3) in items) at (keys + 8)
+        store first at (keys + 4)
+        store second at (keys + 9)
+        set result to false
+        set decided to false
+        loop key from 0 to 5:
+            if decided = false:
+                if (the item at key in keys) != (the item at (key + 5) in keys):
+                    set result to (the item at key in keys) > (the item at (key + 5) in keys)
+                    set decided to true
+        @intrinsic("call", "libc", "free", nothing, keys)
+        return result
+
+# Sorts the entry numbers by the order (a bottom-up merge sort).
+local function sort jp2 entries {a pointer to an integer:numbers} counting {integer:count} by order {integer:orderCode} of {a pointer to an integer:items}:
+    execute:
+        set spare to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((count + 1) * 4) as a word sized integer)
+        set width to 1
+        loop while width < count:
+            set start to 0
+            loop while start < count:
+                set middle to the minimum of (start + width) and count
+                set finish to the minimum of (start + (2 * width)) and count
+                set i to start
+                set j to middle
+                set k to start
+                loop while k < finish:
+                    set takeLeft to i < middle
+                    if takeLeft and (j < finish):
+                        set takeLeft to (jp2 entry (the item at i in numbers) follows (the item at j in numbers) in order orderCode of items) = false
+                    if takeLeft:
+                        store (the item at i in numbers) at (spare + k)
+                        set i to i + 1
+                    else:
+                        store (the item at j in numbers) at (spare + k)
+                        set j to j + 1
+                    set k to k + 1
+                set start to start + (2 * width)
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, numbers, spare, (count * 4) as a word sized integer)
+            set width to width * 2
+        @intrinsic("call", "libc", "free", nothing, spare)
+
+# Reads the packets of one progression volume: layers below layerEnd,
+# resolutions [rs, re), components [cs, ce), in the order. A packet is
+# read when its layer is the next one of its precinct.
+local function read jp2 volume order {integer:orderCode} layers {integer:layerEnd} resolutions {integer:rs} {integer:re} components {integer:cs} {integer:ce} of {a pointer to a jp2 tile:tile} entries {a pointer to a jp2 list:entryList} styles {a pointer to an integer:codingStyles} from {a pointer to a jp2 stream:stream}:
+    execute:
+        set items to entryList's jlItems
+        set count to (entryList's jlCount) / 6
+        set numbers to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((count + 1) * 4) as a word sized integer)
+        set kept to 0
+        loop index from 0 to count:
+            set resolution to the item at ((index * 6) + 3) in items
+            set component to the item at ((index * 6) + 2) in items
+            if (((resolution >= rs) and (resolution < re)) and ((component >= cs) and (component < ce))):
+                store index at (numbers + kept)
+                set kept to kept + 1
+        if orderCode >= 2:
+            sort jp2 entries numbers counting kept by order orderCode of items
+        set layerCount to 1
+        if orderCode <= 1:
+            set layerCount to layerEnd
+        set outerCount to 1
+        if orderCode = 1:
+            set outerCount to re
+        loop outer from 0 to outerCount:
+            loop layerIndex from 0 to layerCount:
+                loop position from 0 to kept:
+                    set index to the item at position in numbers
+                    set base to index * 6
+                    set resolution to the item at (base + 3) in items
+                    set readIt to true
+                    if orderCode = 1:
+                        set readIt to resolution = outer
+                    if readIt and ((stream's jsBroken) = false):
+                        set precinct to the item at (base + 1) in items
+                        set component to the item at (base + 2) in items
+                        set style to the item at (3 + (component * jp2 coding size)) in codingStyles
+                        set slot to (tile's jtPrecincts) + ((precinct * 16) + 15)
+                        if orderCode <= 1:
+                            if (the item at 0 in slot) = layerIndex:
+                                if layerIndex < layerEnd:
+                                    read jp2 packet of layer layerIndex precinct precinct resolution (the item at base in items) style style in tile from stream
+                                    store (layerIndex + 1) at slot
+                        else:
+                            loop while ((the item at 0 in slot) < layerEnd) and ((stream's jsBroken) = false):
+                                read jp2 packet of layer (the item at 0 in slot) precinct precinct resolution (the item at base in items) style style in tile from stream
+                                store ((the item at 0 in slot) + 1) at slot
+        @intrinsic("call", "libc", "free", nothing, numbers)
+
+# LRCP needs the resolution order inside each layer: the entries are put in
+# order of resolution, then precinct number (which rises with the
+# component, then the position within it).
+local function sort jp2 layered entries {a pointer to a jp2 list:entryList}:
+    execute:
+        set items to entryList's jlItems
+        set count to (entryList's jlCount) / 6
+        set numbers to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((count + 1) * 4) as a word sized integer)
+        set keys to @intrinsic("call", "libc", "malloc", a pointer to an integer, (((count * 6) + 1) * 4) as a word sized integer)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, keys, items, ((count * 6) * 4) as a word sized integer)
+        loop index from 0 to count:
+            store index at (numbers + index)
+            store 0 at (keys + ((index * 6) + 4))
+            store (the item at ((index * 6) + 1) in items) at (keys + ((index * 6) + 5))
+        sort jp2 entries numbers counting count by order 2 of keys
+        set sorted to @intrinsic("call", "libc", "malloc", a pointer to an integer, (((count * 6) + 1) * 4) as a word sized integer)
+        loop index from 0 to count:
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, sorted + (index * 6), items + ((the item at index in numbers) * 6), 24 as a word sized integer)
+        ignore @intrinsic("call", "libc", "memcpy", a pointer, items, sorted, ((count * 6) * 4) as a word sized integer)
+        @intrinsic("call", "libc", "free", nothing, numbers)
+        @intrinsic("call", "libc", "free", nothing, keys)
+        @intrinsic("call", "libc", "free", nothing, sorted)
+
+# --- Wavelets (Annex F) ---
+
+local function the jp2 mirror of {integer:spot} within {integer:size}:
+    execute:
+        if size = 1:
+            return 0
+        set place to spot
+        loop while (place < 0) or (place >= size):
+            if place < 0:
+                set place to 0 - place
+            if place >= size:
+                set place to (2 * (size - 1)) - place
+        return place
+
+# One row or column of n samples: the first low ones, then the high ones,
+# in work; parity is that of the first sample's coordinate.
+local function undo jp2 reversible line {a pointer to an integer:work} into {a pointer to an integer:result} of {integer:size} parity {integer:firstParity}:
+    execute:
+        if size = 1:
+            if firstParity = 1:
+                store ((the item at 0 in work) / 2) at result
+            else:
+                store (the item at 0 in work) at result
+            return nothing
+        set lows to ((size + 1) - firstParity) / 2
+        loop spot from 0 to size:
+            if ((spot + firstParity) & 1) = 0:
+                store (the item at ((spot - firstParity) / 2) in work) at (result + spot)
+            else:
+                store (the item at (lows + ((spot - (1 - firstParity)) / 2)) in work) at (result + spot)
+        loop spot from 0 to size:
+            if ((spot + firstParity) & 1) = 0:
+                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in result) + (the item at (the jp2 mirror of (spot + 1) within size) in result)
+                store ((the item at spot in result) - ((sum + 2) >> 2)) at (result + spot)
+        loop spot from 0 to size:
+            if ((spot + firstParity) & 1) = 1:
+                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in result) + (the item at (the jp2 mirror of (spot + 1) within size) in result)
+                store ((the item at spot in result) + (sum >> 1)) at (result + spot)
+
+local function lift jp2 values {a pointer to a 64 bit floating-point number:samples} of {integer:size} parity {integer:firstParity} odd {integer:oddness} by {64 bit floating-point number:factor}:
+    execute:
+        loop spot from 0 to size:
+            if ((spot + firstParity) & 1) = oddness:
+                set sum to (the item at (the jp2 mirror of (spot - 1) within size) in samples) + (the item at (the jp2 mirror of (spot + 1) within size) in samples)
+                store ((the item at spot in samples) - (factor * sum)) at (samples + spot)
+
+local function undo jp2 irreversible line {a pointer to a 64 bit floating-point number:work} into {a pointer to a 64 bit floating-point number:result} of {integer:size} parity {integer:firstParity}:
+    execute:
+        if size = 1:
+            if firstParity = 1:
+                store ((the item at 0 in work) / 2.0) at result
+            else:
+                store (the item at 0 in work) at result
+            return nothing
+        set lows to ((size + 1) - firstParity) / 2
+        loop spot from 0 to size:
+            if ((spot + firstParity) & 1) = 0:
+                store ((the item at ((spot - firstParity) / 2) in work) * 1.230174104914001) at (result + spot)
+            else:
+                store ((the item at (lows + ((spot - (1 - firstParity)) / 2)) in work) / 1.230174104914001) at (result + spot)
+        lift jp2 values result of size parity firstParity odd 0 by 0.443506852043971
+        lift jp2 values result of size parity firstParity odd 1 by 0.882911075530934
+        lift jp2 values result of size parity firstParity odd 0 by -0.052980118572961
+        lift jp2 values result of size parity firstParity odd 1 by -1.586134342059924
+
+# The inverse transform of a tile-component, resolution by resolution
+# (2D_SR: rows, then columns). sizes: trx0, try0, trx1, try1 per resolution.
+local function undo jp2 reversible wavelet of {a pointer to an integer:samples} stride {integer:rowStride} levels {integer:levelCount} sizes {a pointer to an integer:sizeTable}:
+    execute:
+        set longest to 1
+        loop resolution from 0 to (levelCount + 1):
+            set longest to the maximum of longest and ((the item at ((resolution * 4) + 2) in sizeTable) - (the item at (resolution * 4) in sizeTable))
+            set longest to the maximum of longest and ((the item at ((resolution * 4) + 3) in sizeTable) - (the item at ((resolution * 4) + 1) in sizeTable))
+        set work to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((longest + 2) * 4) as a word sized integer)
+        set line to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((longest + 2) * 4) as a word sized integer)
+        loop resolution from 1 to (levelCount + 1):
+            set x0 to the item at (resolution * 4) in sizeTable
+            set y0 to the item at ((resolution * 4) + 1) in sizeTable
+            set across to (the item at ((resolution * 4) + 2) in sizeTable) - x0
+            set down to (the item at ((resolution * 4) + 3) in sizeTable) - y0
+            if (across > 0) and (down > 0):
+                loop row from 0 to down:
+                    loop spot from 0 to across:
+                        store (the item at ((row * rowStride) + spot) in samples) at (work + spot)
+                    undo jp2 reversible line work into line of across parity (x0 & 1)
+                    loop spot from 0 to across:
+                        store (the item at spot in line) at (samples + ((row * rowStride) + spot))
+                loop column from 0 to across:
+                    loop spot from 0 to down:
+                        store (the item at ((spot * rowStride) + column) in samples) at (work + spot)
+                    undo jp2 reversible line work into line of down parity (y0 & 1)
+                    loop spot from 0 to down:
+                        store (the item at spot in line) at (samples + ((spot * rowStride) + column))
+        @intrinsic("call", "libc", "free", nothing, work)
+        @intrinsic("call", "libc", "free", nothing, line)
+
+local function undo jp2 irreversible wavelet of {a pointer to a 64 bit floating-point number:samples} stride {integer:rowStride} levels {integer:levelCount} sizes {a pointer to an integer:sizeTable}:
+    execute:
+        set longest to 1
+        loop resolution from 0 to (levelCount + 1):
+            set longest to the maximum of longest and ((the item at ((resolution * 4) + 2) in sizeTable) - (the item at (resolution * 4) in sizeTable))
+            set longest to the maximum of longest and ((the item at ((resolution * 4) + 3) in sizeTable) - (the item at ((resolution * 4) + 1) in sizeTable))
+        set work to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, ((longest + 2) * 8) as a word sized integer)
+        set line to @intrinsic("call", "libc", "malloc", a pointer to a 64 bit floating-point number, ((longest + 2) * 8) as a word sized integer)
+        loop resolution from 1 to (levelCount + 1):
+            set x0 to the item at (resolution * 4) in sizeTable
+            set y0 to the item at ((resolution * 4) + 1) in sizeTable
+            set across to (the item at ((resolution * 4) + 2) in sizeTable) - x0
+            set down to (the item at ((resolution * 4) + 3) in sizeTable) - y0
+            if (across > 0) and (down > 0):
+                loop row from 0 to down:
+                    loop spot from 0 to across:
+                        store (the item at ((row * rowStride) + spot) in samples) at (work + spot)
+                    undo jp2 irreversible line work into line of across parity (x0 & 1)
+                    loop spot from 0 to across:
+                        store (the item at spot in line) at (samples + ((row * rowStride) + spot))
+                loop column from 0 to across:
+                    loop spot from 0 to down:
+                        store (the item at ((spot * rowStride) + column) in samples) at (work + spot)
+                    undo jp2 irreversible line work into line of down parity (y0 & 1)
+                    loop spot from 0 to down:
+                        store (the item at spot in line) at (samples + ((spot * rowStride) + column))
+        @intrinsic("call", "libc", "free", nothing, work)
+        @intrinsic("call", "libc", "free", nothing, line)
+
+# --- One tile ---
+
+class:
+    patterns:
+        [a|] jp2 image
+    members:
+        jiData as a pointer to a byte
+        jiComponents as an integer
+        jiSizes as a pointer to an integer
+        jiPrecisions as a pointer to an integer
+        jiSigned as a pointer to an integer
+        jiSteps as a pointer to an integer
+        jiPlanes as a pointer to a C long integer
+        jiPlaneWidths as a pointer to an integer
+        jiPlaneHeights as a pointer to an integer
+        jiTable as a pointer to an integer
+        jiZero as a pointer to an integer
+
+# Decodes code-block number blockIndex into the tile-component's samples.
+local function decode jp2 code block {integer:blockIndex} of {a pointer to a jp2 tile:tile} with {a pointer to a jp2 stream:stream} styles {a pointer to an integer:coding} roi {a pointer to an integer:shifts} into {a pointer to an integer:integers} {a pointer to a 64 bit floating-point number:reals} stride {integer:rowStride} using {a pointer to an integer:table} {a pointer to an integer:zero}:
+    execute:
+        set record to (tile's jtBlocks) + (blockIndex * 12)
+        set passes to the item at 8 in record
+        if passes = 0:
+            return nothing
+        set bandEntry to (tile's jtBands) + ((the item at 4 in record) * 16)
+        set component to the item at 11 in bandEntry
+        set style to the item at (3 + (component * jp2 coding size)) in coding
+        set shift to the item at component in shifts
+        set top to ((the item at 6 in record) + shift) - 1
+        if (top < 0) or (top > 28):
+            return nothing
+        set passes to the minimum of passes and ((3 * (top + 1)) - 2)
+        set width to (the item at 2 in record) - (the item at 0 in record)
+        set height to (the item at 3 in record) - (the item at 1 in record)
+        if (width < 1) or (height < 1):
+            return nothing
+        # Gather the chunks, first to last, into segments.
+        set chunks to (stream's jsChunks)'s jlItems
+        set chunkCount to 0
+        set link to the item at 11 in record
+        set total to 0
+        loop while link >= 0:
+            set chunkCount to chunkCount + 1
+            set total to total + (the item at ((link * 6) + 2) in chunks)
+            set link to the item at ((link * 6) + 5) in chunks
+        set order to @intrinsic("call", "libc", "malloc", a pointer to an integer, ((chunkCount + 1) * 4) as a word sized integer)
+        set link to the item at 11 in record
+        set position to chunkCount - 1
+        loop while link >= 0:
+            store link at (order + position)
+            set position to position - 1
+            set link to the item at ((link * 6) + 5) in chunks
+        set bytes to @intrinsic("call", "libc", "malloc", a pointer to a byte, (total + 2) as a word sized integer)
+        set segments to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((chunkCount + 1) * 3) as a word sized integer, 4 as a word sized integer)
+        set segmentCount to 0
+        set filled to 0
+        loop index from 0 to chunkCount:
+            set chunk to (the item at index in order) * 6
+            if ((the item at (chunk + 4) in chunks) = 1) or (segmentCount = 0):
+                store filled at (segments + (segmentCount * 3))
+                store filled at (segments + ((segmentCount * 3) + 1))
+                set segmentCount to segmentCount + 1
+            set length to the item at (chunk + 2) in chunks
+            ignore @intrinsic("call", "libc", "memcpy", a pointer, bytes + filled, (stream's jsData) + (the item at (chunk + 1) in chunks), length as a word sized integer)
+            set filled to filled + length
+            store filled at (segments + (((segmentCount - 1) * 3) + 1))
+            store ((the item at (((segmentCount - 1) * 3) + 2) in segments) + (the item at (chunk + 3) in chunks)) at (segments + (((segmentCount - 1) * 3) + 2))
+        set states to @intrinsic("call", "libc", "calloc", a pointer to an integer, 40 as a word sized integer, 4 as a word sized integer)
+        set machine to @intrinsic("construct", a jp2 coder, bytes, 0, 0, 0, 0 as a C long integer, 0, states, table)
+        set flags to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((width + 2) * (height + 2)) as a word sized integer, 4 as a word sized integer)
+        set values to @intrinsic("call", "libc", "calloc", a pointer to an integer, (width * height) as a word sized integer, 4 as a word sized integer)
+        set state to @intrinsic("construct", a jp2 block, width, height, flags, values, the item at 0 in bandEntry, (style & 8) != 0, the address of machine, zero)
+        decode jp2 passes passes from top with style style and segments segments in (the address of state)
+        # Into the tile-component, dequantised (E.1).
+        set reversible to (the item at (4 + (component * jp2 coding size)) in coding) = 1
+        set step to the item at (the item at 4 in record) in (tile's jtSteps)
+        set columnBase to ((the item at 0 in record) - (the item at 1 in bandEntry)) + (the item at 8 in bandEntry)
+        set rowBase to ((the item at 1 in record) - (the item at 2 in bandEntry)) + (the item at 9 in bandEntry)
+        loop row from 0 to height:
+            loop column from 0 to width:
+                set value to the item at ((row * width) + column) in values
+                if shift > 0:
+                    set magnitude to the absolute value of value
+                    if magnitude >= (1 << (shift + 1)):
+                        set magnitude to magnitude >> shift
+                        if value < 0:
+                            set value to 0 - magnitude
+                        else:
+                            set value to magnitude
+                set target to ((rowBase + row) * rowStride) + (columnBase + column)
+                if reversible:
+                    if value < 0:
+                        store (0 - ((0 - value) >> 1)) at (integers + target)
+                    else:
+                        store (value >> 1) at (integers + target)
+                else:
+                    store (((value as a 64 bit floating-point number) * step) / 2.0) at (reals + target)
+        @intrinsic("call", "libc", "free", nothing, order)
+        @intrinsic("call", "libc", "free", nothing, bytes)
+        @intrinsic("call", "libc", "free", nothing, segments)
+        @intrinsic("call", "libc", "free", nothing, states)
+        @intrinsic("call", "libc", "free", nothing, flags)
+        @intrinsic("call", "libc", "free", nothing, values)
+
+# Decodes tile number tileIndex from its bytes into the component planes.
+local function decode jp2 tile {integer:tileIndex} from {pointer:bytes} spanning {integer:count} main {a pointer to an integer:mainArea} own {a pointer to an integer:ownArea} of {a pointer to a jp2 image:image}:
+    execute:
+        set sizes to image's jiSizes
+        set components to image's jiComponents
+        set across to the jp2 ceiling of ((the item at 0 in sizes) - (the item at 6 in sizes)) over (the item at 4 in sizes)
+        set tileX to the remainder of tileIndex divided by across
+        set tileY to tileIndex / across
+        set tx0 to the maximum of ((the item at 6 in sizes) + (tileX * (the item at 4 in sizes))) and (the item at 2 in sizes)
+        set ty0 to the maximum of ((the item at 7 in sizes) + (tileY * (the item at 5 in sizes))) and (the item at 3 in sizes)
+        set tx1 to the minimum of ((the item at 6 in sizes) + ((tileX + 1) * (the item at 4 in sizes))) and (the item at 0 in sizes)
+        set ty1 to the minimum of ((the item at 7 in sizes) + ((tileY + 1) * (the item at 5 in sizes))) and (the item at 1 in sizes)
+        if (tx1 <= tx0) or (ty1 <= ty0):
+            return true
+        set coding to @intrinsic("call", "libc", "calloc", a pointer to an integer, (components * jp2 coding size) as a word sized integer, 4 as a word sized integer)
+        set quant to @intrinsic("call", "libc", "calloc", a pointer to an integer, (components * jp2 quant size) as a word sized integer, 4 as a word sized integer)
+        resolve jp2 parameters for components from mainArea and ownArea into coding and quant
+        set progression to mainArea + 2514
+        if (the item at 2514 in ownArea) = 1:
+            set progression to ownArea + 2514
+        set order to the item at 1 in progression
+        set layers to the item at 2 in progression
+        set transform to the item at 3 in progression
+        set scod to the item at 4 in progression
+        set shifts to @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer)
+        loop component from 0 to components:
+            if (the item at (2482 + component) in mainArea) = 1:
+                store (the item at (2498 + component) in mainArea) at (shifts + component)
+            if (the item at (2482 + component) in ownArea) = 1:
+                store (the item at (2498 + component) in ownArea) at (shifts + component)
+        set geometry to @intrinsic("call", "libc", "calloc", a pointer to an integer, (components * 4) as a word sized integer, 4 as a word sized integer)
+        set spacing to @intrinsic("call", "libc", "calloc", a pointer to an integer, (components * 4) as a word sized integer, 4 as a word sized integer)
+        loop component from 0 to components:
+            set dx to the item at component in (image's jiSteps)
+            set dy to the item at (component + components) in (image's jiSteps)
+            store (the jp2 ceiling of tx0 over dx) at (geometry + (component * 4))
+            store (the jp2 ceiling of ty0 over dy) at (geometry + ((component * 4) + 1))
+            store (the jp2 ceiling of tx1 over dx) at (geometry + ((component * 4) + 2))
+            store (the jp2 ceiling of ty1 over dy) at (geometry + ((component * 4) + 3))
+            store (the item at (component * jp2 coding size) in coding) at (spacing + (component * 4))
+            store dx at (spacing + ((component * 4) + 1))
+            store dy at (spacing + ((component * 4) + 2))
+        set firsts to @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer)
+        set counting to @intrinsic("construct", a jp2 tile, 0 as a pointer to an integer, 0 as a pointer to an integer, 0 as a pointer to an integer, 0 as a pointer to an integer, 0 as a pointer to an integer, 0, 0, 0, 0, 0, firsts, 0 as a pointer to a 64 bit floating-point number)
+        lay out jp2 blocks of (the address of counting) for components geometry geometry coding coding quant quant precisions (image's jiPrecisions) filling false
+        set layoutState to @intrinsic("construct", a jp2 tile, @intrinsic("call", "libc", "calloc", a pointer to an integer, ((counting's jtResolutionCount + 1) * 16) as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, ((counting's jtBandCount + 1) * 16) as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, ((counting's jtPrecinctCount + 1) * 16) as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, ((counting's jtBlockCount + 1) * 12) as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, (counting's jtTreeCount + 1) as a word sized integer, 4 as a word sized integer), 0, 0, 0, 0, 0, firsts, @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, (counting's jtBandCount + 1) as a word sized integer, 8 as a word sized integer))
+        set layout to the address of layoutState
+        lay out jp2 blocks of layout for components geometry geometry coding coding quant quant precisions (image's jiPrecisions) filling true
+        # The packets, in each progression volume.
+        set chunks to a new jp2 list
+        set stream to @intrinsic("construct", a jp2 stream, bytes as a pointer to a byte, 0, count, the address of chunks, scod, false)
+        set entries to a new jp2 list
+        gather jp2 precincts of layout from tx0 ty0 with spacing into (the address of entries)
+        set mostLevels to 0
+        loop component from 0 to components:
+            set mostLevels to the maximum of mostLevels and (the item at (component * jp2 coding size) in coding)
+        set changes to mainArea + 2519
+        if (the item at 2519 in ownArea) > 0:
+            set changes to ownArea + 2519
+        if (the item at 0 in changes) > 0:
+            loop change from 0 to (the item at 0 in changes):
+                set base to 1 + (change * 7)
+                set volumeOrder to the item at (base + 5) in changes
+                if volumeOrder = 0:
+                    sort jp2 layered entries (the address of entries)
+                read jp2 volume order volumeOrder layers (the minimum of (the item at (base + 2) in changes) and layers) resolutions (the item at base in changes) (the item at (base + 3) in changes) components (the item at (base + 1) in changes) (the minimum of (the item at (base + 4) in changes) and components) of layout entries (the address of entries) styles coding from (the address of stream)
+        else:
+            if order = 0:
+                sort jp2 layered entries (the address of entries)
+            read jp2 volume order order layers layers resolutions 0 (mostLevels + 1) components 0 components of layout entries (the address of entries) styles coding from (the address of stream)
+        # Each component: code-blocks, wavelet, into place.
+        set tileSamples to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, (components + 1) as a word sized integer, 8 as a word sized integer)
+        loop component from 0 to components:
+            set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
+            set height to (the item at ((component * 4) + 3) in geometry) - (the item at ((component * 4) + 1) in geometry)
+            set samples to @intrinsic("call", "libc", "calloc", a pointer to a 64 bit floating-point number, ((width * height) + 1) as a word sized integer, 8 as a word sized integer)
+            set address to samples as a C long integer
+            store address at (tileSamples + component)
+        loop blockIndex from 0 to (layoutState's jtBlockCount):
+            set record to (layoutState's jtBlocks) + (blockIndex * 12)
+            if (the item at 8 in record) > 0:
+                set component to the item at 11 in ((layoutState's jtBands) + ((the item at 4 in record) * 16))
+                set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
+                set samples to (the item at component in tileSamples) as a pointer to a 64 bit floating-point number
+                decode jp2 code block blockIndex of layout with (the address of stream) styles coding roi shifts into (samples as a pointer to an integer) samples stride width using (image's jiTable) (image's jiZero)
+        loop component from 0 to components:
+            set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
+            set samples to (the item at component in tileSamples) as a pointer to a 64 bit floating-point number
+            set levels to the item at (component * jp2 coding size) in coding
+            set resolutionSizes to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((levels + 1) * 4) as a word sized integer, 4 as a word sized integer)
+            set first to the item at component in firsts
+            loop resolution from 0 to (levels + 1):
+                ignore @intrinsic("call", "libc", "memcpy", a pointer, resolutionSizes + (resolution * 4), (layoutState's jtResolutions) + ((first + resolution) * 16), 16 as a word sized integer)
+            if (the item at (4 + (component * jp2 coding size)) in coding) = 1:
+                undo jp2 reversible wavelet of (samples as a pointer to an integer) stride width levels levels sizes resolutionSizes
+            else:
+                undo jp2 irreversible wavelet of samples stride width levels levels sizes resolutionSizes
+            @intrinsic("call", "libc", "free", nothing, resolutionSizes)
+        # The component transform (Annex G) on the first three.
+        set reversibleAll to true
+        loop component from 0 to (the minimum of components and 3):
+            if (the item at (4 + (component * jp2 coding size)) in coding) != 1:
+                set reversibleAll to false
+        set sameSize to components >= 3
+        if sameSize:
+            loop component from 1 to 3:
+                loop corner from 0 to 4:
+                    if (the item at ((component * 4) + corner) in geometry) != (the item at corner in geometry):
+                        set sameSize to false
+        set width to (the item at 2 in geometry) - (the item at 0 in geometry)
+        set height to (the item at 3 in geometry) - (the item at 1 in geometry)
+        if (transform = 1) and sameSize:
+            if reversibleAll:
+                set y to (the item at 0 in tileSamples) as a pointer to an integer
+                set u to (the item at 1 in tileSamples) as a pointer to an integer
+                set v to (the item at 2 in tileSamples) as a pointer to an integer
+                loop spot from 0 to (width * height):
+                    set blue to the item at spot in u
+                    set red to the item at spot in v
+                    set green to (the item at spot in y) - ((blue + red) >> 2)
+                    store (red + green) at (y + spot)
+                    store green at (u + spot)
+                    store (blue + green) at (v + spot)
+            else:
+                set y to (the item at 0 in tileSamples) as a pointer to a 64 bit floating-point number
+                set u to (the item at 1 in tileSamples) as a pointer to a 64 bit floating-point number
+                set v to (the item at 2 in tileSamples) as a pointer to a 64 bit floating-point number
+                loop spot from 0 to (width * height):
+                    set luma to the item at spot in y
+                    set blue to the item at spot in u
+                    set red to the item at spot in v
+                    store (luma + (1.402 * red)) at (y + spot)
+                    store ((luma - (0.344136286 * blue)) - (0.714136286 * red)) at (u + spot)
+                    store (luma + (1.772 * blue)) at (v + spot)
+        # Into the component planes, level-shifted and clipped.
+        loop component from 0 to components:
+            set precision to the item at component in (image's jiPrecisions)
+            set largest to (1 << precision) - 1
+            set offset to 1 << (precision - 1)
+            if (the item at component in (image's jiSigned)) = 1:
+                set offset to 1 << (precision - 1)
+            set width to (the item at ((component * 4) + 2) in geometry) - (the item at (component * 4) in geometry)
+            set height to (the item at ((component * 4) + 3) in geometry) - (the item at ((component * 4) + 1) in geometry)
+            set planeWidth to the item at component in (image's jiPlaneWidths)
+            set plane to (the item at component in (image's jiPlanes)) as a pointer to an integer
+            set left to (the item at (component * 4) in geometry) - (the jp2 ceiling of (the item at 2 in sizes) over (the item at component in (image's jiSteps)))
+            set upper to (the item at ((component * 4) + 1) in geometry) - (the jp2 ceiling of (the item at 3 in sizes) over (the item at (component + components) in (image's jiSteps)))
+            set reversible to (the item at (4 + (component * jp2 coding size)) in coding) = 1
+            set integers to (the item at component in tileSamples) as a pointer to an integer
+            set reals to (the item at component in tileSamples) as a pointer to a 64 bit floating-point number
+            loop row from 0 to height:
+                loop column from 0 to width:
+                    set value to 0
+                    if reversible:
+                        set value to the item at ((row * width) + column) in integers
+                    else:
+                        set value to (the floor of ((the item at ((row * width) + column) in reals) + 0.5)) as an integer
+                    store ((value + offset) clamped between 0 and largest) at (plane + (((upper + row) * planeWidth) + (left + column)))
+        loop component from 0 to components:
+            @intrinsic("call", "libc", "free", nothing, (the item at component in tileSamples) as a pointer to an integer)
+        @intrinsic("call", "libc", "free", nothing, tileSamples)
+        @intrinsic("call", "libc", "free", nothing, chunks' jlItems)
+        @intrinsic("call", "libc", "free", nothing, entries' jlItems)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtResolutions)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtBands)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtPrecincts)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtBlocks)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtTrees)
+        @intrinsic("call", "libc", "free", nothing, layoutState's jtSteps)
+        @intrinsic("call", "libc", "free", nothing, firsts)
+        @intrinsic("call", "libc", "free", nothing, geometry)
+        @intrinsic("call", "libc", "free", nothing, spacing)
+        @intrinsic("call", "libc", "free", nothing, shifts)
+        @intrinsic("call", "libc", "free", nothing, coding)
+        @intrinsic("call", "libc", "free", nothing, quant)
+        return true
+
+# --- The codestream (Annex A) ---
+
+# Reads the codestream into the image's component planes: 0 read, 1
+# damaged, 2 packed packet headers, 3 more than 16 components, 4 too large.
+local function decode jp2 codestream {pointer:stream} spanning {integer:size} into {a pointer to a jp2 image:image}:
+    execute:
+        if size < 46:
+            return 1
+        if ((the big-endian half 0 in stream) != 65359) or ((the big-endian half 2 in stream) != 65361):
+            return 1
+        set siz to the big-endian half 4 in stream
+        set components to the big-endian half 40 in stream
+        if (components < 1) or (components > jp2 largest components):
+            return 3
+        if (42 + (3 * components)) > (4 + siz):
+            return 1
+        set sizes to image's jiSizes
+        loop field from 0 to 8:
+            set value to the big-endian word (8 + (field * 4)) in stream
+            if (value < 0) or (value > 1073741823):
+                return 4
+            store value at (sizes + field)
+        store components at (sizes + 8)
+        set image's jiComponents to components
+        if (((the item at 0 in sizes) <= (the item at 2 in sizes)) or ((the item at 1 in sizes) <= (the item at 3 in sizes))) or (((the item at 4 in sizes) < 1) or ((the item at 5 in sizes) < 1)):
+            return 1
+        loop component from 0 to components:
+            set packed to the byte (42 + (component * 3)) in stream
+            set precision to (packed & 127) + 1
+            if precision > 16:
+                return 4
+            store precision at ((image's jiPrecisions) + component)
+            store (packed >> 7) at ((image's jiSigned) + component)
+            set dx to the byte (43 + (component * 3)) in stream
+            set dy to the byte (44 + (component * 3)) in stream
+            if (dx < 1) or (dy < 1):
+                return 1
+            store dx at ((image's jiSteps) + component)
+            store dy at ((image's jiSteps) + (component + components))
+            set planeWidth to (the jp2 ceiling of (the item at 0 in sizes) over dx) - (the jp2 ceiling of (the item at 2 in sizes) over dx)
+            set planeHeight to (the jp2 ceiling of (the item at 1 in sizes) over dy) - (the jp2 ceiling of (the item at 3 in sizes) over dy)
+            store planeWidth at ((image's jiPlaneWidths) + component)
+            store planeHeight at ((image's jiPlaneHeights) + component)
+            set plane to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((planeWidth * planeHeight) + 1) as a word sized integer, 4 as a word sized integer)
+            store (plane as a C long integer) at ((image's jiPlanes) + component)
+        set across to the jp2 ceiling of ((the item at 0 in sizes) - (the item at 6 in sizes)) over (the item at 4 in sizes)
+        set down to the jp2 ceiling of ((the item at 1 in sizes) - (the item at 7 in sizes)) over (the item at 5 in sizes)
+        if (across * down) > 65535:
+            return 4
+        set tiles to across * down
+        set mainArea to @intrinsic("call", "libc", "calloc", a pointer to an integer, jp2 area size as a word sized integer, 4 as a word sized integer)
+        set cursor to read jp2 markers from (4 + siz) until size in stream components components into mainArea
+        if cursor < 0:
+            @intrinsic("call", "libc", "free", nothing, mainArea)
+            if cursor = -2:
+                return 2
+            return 1
+        if ((the item at 0 in mainArea) = 0) or ((the item at 697 in mainArea) = 0):
+            @intrinsic("call", "libc", "free", nothing, mainArea)
+            return 1
+        # The tile-parts: their tile, where their data starts and its size.
+        set areas to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, (tiles + 1) as a word sized integer, 8 as a word sized integer)
+        set parts to a new jp2 list
+        set status to 0
+        set going to true
+        loop while going and ((cursor + 12) <= size):
+            if (the big-endian half cursor in stream) != 65424:
+                set going to false
+            else:
+                set lsot to the big-endian half (cursor + 2) in stream
+                set tileIndex to the big-endian half (cursor + 4) in stream
+                set length to the big-endian word (cursor + 6) in stream
+                set finish to size
+                if length > 0:
+                    set finish to the minimum of (cursor + length) and size
+                if (tileIndex >= tiles) or (length < 0):
+                    set status to 1
+                    set going to false
+                else:
+                    if (the item at tileIndex in areas) = (0 as a C long integer):
+                        set fresh to @intrinsic("call", "libc", "calloc", a pointer to an integer, jp2 area size as a word sized integer, 4 as a word sized integer)
+                        store (fresh as a C long integer) at (areas + tileIndex)
+                    set ownArea to (the item at tileIndex in areas) as a pointer to an integer
+                    set header to read jp2 markers from ((cursor + 2) + lsot) until finish in stream components components into ownArea
+                    if header < 0:
+                        set status to 1
+                        if header = -2:
+                            set status to 2
+                        set going to false
+                    else if (header + 2) > finish:
+                        set going to false
+                    else if (the big-endian half header in stream) != 65427:
+                        set status to 1
+                        set going to false
+                    else:
+                        append tileIndex to jp2 list (the address of parts)
+                        append (header + 2) to jp2 list (the address of parts)
+                        append (finish - (header + 2)) to jp2 list (the address of parts)
+                        set cursor to finish
+                        if length = 0:
+                            set going to false
+        # Each tile from its tile-parts' data joined.
+        if status = 0:
+            set items to parts' jlItems
+            loop tileIndex from 0 to tiles:
+                if (the item at tileIndex in areas) != (0 as a C long integer):
+                    set total to 0
+                    set part to 0
+                    loop while part < (parts' jlCount):
+                        if (the item at part in items) = tileIndex:
+                            set total to total + (the item at (part + 2) in items)
+                        set part to part + 3
+                    set joined to @intrinsic("call", "libc", "malloc", a pointer to a byte, (total + 8) as a word sized integer)
+                    set filled to 0
+                    set part to 0
+                    loop while part < (parts' jlCount):
+                        if (the item at part in items) = tileIndex:
+                            ignore @intrinsic("call", "libc", "memcpy", a pointer, joined + filled, (stream as a pointer to a byte) + (the item at (part + 1) in items), (the item at (part + 2) in items) as a word sized integer)
+                            set filled to filled + (the item at (part + 2) in items)
+                        set part to part + 3
+                    ignore decode jp2 tile tileIndex from (joined as pointer) spanning total main mainArea own ((the item at tileIndex in areas) as a pointer to an integer) of image
+                    @intrinsic("call", "libc", "free", nothing, joined)
+        loop tileIndex from 0 to tiles:
+            if (the item at tileIndex in areas) != (0 as a C long integer):
+                @intrinsic("call", "libc", "free", nothing, (the item at tileIndex in areas) as a pointer to an integer)
+        @intrinsic("call", "libc", "free", nothing, areas)
+        @intrinsic("call", "libc", "free", nothing, parts' jlItems)
+        @intrinsic("call", "libc", "free", nothing, mainArea)
+        return status
+
+# --- The JP2 file (Annex I) and the picture ---
+
+# What the JP2 header says about the channels: the colour space (16 sRGB,
+# 17 grey, 18 sYCC, 0 not said), channel definitions (cdef), a palette
+# (pclr) and the component mapping (cmap).
+class:
+    patterns:
+        [a|] jp2 channels
+    members:
+        jcSpace as an integer
+        jcDefinitions as a pointer to an integer
+        jcDefinitionCount as an integer
+        jcPalette as a pointer to an integer
+        jcPaletteEntries as an integer
+        jcPaletteColumns as an integer
+        jcPaletteDepths as a pointer to an integer
+        jcMapping as a pointer to an integer
+        jcMappingCount as an integer
+
+local function read jp2 header boxes from {integer:start} until {integer:finish} in {pointer:data} into {a pointer to a jp2 channels:channels}:
+    execute:
+        set at to start
+        loop while (at + 8) <= finish:
+            set length to the big-endian word at in data
+            set body to at + 8
+            if length = 0:
+                set length to finish - at
+            if (length < 8) or ((at + length) > finish):
+                return nothing
+            set stop to at + length
+            if the bytes (at + 4) in data spell "colr":
+                if (body + 7) <= stop:
+                    if (the byte body in data) = 1:
+                        set channels' jcSpace to the big-endian word (body + 3) in data
+            else if the bytes (at + 4) in data spell "cdef":
+                set count to the minimum of (the big-endian half body in data) and 16
+                set channels' jcDefinitionCount to count
+                loop entry from 0 to count:
+                    if (body + (8 + (entry * 6))) <= stop:
+                        store (the big-endian half ((body + 2) + (entry * 6)) in data) at ((channels' jcDefinitions) + (entry * 3))
+                        store (the big-endian half ((body + 4) + (entry * 6)) in data) at ((channels' jcDefinitions) + ((entry * 3) + 1))
+                        store (the big-endian half ((body + 6) + (entry * 6)) in data) at ((channels' jcDefinitions) + ((entry * 3) + 2))
+            else if the bytes (at + 4) in data spell "pclr":
+                if (body + 3) <= stop:
+                    set entries to the minimum of (the big-endian half body in data) and 1024
+                    set columns to the minimum of (the byte (body + 2) in data) and 16
+                    set channels' jcPaletteEntries to entries
+                    set channels' jcPaletteColumns to columns
+                    set channels' jcPalette to @intrinsic("call", "libc", "calloc", a pointer to an integer, ((entries * columns) + 1) as a word sized integer, 4 as a word sized integer)
+                    set cursor to body + 3
+                    loop column from 0 to columns:
+                        store (((the byte cursor in data) & 127) + 1) at ((channels' jcPaletteDepths) + column)
+                        set cursor to cursor + 1
+                    loop entry from 0 to entries:
+                        loop column from 0 to columns:
+                            set width to ((the item at column in (channels' jcPaletteDepths)) + 7) / 8
+                            set value to 0
+                            loop index from 0 to width:
+                                if cursor < stop:
+                                    set value to (value << 8) | (the byte cursor in data)
+                                set cursor to cursor + 1
+                            store value at ((channels' jcPalette) + ((entry * columns) + column))
+            else if the bytes (at + 4) in data spell "cmap":
+                set count to the minimum of ((stop - body) / 4) and 16
+                set channels' jcMappingCount to count
+                loop entry from 0 to count:
+                    store (the big-endian half (body + (entry * 4)) in data) at ((channels' jcMapping) + (entry * 3))
+                    store (the byte ((body + 2) + (entry * 4)) in data) at ((channels' jcMapping) + ((entry * 3) + 1))
+                    store (the byte ((body + 3) + (entry * 4)) in data) at ((channels' jcMapping) + ((entry * 3) + 2))
+            set at to stop
+
+# A channel's sample at a pixel, scaled to eight bits.
+local function the jp2 sample of {integer:channel} at {integer:x} {integer:y} in {a pointer to a jp2 image:image} with {a pointer to a jp2 channels:channels}:
+    execute:
+        set component to channel
+        set column to -1
+        if (channels' jcMappingCount) > 0:
+            set component to the item at (channel * 3) in (channels' jcMapping)
+            if (the item at ((channel * 3) + 1) in (channels' jcMapping)) = 1:
+                set column to the item at ((channel * 3) + 2) in (channels' jcMapping)
+        set components to image's jiComponents
+        if component >= components:
+            return 0
+        set sizes to image's jiSizes
+        set dx to the item at component in (image's jiSteps)
+        set dy to the item at (component + components) in (image's jiSteps)
+        set planeX to (((x + (the item at 2 in sizes)) / dx) - (the jp2 ceiling of (the item at 2 in sizes) over dx)) clamped between 0 and ((the item at component in (image's jiPlaneWidths)) - 1)
+        set planeY to (((y + (the item at 3 in sizes)) / dy) - (the jp2 ceiling of (the item at 3 in sizes) over dy)) clamped between 0 and ((the item at component in (image's jiPlaneHeights)) - 1)
+        set plane to (the item at component in (image's jiPlanes)) as a pointer to an integer
+        set value to the item at ((planeY * (the item at component in (image's jiPlaneWidths))) + planeX) in plane
+        set precision to the item at component in (image's jiPrecisions)
+        if (column >= 0) and (column < (channels' jcPaletteColumns)):
+            set value to the item at (((value clamped between 0 and ((channels' jcPaletteEntries) - 1)) * (channels' jcPaletteColumns)) + column) in (channels' jcPalette)
+            set precision to the item at column in (channels' jcPaletteDepths)
+        if precision > 8:
+            return value >> (precision - 8)
+        if precision < 8:
+            set largest to (1 << precision) - 1
+            return ((value * 255) + (largest / 2)) / largest
+        return value
+
+function the paint jp2 from {pointer:data} spanning {integer:count}:
+    execute:
+        set start to 0
+        set size to count
+        set definitions to @intrinsic("call", "libc", "calloc", a pointer to an integer, 48 as a word sized integer, 4 as a word sized integer)
+        set mapping to @intrinsic("call", "libc", "calloc", a pointer to an integer, 48 as a word sized integer, 4 as a word sized integer)
+        set depths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        set described to @intrinsic("construct", a jp2 channels, 0, definitions, 0, 0 as a pointer to an integer, 0, 0, depths, mapping, 0)
+        if count >= 12:
+            if the bytes 4 in data spell "jP  ":
+                set start to -1
+                set at to 0
+                loop while (at + 8) <= count:
+                    set length to the big-endian word at in data
+                    set header to 8
+                    if length = 1:
+                        set length to the big-endian word (at + 12) in data
+                        set header to 16
+                    if (length = 0) or ((at + length) > count):
+                        set length to count - at
+                    if length < header:
+                        set length to count - at
+                    if the bytes (at + 4) in data spell "jp2h":
+                        read jp2 header boxes from (at + 8) until (at + length) in data into (the address of described)
+                    else if the bytes (at + 4) in data spell "jp2c":
+                        if start < 0:
+                            set start to at + header
+                            set size to length - header
+                    set at to at + length
+                if start < 0:
+                    return no decoded image because "the JP2 file holds no codestream"
+        set components to jp2 largest components
+        set image to @intrinsic("construct", a jp2 image, data as a pointer to a byte, 0, @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, (components * 2) as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to a C long integer, components as a word sized integer, 8 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, components as a word sized integer, 4 as a word sized integer), @intrinsic("call", "libc", "calloc", a pointer to an integer, 200 as a word sized integer, 4 as a word sized integer), a jp2 zero context table)
+        fill jp2 numbers (image's jiTable) from (the jp2 probability states)
+        set status to decode jp2 codestream (((data as a pointer to a byte) + start) as pointer) spanning size into (the address of image)
+        set result to no decoded image because "the JPEG 2000 data is damaged"
+        if status = 2:
+            set result to no decoded image because "a JPEG 2000 file with packed packet headers, which the editor does not read yet"
+        else if status = 3:
+            set result to no decoded image because "a JPEG 2000 file with more than 16 components"
+        else if status = 4:
+            set result to no decoded image because "the JPEG 2000 image is larger than the editor can use"
+        else if status = 0:
+            set sizes to image's jiSizes
+            set width to (the item at 0 in sizes) - (the item at 2 in sizes)
+            set height to (the item at 1 in sizes) - (the item at 3 in sizes)
+            if (a paint canvas width by height fits) = false:
+                set result to no decoded image because "the JPEG 2000 image is larger than the editor can use"
+            else:
+                # The channels' roles: colour channels, then alpha.
+                set channelCount to image's jiComponents
+                if (described's jcMappingCount) > 0:
+                    set channelCount to described's jcMappingCount
+                set colours to 3
+                if (described's jcSpace) = 17:
+                    set colours to 1
+                else if ((described's jcSpace) = 0) and (channelCount <= 2):
+                    set colours to 1
+                set colours to the minimum of colours and channelCount
+                set roles to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+                loop role from 0 to 4:
+                    store -1 at (roles + role)
+                loop role from 0 to colours:
+                    store role at (roles + role)
+                if channelCount > colours:
+                    store colours at (roles + 3)
+                set premultiplied to false
+                if (described's jcDefinitionCount) > 0:
+                    store -1 at (roles + 3)
+                    loop entry from 0 to (described's jcDefinitionCount):
+                        set channel to the item at (entry * 3) in definitions
+                        set kind to the item at ((entry * 3) + 1) in definitions
+                        set association to the item at ((entry * 3) + 2) in definitions
+                        if (kind = 0) and ((association >= 1) and (association <= colours)):
+                            store channel at (roles + (association - 1))
+                        else if (kind = 1) or (kind = 2):
+                            store channel at (roles + 3)
+                            set premultiplied to kind = 2
+                set canvas to an unfilled paint canvas width by height
+                set out to (canvas's pixels) as a pointer to an integer
+                # sYCC as the colour box says, or (as other readers assume) when
+                # no colour space is given and the chroma is subsampled.
+                set luminance to (described's jcSpace) = 18
+                if ((described's jcSpace) = 0) and ((colours = 3) and ((image's jiComponents) >= 3)):
+                    set steps to image's jiSteps
+                    set components to image's jiComponents
+                    if ((the item at 1 in steps) > (the item at 0 in steps)) or ((the item at (1 + components) in steps) > (the item at components in steps)):
+                        set luminance to true
+                loop y from 0 to height:
+                    loop x from 0 to width:
+                        set red to the jp2 sample of (the item at 0 in roles) at x y in (the address of image) with (the address of described)
+                        set green to red
+                        set blue to red
+                        if colours = 3:
+                            set green to the jp2 sample of (the item at 1 in roles) at x y in (the address of image) with (the address of described)
+                            set blue to the jp2 sample of (the item at 2 in roles) at x y in (the address of image) with (the address of described)
+                            if luminance:
+                                set luma to red
+                                set cb to green - 128
+                                set cr to blue - 128
+                                set red to (luma + (((cr * 91881) + 32768) >> 16)) clamped between 0 and 255
+                                set green to (luma - ((((cb * 22554) + (cr * 46802)) + 32768) >> 16)) clamped between 0 and 255
+                                set blue to (luma + (((cb * 116130) + 32768) >> 16)) clamped between 0 and 255
+                        set alpha to 255
+                        if (the item at 3 in roles) >= 0:
+                            set alpha to the jp2 sample of (the item at 3 in roles) at x y in (the address of image) with (the address of described)
+                            if premultiplied and (alpha > 0):
+                                set red to ((red * 255) / alpha) clamped between 0 and 255
+                                set green to ((green * 255) / alpha) clamped between 0 and 255
+                                set blue to ((blue * 255) / alpha) clamped between 0 and 255
+                        store (((red | (green << 8)) | (blue << 16)) | (alpha << 24)) at (out + ((y * width) + x))
+                @intrinsic("call", "libc", "free", nothing, roles)
+                set result to a decoded canvas
+        loop component from 0 to (image's jiComponents):
+            @intrinsic("call", "libc", "free", nothing, (the item at component in (image's jiPlanes)) as a pointer to an integer)
+        @intrinsic("call", "libc", "free", nothing, image's jiSizes)
+        @intrinsic("call", "libc", "free", nothing, image's jiPrecisions)
+        @intrinsic("call", "libc", "free", nothing, image's jiSigned)
+        @intrinsic("call", "libc", "free", nothing, image's jiSteps)
+        @intrinsic("call", "libc", "free", nothing, image's jiPlanes)
+        @intrinsic("call", "libc", "free", nothing, image's jiPlaneWidths)
+        @intrinsic("call", "libc", "free", nothing, image's jiPlaneHeights)
+        @intrinsic("call", "libc", "free", nothing, image's jiTable)
+        @intrinsic("call", "libc", "free", nothing, image's jiZero)
+        @intrinsic("call", "libc", "free", nothing, definitions)
+        @intrinsic("call", "libc", "free", nothing, mapping)
+        @intrinsic("call", "libc", "free", nothing, depths)
+        if (described's jcPaletteEntries) > 0:
+            @intrinsic("call", "libc", "free", nothing, described's jcPalette)
+        return result
