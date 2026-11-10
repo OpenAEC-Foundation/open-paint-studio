@@ -9,8 +9,8 @@ import RibbonTab from './components/ribbon/RibbonTab';
 import RibbonMenu from './components/ribbon/RibbonMenu';
 import { documentSchema, newDocument, drawOperation, type PaintDocument, type Operation, type Point } from '../shared/document';
 import { renderDocument } from './render';
-import { draftStore, saveFile, isDesktop } from './storage';
-import { Backstage, BackstageTiles, type BackstagePage } from './components/Backstage';
+import { draftStore, saveFile, isDesktop, recentFiles, rememberFile, recentFile, forgetFile, type RecentFile } from './storage';
+import { Backstage, BackstageTiles, BackstageRecent, type BackstagePage } from './components/Backstage';
 import { ColorMenu } from './components/ColorPicker';
 import { labels, type Label } from './labels';
 import { operationBounds, transformedOperation, type Matrix, type Bounds } from '../shared/geometry';
@@ -25,6 +25,8 @@ const tools: { id: Tool; key: string; icon: ComponentType<{ size?: number }> }[]
 ];
 const palette = ['#36363e', '#ffffff', '#a1a1aa', '#d97706', '#f59e0b', '#ea580c', '#dc2626', '#e11d48', '#9333ea', '#4f46e5', '#2563eb', '#0891b2', '#0d9488', '#16a34a', '#65a30d', '#854d0e', '#78716c', '#e7e5e4', '#fcd34d', '#fed7aa', '#fecaca', '#fbcfe8', '#e9d5ff', '#c7d2fe', '#bfdbfe', '#a5f3fc', '#99f6e4', '#bbf7d0', '#d9f99d', '#d6d3d1'];
 const apiBase = 'http://127.0.0.1:47831';
+const fileSize = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1_048_576 ? `${Math.round(bytes / 1024)} kB` : `${(bytes / 1_048_576).toFixed(1)} MB`;
+const fileDate = (time: number) => { const d = new Date(time), two = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`; };
 type Remote = { id: string; revision: number; document: PaintDocument };
 
 function Action({ icon: Icon, label, onClick, disabled, active }: { icon: ComponentType<{ size?: number }>; label: string; onClick: () => void; disabled?: boolean; active?: boolean }) {
@@ -39,6 +41,8 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('paint-theme') || 'light');
   const t = useCallback((key: Label) => labels[language][key], [language]);
   const [tab, setTab] = useState('home'), [fileOpen, setFileOpen] = useState(false), [filePage, setFilePage] = useState<BackstagePage>('new'), [modal, setModal] = useState('');
+  const [recents, setRecents] = useState<RecentFile[]>([]);
+  useEffect(() => { if (fileOpen) void recentFiles().then(setRecents).catch(() => setRecents([])); }, [fileOpen]);
   const [zoom, setZoom] = useState(75), [grid, setGrid] = useState(false), [position, setPosition] = useState<Point>({ x: 0, y: 0 });
   const [draftStatus, setDraftStatus] = useState<Label>('saving'), [loaded, setLoaded] = useState(false), [toast, setToast] = useState('');
   const [text, setText] = useState('OpenAEC'), [newWidth, setNewWidth] = useState(1200), [newHeight, setNewHeight] = useState(800), [newName, setNewName] = useState('Untitled'), [newBackground, setNewBackground] = useState('#ffffff');
@@ -372,6 +376,7 @@ export default function App() {
     setBusy(true);
     try {
       if (file.size > 64_000_000) throw new Error('File exceeds 64 MB');
+      const chosen = file;
       if(/\.(ifcxb?|ifcimageb)$/i.test(file.name)){
         const image=await readRasterIfcx(new Uint8Array(await file.arrayBuffer()));
         file=new File([image.bytes as BlobPart],`${image.name}.png`,{type:'image/png'});
@@ -387,6 +392,7 @@ export default function App() {
       }
       if (doc.operations.length && !window.confirm(t('replaceConfirm'))) return;
       commit(next); setRemote(null); notify(t('opened'));
+      void rememberFile(chosen).then(recentFiles).then(setRecents).catch(() => undefined);
     } catch (error) { fail(error); }
     finally { setBusy(false); if (input.current) input.current.value = ''; if (projectInput.current) projectInput.current.value = ''; }
   }
@@ -483,7 +489,13 @@ export default function App() {
         ]}
         heading={titles[filePage]} lead={leads[filePage]} back={[t('fileBack'), close]}>
         {filePage === 'new' && <BackstageTiles tiles={[{ title: t('new') + '…', detail: t('newCanvasDetail'), icon: FilePlus, onClick: actionNew }]}/>}
-        {filePage === 'open' && <BackstageTiles tiles={[{ title: t('openImage'), detail: t('openImageDetail'), icon: ImagePlus, onClick: chooseFile }, { title: t('openProject'), detail: t('openProjectDetail'), icon: FolderOpen, onClick: then(() => projectInput.current?.click()) }]}/>}
+        {filePage === 'open' && <>
+          <BackstageTiles tiles={[{ title: t('openImage'), detail: t('openImageDetail'), icon: ImagePlus, onClick: chooseFile }, { title: t('openProject'), detail: t('openProjectDetail'), icon: FolderOpen, onClick: then(() => projectInput.current?.click()) }]}/>
+          <BackstageRecent caption={t('recentFiles')} empty={t('recentEmpty')} files={recents.map(entry => ({
+            key: entry.id, name: entry.name, detail: [(entry.name.match(/\.([^.]+)$/)?.[1] ?? '').toUpperCase(), fileSize(entry.size)].filter(Boolean).join(' · '), date: fileDate(entry.opened),
+            onClick: then(() => void recentFile(entry).then(file => file ? openFile(file) : forgetFile(entry).then(recentFiles).then(setRecents).then(() => notify(t('recentGone')))).catch(fail)),
+          }))}/>
+        </>}
         {filePage === 'save' && <BackstageTiles tiles={[{ title: t('save'), detail: t('saveDetail'), icon: Save, onClick: then(() => void save()) }]}/>}
         {filePage === 'export' && <BackstageTiles tiles={[
           { title: 'PNG', detail: t('exportPngDetail'), icon: FileImage, onClick: then(() => void exportPng()) },

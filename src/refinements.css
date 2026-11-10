@@ -53,6 +53,18 @@
 .backstage-tile:disabled,.backstage-tile:disabled:hover{opacity:1;border-color:var(--theme-border)}
 .backstage-tile:disabled strong,.backstage-tile:disabled .backstage-tile-text span{color:var(--theme-text-faint)}
 .backstage-tile:disabled .backstage-tile-icon{background:var(--theme-bg-lighter);border-color:var(--theme-border);color:var(--theme-text-faint)}
+.backstage-recent{display:flex;flex-direction:column;max-width:620px;overflow:hidden;border:1px solid var(--theme-border);border-radius:10px;background:var(--theme-surface)}
+.backstage-recent-row{width:100%;height:40px;flex-shrink:0;justify-content:flex-start;gap:10px;padding:0 12px;border:0;border-radius:0;background:none;font:400 12px Inter,sans-serif;color:var(--theme-text-secondary);text-align:left}
+.backstage-recent-row+.backstage-recent-row{height:41px;border-top:1px solid var(--theme-border)}
+.backstage-recent-row svg{flex-shrink:0}
+.backstage-recent-row strong,.backstage-recent-row span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.backstage-recent-row strong{flex:0 1 auto;font:500 13px Inter,sans-serif;color:var(--theme-text)}
+.backstage-recent-row span{flex:1 1 0}
+.backstage-recent-row time{flex-shrink:0;font:400 11px 'JetBrains Mono',monospace}
+.backstage-recent-row:hover{background:var(--theme-row-hover)}
+.backstage-recent-row:active{background:var(--theme-row-pressed)}
+.backstage-recent-row:focus-visible{outline-offset:-2px}
+.backstage-recent-empty{margin:0;font-size:12px;color:var(--theme-text-secondary)}
 .backstage-formats{max-width:620px;max-height:none}
 .backstage-about{max-width:620px;font-size:12px;line-height:1.6}.backstage-about strong{font:500 15px 'Space Grotesk',sans-serif}.backstage-about p{color:var(--theme-text-secondary)}
 /* Small icon buttons beside a group's commands (zoom, API). */

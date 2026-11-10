@@ -28,6 +28,7 @@ The Forge dark theme with all objects selected using Ctrl+A.
 - Open PNG, JPEG, WebP, GIF, BMP, TIFF, HEIC/HEIF, AVIF, PSD, SVG, ICO, TGA, JPEG 2000, JPEG XL and supported camera RAW variants, plus IFCX and IfcImageB raster documents.
 - Native browser decoders handle common images; a bundled ImageMagick WebAssembly worker handles additional formats locally. See [format support and limits](docs/IMAGE-FORMATS.md).
 - Export PNG, JPEG, WebP or SVG; save the raster image embedded in IFCX or IfcImageB.
+- The File menu's Open page lists the eight files opened last, kept on the device (IndexedDB, 256 MB at most); a click opens one again.
 - Undo/redo (40 recent document states), Ctrl+wheel zoom, middle-button drag to pan, pixel grid and local draft recovery using IndexedDB.
 - Ctrl+A selects all objects together for moving, resizing or deleting; text fields retain normal text selection.
 - Dutch and English; light, Forge, OpenAEC, Blueprint and high contrast themes. Fonts are bundled for offline use.
