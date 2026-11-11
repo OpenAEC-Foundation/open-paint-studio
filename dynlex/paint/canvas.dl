@@ -82,6 +82,21 @@ function a paint canvas {integer:width} by {integer:height} fits:
 
 # A canvas of the given size, every pixel the given colour; a size beyond the
 # limits above is clamped to them.
+# Asks for 2 MB pages behind a large buffer. Transparent huge pages are
+# often given only on request (madvise mode); a fresh 33 MB canvas then
+# takes 17 page faults instead of 8,100. The kernel may decline; nothing
+# else changes.
+function ask huge pages behind {pointer:buffer} sized {integer:size}:
+    execute:
+        if size < 4194304:
+            return nothing
+        set pageSize to 2097152 as a C long integer
+        set first to buffer as a C long integer
+        set start to ((first + (pageSize - (1 as a C long integer))) / pageSize) * pageSize
+        set finish to ((first + (size as a C long integer)) / pageSize) * pageSize
+        if finish > start:
+            ignore @intrinsic("call", "libc", "madvise", an integer, start as a pointer, (finish - start) as a word sized integer, 14)
+
 function a new paint canvas {integer:width} by {integer:height} filled with {paint color:color}:
     execute:
         set clampedWidth to width clamped between 1 and paint canvas largest side
@@ -91,6 +106,7 @@ function a new paint canvas {integer:width} by {integer:height} filled with {pai
         set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
         if pixels = 0 as a pointer to a byte:
             @intrinsic("call", "libc", "abort", nothing)
+        ask huge pages behind (pixels as pointer) sized ((the byte count of a paint canvas clampedWidth by clampedHeight) as an integer)
         set image to the paint canvas record clampedWidth by clampedHeight at pixels
         fill paint canvas image with color
         return image
@@ -104,6 +120,7 @@ function an unfilled paint canvas {integer:width} by {integer:height}:
         set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
         if pixels = 0 as a pointer to a byte:
             @intrinsic("call", "libc", "abort", nothing)
+        ask huge pages behind (pixels as pointer) sized ((the byte count of a paint canvas clampedWidth by clampedHeight) as an integer)
         return the paint canvas record clampedWidth by clampedHeight at pixels
 
 function free paint canvas {paint canvas:image}:
@@ -117,6 +134,7 @@ function the paint copy of {paint canvas:image}:
         set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, count)
         if pixels = 0 as a pointer to a byte:
             @intrinsic("call", "libc", "abort", nothing)
+        ask huge pages behind (pixels as pointer) sized ((count) as an integer)
         ignore @intrinsic("call", "libc", "memcpy", a pointer, pixels, image's pixels, count)
         return the paint canvas record image's width by image's height at pixels
 
@@ -477,6 +495,7 @@ local function a blank paint canvas {integer:width} by {integer:height}:
         set pixels to @intrinsic("call", "libc", "malloc", a pointer to a byte, the byte count of a paint canvas clampedWidth by clampedHeight)
         if pixels = 0 as a pointer to a byte:
             @intrinsic("call", "libc", "abort", nothing)
+        ask huge pages behind (pixels as pointer) sized ((the byte count of a paint canvas clampedWidth by clampedHeight) as an integer)
         return the paint canvas record clampedWidth by clampedHeight at pixels
 
 local function the paint channel between {integer:low} and {integer:high} at {a 64 bit floating-point number:fraction}:

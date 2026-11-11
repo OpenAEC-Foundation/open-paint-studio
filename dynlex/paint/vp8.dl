@@ -1,8 +1,10 @@
 # Lossy WebP frames: VP8 key frames (RFC 6386), read by the editor itself.
 # The frame is reconstructed into Y, U and V planes macroblock by macroblock
-# (intra prediction sees only unfiltered pixels), then loop-filtered in
-# raster order, then turned into RGB with libwebp's "fancy" chroma
-# upsampling and colour conversion, so the pixels are those its viewers show.
+# (intra prediction sees only unfiltered pixels), loop-filtered in raster
+# order, then turned into RGB with libwebp's "fancy" chroma upsampling and
+# colour conversion, so the pixels are those its viewers show. Filtering and
+# conversion run on a second thread, two macroblock rows behind the
+# reconstruction.
 import dynlex/paint/decoded.dl
 import dynlex/paint/vp8_tables.dl
 import lib/string.dl
@@ -642,12 +644,10 @@ local function vp8 rgb of {integer:luma} {integer:blueDifference} {integer:redDi
 
 # One output row from its luma row and the two chroma rows around it (near
 # weighs three, far one), as libwebp upsamples.
-local function convert vp8 row {pointer:lumaRow} near {pointer:nearU} {pointer:nearV} far {pointer:farU} {pointer:farV} into {a pointer to an integer:out} of {integer:width}:
+local function convert vp8 row {pointer:lumaRow} near {pointer:nearU} {pointer:nearV} far {pointer:farU} {pointer:farV} into {a pointer to an integer:out} of {integer:width} using {a pointer to an integer:columnU} {a pointer to an integer:columnV}:
     execute:
         set half to (width + 1) / 2
         # The chroma of this row at each chroma column: 3 near + 1 far.
-        set columnU to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
-        set columnV to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
         loop x from 0 to half:
             store ((3 * (vp8 sample x of nearU)) + (vp8 sample x of farU)) at (columnU + x)
             store ((3 * (vp8 sample x of nearV)) + (vp8 sample x of farV)) at (columnV + x)
@@ -661,8 +661,166 @@ local function convert vp8 row {pointer:lumaRow} near {pointer:nearU} {pointer:n
             set u to ((((3 * (the item at own in columnU)) + (the item at other in columnU)) + 8) >> 4)
             set v to ((((3 * (the item at own in columnV)) + (the item at other in columnV)) + 8) >> 4)
             store (vp8 rgb of (vp8 sample x of lumaRow) u v) at (out + x)
+
+# --- Filtering and conversion, behind the reconstruction ---
+
+# What the second thread needs: the planes, the per-macroblock notes, the
+# filter's settings, the pixels to fill, and the cell in which the
+# reconstruction counts its finished macroblock rows.
+class:
+    patterns:
+        [a|] vp8 finishing job
+    members:
+        vfLuma as a pointer to a byte
+        vfU as a pointer to a byte
+        vfV as a pointer to a byte
+        vfLumaStride as an integer
+        vfChromaStride as an integer
+        vfMbWide as an integer
+        vfMbHigh as an integer
+        vfWidth as an integer
+        vfHeight as an integer
+        vfSegments as a pointer to an integer
+        vfLumaModes as a pointer to an integer
+        vfInner as a pointer to an integer
+        vfSegmentFilters as a pointer to an integer
+        vfFilterLevel as an integer
+        vfSharpness as an integer
+        vfReferenceDelta as an integer
+        vfModeDelta as an integer
+        vfSimple as a boolean
+        vfSegmented as a boolean
+        vfAbsolute as a boolean
+        vfDeltas as a boolean
+        vfPixels as a pointer to an integer
+        vfRows as a pointer to an integer
+
+# Loop-filters each macroblock row once the row below it is reconstructed
+# (prediction reads the row above unfiltered), and converts the pixel rows
+# the filter no longer changes: those above the row just filtered.
+function finish vp8 rows {pointer:address}:
+    execute:
+        set job to address as a pointer to a vp8 finishing job
+        set lumaOrigin to job's vfLuma
+        set uOrigin to job's vfU
+        set vOrigin to job's vfV
+        set lumaStride to job's vfLumaStride
+        set chromaStride to job's vfChromaStride
+        set mbWide to job's vfMbWide
+        set mbHigh to job's vfMbHigh
+        set width to job's vfWidth
+        set height to job's vfHeight
+        set segments to job's vfSegments
+        set lumaModes to job's vfLumaModes
+        set inner to job's vfInner
+        set segmentFilters to job's vfSegmentFilters
+        set filterLevel to job's vfFilterLevel
+        set sharpness to job's vfSharpness
+        set referenceDelta to job's vfReferenceDelta
+        set modeDelta to job's vfModeDelta
+        set simple to job's vfSimple
+        set segmented to job's vfSegmented
+        set absolute to job's vfAbsolute
+        set deltas to job's vfDeltas
+        set pixels to job's vfPixels
+        set cells to job's vfRows
+        set half to (width + 1) / 2
+        set columnU to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
+        set columnV to @intrinsic("call", "libc", "calloc", a pointer to an integer, (half + 2) as a word sized integer, 4 as a word sized integer)
+        set chromaRows to (height + 1) / 2
+        set converted to 0
+        loop mbRow from 0 to mbHigh:
+            set needed to the minimum of (mbRow + 2) and mbHigh
+            loop while (atomically load acquire cells) < needed:
+                ignore @intrinsic("call", "libc", "sched_yield", an integer)
+            if filterLevel > 0:
+                loop mbColumn from 0 to mbWide:
+                    set mb to (mbRow * mbWide) + mbColumn
+                    set level to filterLevel
+                    if segmented:
+                        if absolute:
+                            set level to the item at (the item at mb in segments) in segmentFilters
+                        else:
+                            set level to level + (the item at (the item at mb in segments) in segmentFilters)
+                    set level to level clamped between 0 and 63
+                    if deltas:
+                        set level to level + referenceDelta
+                        if (the item at mb in lumaModes) = 4:
+                            set level to level + modeDelta
+                        set level to level clamped between 0 and 63
+                    if level > 0:
+                        set interior to level
+                        if sharpness > 0:
+                            if sharpness > 4:
+                                set interior to interior >> 2
+                            else:
+                                set interior to interior >> 1
+                            set interior to the minimum of interior and (9 - sharpness)
+                        set interior to the maximum of interior and 1
+                        set variance to 0
+                        if level >= 15:
+                            set variance to 1
+                        if level >= 40:
+                            set variance to 2
+                        set filterInner to (the item at mb in inner) = 1
+                        set lumaAt to ((mbRow * 16) * lumaStride) + (mbColumn * 16)
+                        set chromaAt to ((mbRow * 8) * chromaStride) + (mbColumn * 8)
+                        if simple:
+                            set mbLimit to ((level + 2) * 2) + interior
+                            set blockLimit to (level * 2) + interior
+                            if mbColumn > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits mbLimit 0 0
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits blockLimit 0 0
+                            if mbRow > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits mbLimit 0 0
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits blockLimit 0 0
+                        else:
+                            if mbColumn > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (uOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (vOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + 4) of (uOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + 4) of (vOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
+                            if mbRow > 0:
+                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (uOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
+                                filter vp8 line at chromaAt of (vOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
+                            if filterInner:
+                                loop edge from 1 to 4:
+                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (uOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
+                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (vOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
+            # The filter of the next row still changes the last three
+            # pixel rows of this one.
+            set ready to the minimum of (mbRow * 16) and height
+            if mbRow = (mbHigh - 1):
+                set ready to height
+            if ready > converted:
+                loop y from converted to ready:
+                    set near to y / 2
+                    set far to near
+                    if y > 0:
+                        if (y & 1) = 1:
+                            set far to the minimum of (near + 1) and (chromaRows - 1)
+                        else:
+                            set far to near - 1
+                    if (y & 1) = 1:
+                        # Odd rows: the chroma row below is the near one when it
+                        # exists, as libwebp's row pairs (2k-1, 2k) share k-1 and k.
+                        set near to y / 2
+                        set far to the minimum of (near + 1) and (chromaRows - 1)
+                    convert vp8 row ((lumaOrigin + (y * lumaStride)) as pointer) near ((uOrigin + (near * chromaStride)) as pointer) ((vOrigin + (near * chromaStride)) as pointer) far ((uOrigin + (far * chromaStride)) as pointer) ((vOrigin + (far * chromaStride)) as pointer) into (pixels + (y * width)) of width using columnU columnV
+                set converted to ready
         @intrinsic("call", "libc", "free", nothing, columnU)
         @intrinsic("call", "libc", "free", nothing, columnV)
+        return 0 as a pointer
 
 # --- The frame ---
 
@@ -825,6 +983,15 @@ function the paint vp8 frame at {pointer:bytes} from {integer:start} spanning {i
         set top to @intrinsic("call", "libc", "calloc", a pointer to an integer, 9 as a word sized integer, 4 as a word sized integer)
         set left to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
         set predicted to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        # The second thread filters and converts the rows behind this one;
+        # a small frame, or no thread, is finished here afterwards.
+        set image to an unfilled paint canvas width by height
+        set cells to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
+        set job to @intrinsic("construct", a vp8 finishing job, lumaOrigin, uOrigin, vOrigin, lumaStride, chromaStride, mbWide, mbHigh, width, height, segments, lumaModes, inner, segmentFilters, filterLevel, sharpness, referenceDelta, modeDelta, simple, segmented, absolute, deltas, (image's pixels) as a pointer to an integer, cells)
+        set thread to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 1 as a word sized integer, 8 as a word sized integer)
+        set threaded to false
+        if (mbWide * mbHigh) >= 1024:
+            set threaded to (@intrinsic("call", "libc", "pthread_create", an integer, thread, 0 as a pointer, the function named "finish vp8 rows $", (the address of job) as a pointer)) = 0
         loop mbRow from 0 to mbHigh:
             set tokens to (decoders + ((the remainder of mbRow divided by partitions) * decoderSize)) as a pointer to a vp8 bool decoder
             loop index from 0 to 9:
@@ -948,90 +1115,14 @@ function the paint vp8 frame at {pointer:bytes} from {integer:start} spanning {i
             else:
                 set rowEnd to lumaOrigin + ((15 * lumaStride) + (mbWide * 16))
                 ignore @intrinsic("call", "libc", "memset", a pointer, rowEnd, vp8 sample -1 of rowEnd, 4 as a word sized integer)
-        # The loop filter, macroblock by macroblock.
-        if filterLevel > 0:
-            loop mbRow from 0 to mbHigh:
-                loop mbColumn from 0 to mbWide:
-                    set mb to (mbRow * mbWide) + mbColumn
-                    set level to filterLevel
-                    if segmented:
-                        if absolute:
-                            set level to the item at (the item at mb in segments) in segmentFilters
-                        else:
-                            set level to level + (the item at (the item at mb in segments) in segmentFilters)
-                    set level to level clamped between 0 and 63
-                    if deltas:
-                        set level to level + referenceDelta
-                        if (the item at mb in lumaModes) = 4:
-                            set level to level + modeDelta
-                        set level to level clamped between 0 and 63
-                    if level > 0:
-                        set interior to level
-                        if sharpness > 0:
-                            if sharpness > 4:
-                                set interior to interior >> 2
-                            else:
-                                set interior to interior >> 1
-                            set interior to the minimum of interior and (9 - sharpness)
-                        set interior to the maximum of interior and 1
-                        set variance to 0
-                        if level >= 15:
-                            set variance to 1
-                        if level >= 40:
-                            set variance to 2
-                        set filterInner to (the item at mb in inner) = 1
-                        set lumaAt to ((mbRow * 16) * lumaStride) + (mbColumn * 16)
-                        set chromaAt to ((mbRow * 8) * chromaStride) + (mbColumn * 8)
-                        if simple:
-                            set mbLimit to ((level + 2) * 2) + interior
-                            set blockLimit to (level * 2) + interior
-                            if mbColumn > 0:
-                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits mbLimit 0 0
-                            if filterInner:
-                                loop edge from 1 to 4:
-                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 2 limits blockLimit 0 0
-                            if mbRow > 0:
-                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits mbLimit 0 0
-                            if filterInner:
-                                loop edge from 1 to 4:
-                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 2 limits blockLimit 0 0
-                        else:
-                            if mbColumn > 0:
-                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 1 limits (level + 2) interior variance
-                                filter vp8 line at chromaAt of (uOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
-                                filter vp8 line at chromaAt of (vOrigin as pointer) along chromaStride for 8 across 1 kind 1 limits (level + 2) interior variance
-                            if filterInner:
-                                loop edge from 1 to 4:
-                                    filter vp8 line at (lumaAt + (edge * 4)) of (lumaOrigin as pointer) along lumaStride for 16 across 1 kind 0 limits level interior variance
-                                filter vp8 line at (chromaAt + 4) of (uOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
-                                filter vp8 line at (chromaAt + 4) of (vOrigin as pointer) along chromaStride for 8 across 1 kind 0 limits level interior variance
-                            if mbRow > 0:
-                                filter vp8 line at lumaAt of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 1 limits (level + 2) interior variance
-                                filter vp8 line at chromaAt of (uOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
-                                filter vp8 line at chromaAt of (vOrigin as pointer) along 1 for 8 across chromaStride kind 1 limits (level + 2) interior variance
-                            if filterInner:
-                                loop edge from 1 to 4:
-                                    filter vp8 line at (lumaAt + ((edge * 4) * lumaStride)) of (lumaOrigin as pointer) along 1 for 16 across lumaStride kind 0 limits level interior variance
-                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (uOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
-                                filter vp8 line at (chromaAt + (4 * chromaStride)) of (vOrigin as pointer) along 1 for 8 across chromaStride kind 0 limits level interior variance
-        # RGB: each output row from its luma row and the chroma rows around
-        # it, as libwebp pairs them.
-        set image to an unfilled paint canvas width by height
-        set chromaRows to (height + 1) / 2
-        loop y from 0 to height:
-            set near to y / 2
-            set far to near
-            if y > 0:
-                if (y & 1) = 1:
-                    set far to the minimum of (near + 1) and (chromaRows - 1)
-                else:
-                    set far to near - 1
-            if (y & 1) = 1:
-                # Odd rows: the chroma row below is the near one when it
-                # exists, as libwebp's row pairs (2k-1, 2k) share k-1 and k.
-                set near to y / 2
-                set far to the minimum of (near + 1) and (chromaRows - 1)
-            convert vp8 row ((lumaOrigin + (y * lumaStride)) as pointer) near ((uOrigin + (near * chromaStride)) as pointer) ((vOrigin + (near * chromaStride)) as pointer) far ((uOrigin + (far * chromaStride)) as pointer) ((vOrigin + (far * chromaStride)) as pointer) into (((image's pixels) as a pointer to an integer) + (y * width)) of width
+            atomically store release (mbRow + 1) at cells
+        atomically store release mbHigh at cells
+        if threaded:
+            ignore @intrinsic("call", "libc", "pthread_join", an integer, the item at 0 in thread, 0 as a pointer)
+        else:
+            ignore finish vp8 rows ((the address of job) as a pointer)
+        @intrinsic("call", "libc", "free", nothing, thread)
+        @intrinsic("call", "libc", "free", nothing, cells)
         @intrinsic("call", "libc", "free", nothing, lumaPlane)
         @intrinsic("call", "libc", "free", nothing, uPlane)
         @intrinsic("call", "libc", "free", nothing, vPlane)

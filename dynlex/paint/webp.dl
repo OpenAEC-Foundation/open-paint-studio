@@ -44,6 +44,8 @@ local function read {integer:count} webp bits from {a pointer to a webp bits:rea
         return value
 
 # --- Prefix codes: a 10-bit lookup, the canonical code beyond it ---
+# A lookup entry is 16777216 | length << 16 | symbol; zero where the code is
+# longer than the lookup. A code of one symbol fills the lookup with length 0.
 
 local function webp table counts:
     replacement: 1024
@@ -82,6 +84,8 @@ local function the webp table for {a pointer to an integer:lengths} of {integer:
         if used = 1:
             store 1 at (table + webp table single)
             store only at (table + (webp table single + 1))
+            loop slot from 0 to 1024:
+                store (16777216 | only) at (table + slot)
             return true
         set code to 0
         set offset to 0
@@ -115,7 +119,7 @@ local function the webp table for {a pointer to an integer:lengths} of {integer:
                     set step to 1 << size
                     set slot to reversed
                     loop while slot < 1024:
-                        store ((size << 16) | symbol) at (table + slot)
+                        store (((size << 16) | symbol) | 16777216) at (table + slot)
                         set slot to slot + step
         @intrinsic("call", "libc", "free", nothing, next)
         @intrinsic("call", "libc", "free", nothing, place)
@@ -144,7 +148,7 @@ local function the webp symbol of {a pointer to an integer:table} from {a pointe
                 set reader's wbBroken to true
                 return 0
             set entry to found
-        set length to entry >> 16
+        set length to (entry >> 16) & 255
         set reader's wbBuffer to (reader's wbBuffer) >> length
         set reader's wbHeld to (reader's wbHeld) - length
         return entry & 65535
@@ -316,51 +320,100 @@ local function the webp pixels of {integer:width} by {integer:height} main {bool
         fill webp numbers distances from (webp distance map)
         set at to 0
         set cached to 0
+        # The bit buffer and the input position live in locals; the reader
+        # takes them back for every step that is not four short codes.
+        set source to reader's wbBytes
+        set count to reader's wbCount
+        set bits to reader's wbBuffer
+        set held to reader's wbHeld
+        set cursor to reader's wbAt
+        set mask to 1023 as a C long integer
+        set base to tables
+        set groupEnd to 0
         loop while (at < total) and ((reader's wbBroken) = false):
-            set x to the remainder of at divided by width
-            set y to at / width
-            set group to 0
-            if groupBits > 0:
-                set group to the item at (((y >> groupBits) * groupWidth) + (x >> groupBits)) in groupMap
-            set base to tables + ((group * 5) * webp table size)
-            set green to the webp symbol of base from reader
-            if green < 256:
-                set red to the webp symbol of (base + webp table size) from reader
-                set blue to the webp symbol of (base + (2 * webp table size)) from reader
-                set alpha to the webp symbol of (base + (3 * webp table size)) from reader
-                store (((alpha << 24) | (red << 16)) | ((green << 8) | blue)) at (decoded + at)
-                set at to at + 1
-            else if green < 280:
-                set length to the webp copy value of (green - 256) from reader
-                set code to the webp copy value of (the webp symbol of (base + (4 * webp table size)) from reader) from reader
-                set distance to code - 120
-                if code <= 120:
-                    set dx to the item at ((code - 1) * 2) in distances
-                    set dy to the item at (((code - 1) * 2) + 1) in distances
-                    set distance to the maximum of 1 and ((dy * width) + dx)
-                if (distance > at) or ((at + length) > total):
-                    set reader's wbBroken to true
-                else:
-                    loop step from 0 to length:
-                        store (the item at ((at + step) - distance) in decoded) at (decoded + (at + step))
-                    set at to at + length
-            else:
-                set slot to green - 280
-                if slot >= cacheSize:
-                    set reader's wbBroken to true
-                else:
-                    # The cache holds every pixel before this one.
-                    loop while cached < at:
-                        set colour to the item at cached in decoded
-                        store colour at (cache + (the webp cache slot of colour for cacheBits))
-                        set cached to cached + 1
-                    store (the item at slot in cache) at (decoded + at)
+            if at >= groupEnd:
+                # The codes change only where a block of the group map ends.
+                set x to the remainder of at divided by width
+                set group to 0
+                set groupEnd to total
+                if groupBits > 0:
+                    set y to at / width
+                    set group to the item at (((y >> groupBits) * groupWidth) + (x >> groupBits)) in groupMap
+                    set groupEnd to (at - x) + (the minimum of width and (((x >> groupBits) + 1) << groupBits))
+                set base to tables + ((group * 5) * webp table size)
+            # 48 to 55 bits, eight bytes read at a time, never the sign bit.
+            if (held < 48) and ((cursor + 8) <= count):
+                set taken to (55 - held) >> 3
+                set word to @intrinsic("dereference", (source + cursor) as a pointer to a C long integer)
+                set word to word & (((1 as a C long integer) << (taken * 8)) - (1 as a C long integer))
+                set bits to bits | (word << held)
+                set held to held + (taken * 8)
+                set cursor to cursor + taken
+            set plain to false
+            if held >= 40:
+                # A pixel of four codes within the lookup: forty bits at most.
+                set greenEntry to the item at ((bits & mask) as an integer) in base
+                if (greenEntry & 16842496) = 16777216:
+                    set rest to bits >> ((greenEntry >> 16) & 255)
+                    set redEntry to the item at ((rest & mask) as an integer) in (base + webp table size)
+                    set rest to rest >> ((redEntry >> 16) & 255)
+                    set blueEntry to the item at ((rest & mask) as an integer) in (base + (2 * webp table size))
+                    set rest to rest >> ((blueEntry >> 16) & 255)
+                    set alphaEntry to the item at ((rest & mask) as an integer) in (base + (3 * webp table size))
+                    if (((redEntry & blueEntry) & alphaEntry) & 16777216) != 0:
+                        set held to held - ((((greenEntry >> 16) & 255) + ((redEntry >> 16) & 255)) + (((blueEntry >> 16) & 255) + ((alphaEntry >> 16) & 255)))
+                        set bits to rest >> ((alphaEntry >> 16) & 255)
+                        store ((((alphaEntry & 255) << 24) | ((redEntry & 255) << 16)) | (((greenEntry & 255) << 8) | (blueEntry & 255))) at (decoded + at)
+                        set at to at + 1
+                        set plain to true
+            if plain = false:
+                set reader's wbBuffer to bits
+                set reader's wbHeld to held
+                set reader's wbAt to cursor
+                set green to the webp symbol of base from reader
+                if green < 256:
+                    set red to the webp symbol of (base + webp table size) from reader
+                    set blue to the webp symbol of (base + (2 * webp table size)) from reader
+                    set alpha to the webp symbol of (base + (3 * webp table size)) from reader
+                    store (((alpha << 24) | (red << 16)) | ((green << 8) | blue)) at (decoded + at)
                     set at to at + 1
+                else if green < 280:
+                    set length to the webp copy value of (green - 256) from reader
+                    set code to the webp copy value of (the webp symbol of (base + (4 * webp table size)) from reader) from reader
+                    set distance to code - 120
+                    if code <= 120:
+                        set dx to the item at ((code - 1) * 2) in distances
+                        set dy to the item at (((code - 1) * 2) + 1) in distances
+                        set distance to the maximum of 1 and ((dy * width) + dx)
+                    if (distance > at) or ((at + length) > total):
+                        set reader's wbBroken to true
+                    else:
+                        loop step from 0 to length:
+                            store (the item at ((at + step) - distance) in decoded) at (decoded + (at + step))
+                        set at to at + length
+                else:
+                    set slot to green - 280
+                    if slot >= cacheSize:
+                        set reader's wbBroken to true
+                    else:
+                        # The cache holds every pixel before this one.
+                        loop while cached < at:
+                            set colour to the item at cached in decoded
+                            store colour at (cache + (the webp cache slot of colour for cacheBits))
+                            set cached to cached + 1
+                        store (the item at slot in cache) at (decoded + at)
+                        set at to at + 1
+                set bits to reader's wbBuffer
+                set held to reader's wbHeld
+                set cursor to reader's wbAt
             if cacheBits > 0:
                 loop while cached < at:
                     set colour to the item at cached in decoded
                     store colour at (cache + (the webp cache slot of colour for cacheBits))
                     set cached to cached + 1
+        set reader's wbBuffer to bits
+        set reader's wbHeld to held
+        set reader's wbAt to cursor
         @intrinsic("call", "libc", "free", nothing, tables)
         @intrinsic("call", "libc", "free", nothing, cache)
         @intrinsic("call", "libc", "free", nothing, distances)
@@ -370,13 +423,13 @@ local function the webp pixels of {integer:width} by {integer:height} main {bool
 
 # --- Transforms ---
 
+# The channels two at a time: red and blue in one word, alpha and green
+# shifted down into another, so that no sum reaches the next channel.
 local function webp average {integer:first} {integer:second}:
     execute:
-        set alpha to (((first >> 24) & 255) + ((second >> 24) & 255)) / 2
-        set red to (((first >> 16) & 255) + ((second >> 16) & 255)) / 2
-        set green to (((first >> 8) & 255) + ((second >> 8) & 255)) / 2
-        set blue to ((first & 255) + (second & 255)) / 2
-        return ((alpha << 24) | (red << 16)) | ((green << 8) | blue)
+        set low to (((first & 16711935) + (second & 16711935)) >> 1) & 16711935
+        set high to ((((first >> 8) & 16711935) + ((second >> 8) & 16711935)) >> 1) & 16711935
+        return low | (high << 8)
 
 local function webp clamp {integer:value}:
     execute:
@@ -386,108 +439,160 @@ local function webp channel {integer:pixel} at {integer:shift}:
     execute:
         return (pixel >> shift) & 255
 
-local function the webp prediction {integer:mode} from {integer:left} {integer:top} {integer:topRight} {integer:topLeft}:
+# Select: the neighbour nearer to left + top - top left.
+local function webp select {integer:left} {integer:top} {integer:corner}:
     execute:
-        if mode = 1:
+        set towardsLeft to 0
+        set towardsTop to 0
+        loop shift from 0 to 4:
+            set cornerValue to webp channel corner at (shift * 8)
+            set towardsLeft to towardsLeft + (the absolute value of ((webp channel top at (shift * 8)) - cornerValue))
+            set towardsTop to towardsTop + (the absolute value of ((webp channel left at (shift * 8)) - cornerValue))
+        if towardsLeft < towardsTop:
             return left
-        if mode = 2:
-            return top
-        if mode = 3:
-            return topRight
-        if mode = 4:
-            return topLeft
-        if mode = 5:
-            return webp average (webp average left topRight) top
-        if mode = 6:
-            return webp average left topLeft
-        if mode = 7:
-            return webp average left top
-        if mode = 8:
-            return webp average topLeft top
-        if mode = 9:
-            return webp average top topRight
-        if mode = 10:
-            return webp average (webp average left topLeft) (webp average top topRight)
-        if mode = 11:
-            # Select: the neighbour nearer to left + top - top left.
-            set towardsLeft to 0
-            set towardsTop to 0
-            loop shift from 0 to 4:
-                set leftValue to webp channel left at (shift * 8)
-                set topValue to webp channel top at (shift * 8)
-                set cornerValue to webp channel topLeft at (shift * 8)
-                set estimate to (leftValue + topValue) - cornerValue
-                set towardsLeft to towardsLeft + (the absolute value of (estimate - leftValue))
-                set towardsTop to towardsTop + (the absolute value of (estimate - topValue))
-            if towardsLeft < towardsTop:
-                return left
-            return top
-        if (mode = 12) or (mode = 13):
-            set result to 0
-            loop shift from 0 to 4:
-                set leftValue to webp channel left at (shift * 8)
-                set topValue to webp channel top at (shift * 8)
-                set cornerValue to webp channel topLeft at (shift * 8)
-                set value to 0
-                if mode = 12:
-                    set value to webp clamp ((leftValue + topValue) - cornerValue)
-                else:
-                    set mean to (leftValue + topValue) / 2
-                    set value to webp clamp (mean + ((mean - cornerValue) / 2))
-                set result to result | (value << (shift * 8))
-            return result
-        return -16777216
+        return top
+
+local function webp gradient {integer:left} {integer:top} {integer:corner}:
+    execute:
+        set result to 0
+        loop shift from 0 to 4:
+            set value to webp clamp (((webp channel left at (shift * 8)) + (webp channel top at (shift * 8))) - (webp channel corner at (shift * 8)))
+            set result to result | (value << (shift * 8))
+        return result
+
+local function webp half gradient {integer:left} {integer:top} {integer:corner}:
+    execute:
+        set result to 0
+        loop shift from 0 to 4:
+            set mean to ((webp channel left at (shift * 8)) + (webp channel top at (shift * 8))) / 2
+            set value to webp clamp (mean + ((mean - (webp channel corner at (shift * 8))) / 2))
+            set result to result | (value << (shift * 8))
+        return result
 
 local function {integer:first} plus {integer:second} by channel:
     execute:
-        set alpha to ((((first >> 24) & 255) + ((second >> 24) & 255)) & 255) << 24
-        set red to ((((first >> 16) & 255) + ((second >> 16) & 255)) & 255) << 16
-        set green to ((((first >> 8) & 255) + ((second >> 8) & 255)) & 255) << 8
-        set blue to ((first & 255) + (second & 255)) & 255
-        return ((alpha | red) | (green | blue))
+        set low to ((first & 16711935) + (second & 16711935)) & 16711935
+        set high to (((first >> 8) & 16711935) + ((second >> 8) & 16711935)) & 16711935
+        return low | (high << 8)
 
+# The predictor is one a block, so every row is undone a block at a time
+# with the loop of that block's mode. The pixel above right of a row's last
+# pixel is the row's own first pixel, which is the next word in memory.
 local function undo webp prediction in {a pointer to an integer:pixels} of {integer:width} by {integer:height} with {a pointer to an integer:modes} bits {integer:bits}:
     execute:
         set blocksWide to (width + ((1 << bits) - 1)) >> bits
-        loop y from 0 to height:
-            loop x from 0 to width:
-                set at to (y * width) + x
-                set predicted to -16777216
-                if (y = 0) and (x > 0):
-                    set predicted to the item at (at - 1) in pixels
-                else if (x = 0) and (y > 0):
-                    set predicted to the item at (at - width) in pixels
-                else if (x > 0) and (y > 0):
-                    set mode to ((the item at (((y >> bits) * blocksWide) + (x >> bits)) in modes) >> 8) & 15
-                    set topRight to the item at ((at - width) + 1) in pixels
-                    if x = (width - 1):
-                        set topRight to the item at (y * width) in pixels
-                    set predicted to the webp prediction mode from (the item at (at - 1) in pixels) (the item at (at - width) in pixels) topRight (the item at ((at - width) - 1) in pixels)
-                store ((the item at at in pixels) plus predicted by channel) at (pixels + at)
+        set black to -16777216
+        # The first row: its first pixel on opaque black, the rest on the
+        # pixel to the left.
+        set left to (the item at 0 in pixels) plus black by channel
+        store left at (pixels + 0)
+        loop spot from 1 to width:
+            set left to (the item at spot in pixels) plus left by channel
+            store left at (pixels + spot)
+        loop y from 1 to height:
+            set row to y * width
+            # A row's first pixel on the pixel above.
+            set left to (the item at row in pixels) plus (the item at (row - width) in pixels) by channel
+            store left at (pixels + row)
+            set x to 1
+            loop while x < width:
+                set mode to ((the item at (((y >> bits) * blocksWide) + (x >> bits)) in modes) >> 8) & 15
+                set blockEnd to the minimum of width and (((x >> bits) + 1) << bits)
+                set runStart to row + x
+                set runEnd to row + blockEnd
+                if mode = 1:
+                    loop spot from runStart to runEnd:
+                        set left to (the item at spot in pixels) plus left by channel
+                        store left at (pixels + spot)
+                else if mode = 2:
+                    loop spot from runStart to runEnd:
+                        set predicted to the item at (spot - width) in pixels
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 3:
+                    loop spot from runStart to runEnd:
+                        set predicted to the item at ((spot - width) + 1) in pixels
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 4:
+                    loop spot from runStart to runEnd:
+                        set predicted to the item at ((spot - width) - 1) in pixels
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 5:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average (webp average left (the item at ((spot - width) + 1) in pixels)) (the item at (spot - width) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 6:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average left (the item at ((spot - width) - 1) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 7:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average left (the item at (spot - width) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 8:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average (the item at ((spot - width) - 1) in pixels) (the item at (spot - width) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 9:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average (the item at (spot - width) in pixels) (the item at ((spot - width) + 1) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 10:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp average (webp average left (the item at ((spot - width) - 1) in pixels)) (webp average (the item at (spot - width) in pixels) (the item at ((spot - width) + 1) in pixels))
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 11:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp select left (the item at (spot - width) in pixels) (the item at ((spot - width) - 1) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 12:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp gradient left (the item at (spot - width) in pixels) (the item at ((spot - width) - 1) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else if mode = 13:
+                    loop spot from runStart to runEnd:
+                        set predicted to webp half gradient left (the item at (spot - width) in pixels) (the item at ((spot - width) - 1) in pixels)
+                        set left to (the item at spot in pixels) plus predicted by channel
+                        store left at (pixels + spot)
+                else:
+                    loop spot from runStart to runEnd:
+                        set left to (the item at spot in pixels) plus black by channel
+                        store left at (pixels + spot)
+                set x to blockEnd
 
-local function the signed {integer:value}:
-    execute:
-        set narrowed to value & 255
-        if narrowed >= 128:
-            return narrowed - 256
-        return narrowed
-
+# The three multipliers are one a block: read once, then a loop without
+# branches over the block's pixels of the row.
 local function undo webp colour transform in {a pointer to an integer:pixels} of {integer:width} by {integer:height} with {a pointer to an integer:elements} bits {integer:bits}:
     execute:
         set blocksWide to (width + ((1 << bits) - 1)) >> bits
         loop y from 0 to height:
-            loop x from 0 to width:
-                set at to (y * width) + x
+            set row to y * width
+            set x to 0
+            loop while x < width:
                 set element to the item at (((y >> bits) * blocksWide) + (x >> bits)) in elements
-                set greenToRed to the signed (element & 255)
-                set greenToBlue to the signed ((element >> 8) & 255)
-                set redToBlue to the signed ((element >> 16) & 255)
-                set pixel to the item at at in pixels
-                set green to the signed ((pixel >> 8) & 255)
-                set red to ((pixel >> 16) & 255) + ((greenToRed * green) >> 5)
-                set blue to (pixel & 255) + ((greenToBlue * green) >> 5)
-                set blue to blue + ((redToBlue * (the signed red)) >> 5)
-                store (((pixel & -16711936) | ((red & 255) << 16)) | (blue & 255)) at (pixels + at)
+                set blockEnd to the minimum of width and (((x >> bits) + 1) << bits)
+                # Signed bytes: 128 and up are negative.
+                set greenToRed to ((element & 255) ^ 128) - 128
+                set greenToBlue to (((element >> 8) & 255) ^ 128) - 128
+                set redToBlue to (((element >> 16) & 255) ^ 128) - 128
+                loop spot from (row + x) to (row + blockEnd):
+                    set pixel to the item at spot in pixels
+                    set green to (((pixel >> 8) & 255) ^ 128) - 128
+                    set red to (((pixel >> 16) & 255) + ((greenToRed * green) >> 5)) & 255
+                    set blue to (pixel & 255) + ((greenToBlue * green) >> 5)
+                    set blue to (blue + ((redToBlue * ((red ^ 128) - 128)) >> 5)) & 255
+                    store (((pixel & -16711936) | (red << 16)) | blue) at (pixels + spot)
+                set x to blockEnd
 
 local function add webp green in {a pointer to an integer:pixels} of {integer:count}:
     execute:

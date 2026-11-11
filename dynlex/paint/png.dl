@@ -62,7 +62,43 @@ local function unfilter {pointer:row} of {integer:size} by {integer:step} after 
         set data to (row as a pointer to a byte) + 1
         # previous is a row of zeros above the first row.
         set above to previous as a pointer to a byte
-        if kind = 1:
+        if (step = 1) and ((kind = 1) or (kind >= 3)):
+            # One byte a pixel: the byte to the left stays in a local, so
+            # the next byte waits for no store and load.
+            set left to 0
+            if kind = 1:
+                loop index from 0 to size:
+                    set left to (((the item at index in data) as an integer) + left) & 255
+                    store (left as a byte) at (data + index)
+            else if kind = 3:
+                loop index from 0 to size:
+                    set left to (((the item at index in data) as an integer) + ((left + (((the item at index in above) as an integer) & 255)) >> 1)) & 255
+                    store (left as a byte) at (data + index)
+            else if kind = 4:
+                # Paeth with a short chain from one byte to the next: both
+                # choices are masks of left against bounds that depend only
+                # on the row above, and select among the three finished
+                # sums. left is not nearest (notLeft) when it lies outside
+                # the interval around the corner; up is not nearer than the
+                # corner (notUp) by the side of the midpoint left is on.
+                set corner to 0
+                loop index from 0 to size:
+                    set sample to (the item at index in data) as an integer
+                    set up to ((the item at index in above) as an integer) & 255
+                    set toLeft to up - corner
+                    set sign to toLeft >> 31
+                    set spread to (toLeft ^ sign) - sign
+                    set notLeft to (((left - (corner + spread)) & ((corner - spread) - left)) | ((left - ((corner + spread) - toLeft)) & (((corner - spread) - toLeft) - left))) >> 31
+                    set lean to (left + left) + (toLeft - (corner + corner))
+                    set notUp to ((lean ^ sign) - sign) >> 31
+                    set byLeft to (sample + left) & 255
+                    set byUp to (sample + up) & 255
+                    set byCorner to (sample + corner) & 255
+                    set inner to byUp ^ ((byUp ^ byCorner) & notUp)
+                    set left to byLeft ^ ((byLeft ^ inner) & notLeft)
+                    store (left as a byte) at (data + index)
+                    set corner to up
+        else if kind = 1:
             loop index from step to size:
                 store ((((the item at index in data) as an integer) + ((the item at (index - step) in data) as an integer)) as a byte) at (data + index)
         else if kind = 2:
@@ -130,6 +166,14 @@ local function copy eight-bit row {pointer:samples} of {integer:columns} holding
                 set grey to ((the item at (column * 2) in source) as an integer) & 255
                 set alpha to ((the item at ((column * 2) + 1) in source) as an integer) & 255
                 store (((grey | (grey << 8)) | (grey << 16)) | (alpha << 24)) at (words + column)
+
+# An eight-bit palette row through the palette as RGBA words.
+local function copy palette row {pointer:samples} of {integer:columns} through {a pointer to an integer:lookup} into {paint canvas:image} at line {integer:y}:
+    execute:
+        set source to samples as a pointer to a byte
+        set words to ((image's pixels) + ((y * image's width) * 4)) as a pointer to an integer
+        loop column from 0 to columns:
+            store (the item at (((the item at column in source) as an integer) & 255) in lookup) at (words + column)
 
 # The sample numbered index (depth bits each) in the row, scaled to 8 bits
 # when scale is set (grey levels), raw otherwise (palette indices).
@@ -353,6 +397,7 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
         # The image data is inflated on a second thread while this one
         # unfilters and places the rows already there.
         set raw to @intrinsic("call", "libc", "malloc", a pointer to a byte, (expected + 600) as a word sized integer)
+        ask huge pages behind (raw as pointer) sized (expected + 600)
         set cells to @intrinsic("call", "libc", "calloc", a pointer to an integer, 4 as a word sized integer, 4 as a word sized integer)
         set job to @intrinsic("construct", a png inflate job, joined, filled, raw, expected, cells)
         set thread to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 1 as a word sized integer, 8 as a word sized integer)
@@ -364,6 +409,16 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
         set header to @intrinsic("construct", a paint png header, width, height, depth, colour, interlaced, channels)
         set image to an unfilled paint canvas width by height
         set zeros to @intrinsic("call", "libc", "calloc", a pointer to a byte, ((((width * bitsPerPixel) + 7) / 8) + 8) as a word sized integer, 1 as a word sized integer)
+        # Eight-bit palette images look each index up as a whole pixel.
+        set lookup to @intrinsic("call", "libc", "calloc", a pointer to an integer, 256 as a word sized integer, 4 as a word sized integer)
+        loop entryIndex from 0 to 256:
+            set entry to -16777216
+            if entryIndex < colours:
+                set entry to (((the byte (entryIndex * 3) in palette) | ((the byte ((entryIndex * 3) + 1) in palette) << 8)) | ((the byte ((entryIndex * 3) + 2) in palette) << 16)) | -16777216
+            if entryIndex < alphaCount:
+                set entry to (entry & 16777215) | ((the byte entryIndex in alphas) << 24)
+            store entry at (lookup + entryIndex)
+        set paletteDirect to ((depth = 8) and (colour = 3)) and (interlaced = false)
         # Rows are unfiltered in two rows of their own, never in place: the
         # inflating thread still copies its matches from the bytes it wrote.
         set lineSize to (((width * bitsPerPixel) + 7) / 8) + 16
@@ -406,6 +461,8 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
                         set direct to direct
                     else if direct:
                         copy eight-bit row ((rowStart + 1) as pointer) of columns holding channels into image at line lineIndex
+                    else if paletteDirect:
+                        copy palette row ((rowStart + 1) as pointer) of columns through lookup into image at line lineIndex
                     else:
                         place row ((rowStart + 1) as pointer) of columns as header into image placing (y0 + (lineIndex * stepY)) starting x0 stepping stepX with palette palette of colours transparency alphas of alphaCount key keyRed keyGreen keyBlue keyed keyed
                     set previous to (rowStart + 1) as pointer
@@ -417,6 +474,7 @@ function the paint png from {pointer:bytes} spanning {integer:count}:
         @intrinsic("call", "libc", "free", nothing, cells)
         @intrinsic("call", "libc", "free", nothing, raw)
         @intrinsic("call", "libc", "free", nothing, zeros)
+        @intrinsic("call", "libc", "free", nothing, lookup)
         @intrinsic("call", "libc", "free", nothing, lineA)
         @intrinsic("call", "libc", "free", nothing, lineB)
         if damaged:

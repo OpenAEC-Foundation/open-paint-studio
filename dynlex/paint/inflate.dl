@@ -71,8 +71,15 @@ local function take {integer:count} bits from {a pointer to a paint inflater:sta
         set state's bitCount to (state's bitCount) - count
         return value
 
-# A decoding table: a lookup by the next 10 input bits (entry = length << 16
-# | symbol, 0 for a longer code), then the canonical code for the rest.
+# A decoding table: a lookup by the next 10 input bits, then the canonical
+# code for the rest. The code length codes keep length << 16 | symbol, 0 for
+# a longer code. The block decoder's two tables are packed for its loop:
+#   literal            length << 16 | byte
+#   match length       length << 16 | 32768 | extra bits << 9 | base
+#   end of block       length << 16 | 36864
+#   longer or no code  40960
+#   distance           extra bits << 20 | length << 16 | base
+#   longer or no code  32768
 local function paint table lookup bits:
     replacement: 10
 local function paint table counts:
@@ -88,8 +95,9 @@ local function paint table size:
 
 # Builds the table for the code lengths (one per symbol, deflate's
 # canonical codes, bits reversed in the stream). Returns false for an
-# empty code.
-local function the table for {a pointer to an integer:lengths} of {integer:symbolCount} into {a pointer to an integer:table}:
+# empty code. Packing 0 is the plain table, 1 packs literal and length codes
+# and 2 distance codes, their bases and extra bits taken from payloads.
+local function the table for {a pointer to an integer:lengths} of {integer:symbolCount} into {a pointer to an integer:table} packed {integer:packing} from {a pointer to an integer:payloads}:
     execute:
         set counts to table + paint table counts
         set firsts to table + paint table firsts
@@ -112,7 +120,13 @@ local function the table for {a pointer to an integer:lengths} of {integer:symbo
             set code to (code + (the item at size in counts)) << 1
         if used = 0:
             return false
-        ignore @intrinsic("call", "libc", "memset", a pointer, table, 0, 4096 as a word sized integer)
+        set filler to 0
+        if packing = 1:
+            set filler to 40960
+        if packing = 2:
+            set filler to 32768
+        loop slot from 0 to 1024:
+            store filler at (table + slot)
         # Symbols in canonical order, and the short codes into the lookup.
         set next to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
         set place to @intrinsic("call", "libc", "calloc", a pointer to an integer, 17 as a word sized integer, 4 as a word sized integer)
@@ -130,10 +144,23 @@ local function the table for {a pointer to an integer:lengths} of {integer:symbo
                     set reversed to 0
                     loop bit from 0 to size:
                         set reversed to (reversed << 1) | ((code >> bit) & 1)
+                    set entry to (size << 16) | symbol
+                    if packing = 1:
+                        if symbol = 256:
+                            set entry to (size << 16) | 36864
+                        else if symbol > 285:
+                            set entry to 40960
+                        else if symbol > 256:
+                            set entry to (size << 16) | (the item at (symbol - 257) in payloads)
+                    if packing = 2:
+                        if symbol >= 30:
+                            set entry to 32768
+                        else:
+                            set entry to (size << 16) | (the item at symbol in payloads)
                     set step to 1 << size
                     set slot to reversed
                     loop while slot < 1024:
-                        store ((size << 16) | symbol) at (table + slot)
+                        store entry at (table + slot)
                         set slot to slot + step
         @intrinsic("call", "libc", "free", nothing, next)
         @intrinsic("call", "libc", "free", nothing, place)
@@ -230,7 +257,7 @@ local function fill {a pointer to an integer:table} from {string:values}:
 # Decodes one Huffman-coded block's symbols into the output. The bit buffer,
 # the input position and the output live in locals; the input is read eight
 # bytes at a time and matches are copied eight bytes at a time when they can.
-local function inflate the codes of {a pointer to a paint inflater:state} with {a pointer to an integer:lengthBases} {a pointer to an integer:lengthExtras} {a pointer to an integer:distanceBases} {a pointer to an integer:distanceExtras}:
+local function inflate the codes of {a pointer to a paint inflater:state} with {a pointer to an integer:lengthPacked} {a pointer to an integer:distancePacked}:
     execute:
         set input to state's inBytes
         set inCount to state's inCount
@@ -268,19 +295,7 @@ local function inflate the codes of {a pointer to a paint inflater:state} with {
                             set running to false
                         set at to at + 1
                         set held to held + 8
-            # A literal, the end, or a length.
-            set entry to the item at ((bits & mask) as an integer) in literalTable
-            if entry = 0:
-                set entry to the long code in literalTable from bits
-                if entry < 0:
-                    set state's broken to true
-                    set running to false
-                    set entry to (1 << 16) | 256
-            set size to entry >> 16
-            set bits to bits >> size
-            set held to held - size
-            set symbol to entry & 65535
-            if (written + 300) > capacity:
+            if (written + 400) > capacity:
                 if state's fixed:
                     # The caller's buffer has 512 bytes of slack.
                     if written > capacity:
@@ -292,36 +307,69 @@ local function inflate the codes of {a pointer to a paint inflater:state} with {
             if written >= nextReport:
                 atomically store release written at reporting
                 set nextReport to written + 32768
-            if symbol < 256:
-                store (symbol as a byte) at (out + written)
+            # Literals in a run, for as long as the bits held are a whole
+            # lookup: no refill and no other check between them.
+            set entry to the item at ((bits & mask) as an integer) in literalTable
+            loop while (entry & 32768) = 0:
+                store (entry as a byte) at (out + written)
                 set written to written + 1
-            else if symbol = 256:
-                set running to false
-            else if symbol > 285:
-                set state's broken to true
-                set running to false
-            else:
-                set index to symbol - 257
-                set extra to the item at index in lengthExtras
-                set length to (the item at index in lengthBases) + ((bits & (((1 as a C long integer) << extra) - (1 as a C long integer))) as an integer)
-                set bits to bits >> extra
-                set held to held - extra
-                set entry to the item at ((bits & mask) as an integer) in distanceTable
-                if entry = 0:
-                    set entry to the long code in distanceTable from bits
-                set code to entry & 65535
-                if (entry < 0) or (code >= 30):
-                    set state's broken to true
+                set size to entry >> 16
+                set bits to bits >> size
+                set held to held - size
+                set entry to 49152
+                if held >= paint table lookup bits:
+                    set entry to the item at ((bits & mask) as an integer) in literalTable
+            # Anything else may need the 48 bits of a whole match: when the
+            # literals used them, the next round refills and finds this
+            # entry again.
+            if held >= 48:
+                if (entry & 8192) != 0:
+                    # A code longer than the lookup, or no code at all.
+                    set found to the long code in literalTable from bits
+                    set symbol to found & 65535
+                    if (found < 0) or (symbol > 285):
+                        set state's broken to true
+                        set running to false
+                        set entry to 36864
+                    else if symbol < 256:
+                        set entry to found
+                    else if symbol = 256:
+                        set entry to ((found >> 16) << 16) | 36864
+                    else:
+                        set entry to ((found >> 16) << 16) | (the item at (symbol - 257) in lengthPacked)
+                set size to (entry >> 16) & 31
+                set bits to bits >> size
+                set held to held - size
+                if (entry & 32768) = 0:
+                    store (entry as a byte) at (out + written)
+                    set written to written + 1
+                else if (entry & 4096) != 0:
                     set running to false
                 else:
-                    set size to entry >> 16
-                    set bits to bits >> size
-                    set held to held - size
-                    set extra to the item at code in distanceExtras
-                    set distance to (the item at code in distanceBases) + ((bits & (((1 as a C long integer) << extra) - (1 as a C long integer))) as an integer)
+                    set extra to (entry >> 9) & 7
+                    set length to (entry & 511) + ((bits & (((1 as a C long integer) << extra) - (1 as a C long integer))) as an integer)
                     set bits to bits >> extra
                     set held to held - extra
-                    if distance > written:
+                    set far to the item at ((bits & mask) as an integer) in distanceTable
+                    if (far & 32768) != 0:
+                        set found to the long code in distanceTable from bits
+                        set code to found & 65535
+                        if (found < 0) or (code >= 30):
+                            set state's broken to true
+                            set running to false
+                            set far to 65537
+                        else:
+                            set far to ((found >> 16) << 16) | (the item at code in distancePacked)
+                    set size to (far >> 16) & 15
+                    set bits to bits >> size
+                    set held to held - size
+                    set extra to (far >> 20) & 15
+                    set distance to (far & 32767) + ((bits & (((1 as a C long integer) << extra) - (1 as a C long integer))) as an integer)
+                    set bits to bits >> extra
+                    set held to held - extra
+                    if running = false:
+                        set length to 0
+                    else if distance > written:
                         set state's broken to true
                         set running to false
                     else if distance >= 8:
@@ -380,6 +428,12 @@ local function the inflation of {pointer:bytes} spanning {integer:count} expecti
         set lengthExtras to paint length extras
         set distanceBases to paint distance bases
         set distanceExtras to paint distance extras
+        set lengthPacked to @intrinsic("call", "libc", "calloc", a pointer to an integer, 29 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 29:
+            store ((32768 | ((the item at index in lengthExtras) << 9)) | (the item at index in lengthBases)) at (lengthPacked + index)
+        set distancePacked to @intrinsic("call", "libc", "calloc", a pointer to an integer, 30 as a word sized integer, 4 as a word sized integer)
+        loop index from 0 to 30:
+            store (((the item at index in distanceExtras) << 20) | (the item at index in distanceBases)) at (distancePacked + index)
         set order to paint code length order
         set lengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 320 as a word sized integer, 4 as a word sized integer)
         set codeLengths to @intrinsic("call", "libc", "calloc", a pointer to an integer, 19 as a word sized integer, 4 as a word sized integer)
@@ -417,11 +471,11 @@ local function the inflation of {pointer:bytes} spanning {integer:count} expecti
                     store 7 at (lengths + symbol)
                 loop symbol from 280 to 288:
                     store 8 at (lengths + symbol)
-                ignore the table for lengths of 288 into (state's litTable)
+                ignore the table for lengths of 288 into (state's litTable) packed 1 from lengthPacked
                 loop symbol from 0 to 30:
                     store 5 at (lengths + symbol)
-                ignore the table for lengths of 30 into (state's distTable)
-                inflate the codes of work with lengthBases lengthExtras distanceBases distanceExtras
+                ignore the table for lengths of 30 into (state's distTable) packed 2 from distancePacked
+                inflate the codes of work with lengthPacked distancePacked
             else if kind = 2:
                 set literals to (take 5 bits from work) + 257
                 set distances to (take 5 bits from work) + 1
@@ -430,7 +484,7 @@ local function the inflation of {pointer:bytes} spanning {integer:count} expecti
                     store 0 at (codeLengths + index)
                 loop index from 0 to codes:
                     store (take 3 bits from work) at (codeLengths + (the item at index in order))
-                ignore the table for codeLengths of 19 into codeTable
+                ignore the table for codeLengths of 19 into codeTable packed 0 from lengthPacked
                 set filled to 0
                 set previous to 0
                 loop while (filled < (literals + distances)) and (state's broken = false):
@@ -456,9 +510,9 @@ local function the inflation of {pointer:bytes} spanning {integer:count} expecti
                                 store value at (lengths + (filled + step))
                             set filled to filled + repeat
                 if (state's broken) = false:
-                    if the table for lengths of literals into (state's litTable):
-                        ignore the table for (lengths + literals) of distances into (state's distTable)
-                        inflate the codes of work with lengthBases lengthExtras distanceBases distanceExtras
+                    if the table for lengths of literals into (state's litTable) packed 1 from lengthPacked:
+                        ignore the table for (lengths + literals) of distances into (state's distTable) packed 2 from distancePacked
+                        inflate the codes of work with lengthPacked distancePacked
                     else:
                         set state's broken to true
             else:
@@ -467,6 +521,8 @@ local function the inflation of {pointer:bytes} spanning {integer:count} expecti
         @intrinsic("call", "libc", "free", nothing, lengthExtras)
         @intrinsic("call", "libc", "free", nothing, distanceBases)
         @intrinsic("call", "libc", "free", nothing, distanceExtras)
+        @intrinsic("call", "libc", "free", nothing, lengthPacked)
+        @intrinsic("call", "libc", "free", nothing, distancePacked)
         @intrinsic("call", "libc", "free", nothing, order)
         @intrinsic("call", "libc", "free", nothing, lengths)
         @intrinsic("call", "libc", "free", nothing, codeLengths)
