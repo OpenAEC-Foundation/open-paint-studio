@@ -48,8 +48,8 @@ interface fonts (Inter, Space Grotesk; SIL Open Font License) ship in
 1. `tools/shell/measure_webkit.py` loads the built browser editor in WebKitGTK
    with the desktop title bar and runs `tools/shell/measure.js`. That records
    every visible box, text line, icon, image and control: its rectangle and
-   computed style, for each ribbon tab, each open menu, the file panel and an
-   empty and a filled history, at 1440 × 940, 1200 × 940 and 1440 × 800
+   computed style, for each ribbon tab, each open menu, the file panel, the Open page
+   with files opened before, and an empty and a filled history, at 1440 × 940, 1200 × 940 and 1440 × 800
    (`tools/shell/measurements/`). Each size gets a fresh window opened at that
    size, because GTK does not reliably resize a window or view on Xvfb
    without a window manager. The script stops with an error if the page
@@ -92,7 +92,7 @@ linear values for an sRGB swapchain, so not every sRGB colour is reachable
 | Tools | brush, eraser, fill, picker, line, rectangle, ellipse, text, select; Bijsnijden crops; Escape cancels what is under way (stroke, shape, text, menu) and selects |
 | Window | its own title bar, as the desktop build: drag to move, double click or the button to maximise, minimise, close |
 | Ribbon | Bestand and Start, as in the original: every command sits on Start, the view and API commands as small icon buttons beside the Beeld group; the five menus open and close |
-| File | the File screen of the OpenAEC Blueprint (`openaec-ui` `file_nav_row`, `task_tile`): Back first, then a 260-pixel column of 40-pixel rows with icons (New, Open, Save, Export; Formats, Settings, About), the active one with a 3-pixel accent bar and tint; beside it the page's heading in Space Grotesk Medium and task tiles with a 40-pixel icon tile, at most 620 pixels wide |
+| File | the File screen of the OpenAEC Blueprint (`openaec-ui` `file_nav_row`, `task_tile`): Back first, then a 260-pixel column of 40-pixel rows with icons (New, Open, Save, Export; Formats, Settings, About), the active one with a 3-pixel accent bar and tint; beside it the page's heading in Space Grotesk Medium and task tiles with a 40-pixel icon tile, at most 620 pixels wide. The Open page lists the files opened last under its tile: name, folder (the home folder as `~`) and the time, newest first, at most 8; a click opens one, and a file that is gone leaves the list. Names and folders too long for the row end in an ellipsis. The list is kept in `$XDG_CONFIG_HOME/openaec-paint-studio/recent` (`~/.config` by default), one line per file |
 | Dialogs | New canvas (name, size, presets, background), Resize, Colour corrections (three sliders), Settings and API, with focus rings, typing, spin buttons, selects and sliders; Enter applies, Escape closes |
 | Properties | size (spin box), opacity (slider), "Vectorobjecten behouden" (off flattens the history to one step, as in the original) |
 | Colours | the 30 swatches and, behind the colour well, a full colour picker: saturation and brightness field, hue bar, HEX and R, G, B |
@@ -194,6 +194,12 @@ keyboard input:
 
 It saves a screenshot per step and writes a report comparing each step with
 the Tauri build (`build/ui-test/report.md`).
+
+`tests/ui/run_recent_test.py` checks the files opened last in Open Paint
+Studio the same way: it starts the editor with a list of four files (one
+with a name too long for its row, one that no longer exists), opens and drops
+files by clicking their rows, closes the File page with Escape and gives a
+file on the command line, reading the list back after each step.
 
 Result on 2026-10-31:
 - **Web and Tauri:** identical at every step except the file dialogs, which

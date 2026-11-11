@@ -45,6 +45,8 @@ class:
         overlayW as an integer
         overlayH as an integer
         overlayText as a string
+        recentPaths as a pointer to a list
+        recentDates as a pointer to a list
 
 function a new paint shell with fonts in {string:folder}:
     execute:
@@ -64,7 +66,7 @@ function a new paint shell with fonts in {string:folder}:
         loop index from 0 to ((the length of (skin's entries)) + 1):
             append (a new paint canvas 1 by 1 filled with the transparent paint color) to images
             append (the string form of "") to keys
-        return @intrinsic("construct", a paint shell, skin, regular, medium, semibold, display, mono, fallback, displayMedium, images, keys, 0, -1, the string form of "", the string form of "Concept opgeslagen op dit apparaat", the string form of "", a new paint canvas 1 by 1 filled with the transparent paint color, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of "", 0, false, true, an empty list of a string, an empty list of a string, the string form of "", the string form of "Untitled", 0, 0, 0, 0, the string form of "")
+        return @intrinsic("construct", a paint shell, skin, regular, medium, semibold, display, mono, fallback, displayMedium, images, keys, 0, -1, the string form of "", the string form of "Concept opgeslagen op dit apparaat", the string form of "", a new paint canvas 1 by 1 filled with the transparent paint color, a new paint canvas 1 by 1 filled with the transparent paint color, the string form of "", 0, false, true, an empty list of a string, an empty list of a string, the string form of "", the string form of "Untitled", 0, 0, 0, 0, the string form of "", an empty list of a string, an empty list of a string)
 
 function the face numbered {integer:number} in {a pointer to a paint shell:shell}:
     execute:
@@ -259,6 +261,34 @@ local function the document extension of {paint app:app}:
                 set dot to index
         return the substring of app's path from dot spanning (app's path's length - dot) bytes
 
+# A path's last part, and the folder before it with the home folder as ~.
+local function the paint file name of {string:path}:
+    execute:
+        set start to 0
+        loop index from 0 to path's length:
+            if ((the character at index in path) as an integer) = 47:
+                set start to index + 1
+        return the substring of path from start spanning (path's length - start) bytes
+
+local function the paint folder of {string:path}:
+    execute:
+        set stop to 0
+        loop index from 0 to path's length:
+            if ((the character at index in path) as an integer) = 47:
+                set stop to index
+        set parent to the substring of path from 0 spanning stop bytes
+        set home to @intrinsic("call", "libc", "getenv", a pointer, "HOME")
+        if home = 0 as a pointer:
+            return parent
+        set own to the string form of (home as a C string)
+        if (own's length = 0) or ((parent has own at offset 0) = false):
+            return parent
+        if parent's length = own's length:
+            return the string form of "~"
+        if ((the character at own's length in parent) as an integer) != 47:
+            return parent
+        return (the string form of "~") + (the substring of parent from own's length spanning (parent's length - own's length) bytes)
+
 class:
     patterns:
         [a|] paint shell view
@@ -302,6 +332,14 @@ local function the value of field {string:name} for {paint shell view:view} in {
         if name = (the string form of "stepname"):
             set steps to app's steps
             return the item at (view's step - 1) in steps
+        if name = (the string form of "recentname"):
+            set path to the item at view's step in (shell's recentPaths)
+            return the paint file name of path
+        if name = (the string form of "recentpath"):
+            set path to the item at view's step in (shell's recentPaths)
+            return the paint folder of path
+        if name = (the string form of "recentdate"):
+            return the item at view's step in (shell's recentDates)
         if name contains ".":
             return the field named name in shell
         return name
@@ -326,6 +364,55 @@ function the label of {paint skin entry:entry} for {paint shell view:view} in {a
                 set out to out + (the substring of text from index spanning 1 byte)
                 set index to index + 1
         return out
+
+# The face of a text filled in while running: the entry's own, or the
+# fallback when the text has characters Inter's Latin subset lacks (beyond
+# U+00FF, but for the general punctuation U+2000 to U+206F).
+local function the face of {string:text} for entry {paint skin entry:entry} in {a pointer to a paint shell:shell}:
+    execute:
+        loop index from 0 to text's length:
+            set lead to ((the character at index in text) as an integer) & 255
+            if lead >= 196:
+                set plain to false
+                if (lead = 226) and ((index + 2) < text's length):
+                    set second to ((the character at (index + 1) in text) as an integer) & 255
+                    set third to ((the character at (index + 2) in text) as an integer) & 255
+                    set plain to (second = 128) or ((second = 129) and (third < 176))
+                if plain = false:
+                    return the face numbered 5 in shell
+        return the face numbered entry's face in shell
+
+# The text as far as it fits the room (in 64ths of a pixel), an ellipsis
+# after it when it was cut; nothing when not even the ellipsis fits.
+local function {string:text} shortened to {integer:room} for entry {paint skin entry:entry} in {a pointer to a paint shell:shell}:
+    execute:
+        set typeface to the face of text for entry entry in shell
+        if (the width of text with typeface at entry's size pixels spaced entry's spacing) <= room:
+            return text
+        set dots to the string form of "…"
+        if (the width of dots with typeface at entry's size pixels spaced entry's spacing) > room:
+            return the string form of ""
+        # The longest beginning that fits with the ellipsis, by halving
+        # between one that fits and one that does not.
+        set fits to 0
+        set fails to text's length
+        set searching to true
+        loop while searching:
+            # Whole characters: not between the bytes of one.
+            set middle to (fits + fails) / 2
+            loop while (middle > fits) and ((((the character at middle in text) as an integer) & 192) = 128):
+                set middle to middle - 1
+            if middle = fits:
+                set middle to ((fits + fails) / 2) + 1
+                loop while (middle < fails) and ((((the character at middle in text) as an integer) & 192) = 128):
+                    set middle to middle + 1
+            if (middle <= fits) or (middle >= fails):
+                set searching to false
+            else if (the width of ((the substring of text from 0 spanning middle bytes) + dots) with typeface at entry's size pixels spaced entry's spacing) <= room:
+                set fits to middle
+            else:
+                set fails to middle
+        return (the substring of text from 0 spanning fits bytes) + dots
 
 local function draw the lettering of entry {paint skin entry:entry} in {paint skin box:box} as {string:text} on {paint canvas:frame} in {a pointer to a paint shell:shell}:
     execute:
@@ -368,6 +455,21 @@ local function draw the lettering of entry {paint skin entry:entry} in {paint sk
                 ignore draw line at (left + centered) baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame
             return nothing
         set baseline to ((the rounded value of box's top) as an integer) + ascent
+        if entry's align = 6:
+            # One line, cut with an ellipsis where it passes the element.
+            set typeface to the face of text for entry entry in shell
+            set shown to text shortened to (box's w * 64) for entry entry in shell
+            set shell's pen to left + (draw shown at left baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame)
+            return nothing
+        if entry's align = 7:
+            # Follows like 4, cut with an ellipsis before the element's left edge.
+            set edge to left
+            set left to shell's pen + ((the rounded value of (entry's w * 64.0)) as an integer)
+            set typeface to the face of text for entry entry in shell
+            set shown to text shortened to (edge - left) for entry entry in shell
+            if shown's length > 0:
+                set shell's pen to left + (draw shown at left baseline with typeface at entry's size pixels spaced entry's spacing in entry's color on frame)
+            return nothing
         if entry's align = 4:
             # Follows the text drawn just before, the measured gap after it.
             set left to shell's pen + ((the rounded value of (entry's w * 64.0)) as an integer)
@@ -1162,6 +1264,8 @@ local function the signature of {paint app:app} sized {integer:width} by {intege
         set text to ((text + (the string form of "|")) + shell's focused) + ((the string form of "|") + shell's documentName)
         loop index from 0 to the length of shell's fieldValues:
             set text to (text + (the string form of "|")) + (the item at index in shell's fieldValues)
+        loop index from 0 to the length of shell's recentPaths:
+            set text to ((text + (the string form of "|")) + (the item at index in shell's recentPaths)) + (the item at index in shell's recentDates)
         return text
 
 local function the join of {paint skin box:first} with {paint skin box:second}:
@@ -1198,6 +1302,27 @@ local function the mouse labels of {paint shell view:view} in {a pointer to a pa
             if (entry follows the mouse) and (entry shows in state):
                 set text to (text + (the label of entry for view in shell)) + (the string form of "|")
         return text
+
+# The rows of the files opened last that fit above the status bar: in a
+# low window the list ends with the last whole row.
+local function the recent rows fitting {integer:width} by {integer:height} within {paint skin state:state} in {a pointer to a paint shell:shell}:
+    execute:
+        set files to the length of shell's recentPaths
+        set entries to shell's skin's entries
+        set shown to files
+        loop index from 0 to the length of entries:
+            set entry to the item at index in entries
+            if (entry's kind = paint skin hit) and (entry's opened = 21):
+                set box to the box of entry in width by height within state
+                if entry's row = 32:
+                    if (box's y + box's h) > (height - 29):
+                        set shown to 0
+                else if entry's row = 33:
+                    loop place from 1 to files:
+                        set lower to (the rounded value of (((place - 1) as a 64 bit floating-point number) * paint skin recent pitch)) as an integer
+                        if ((box's y + lower) + box's h) > (height - 29):
+                            set shown to the minimum of shown and place
+        return shown
 
 # Draws the shell and the canvas into shell's composed, the window's size.
 # The chrome is redrawn only when its signature changes, the canvas only
@@ -1259,6 +1384,27 @@ function draw the shell of app {paint app:app} sized {integer:width} by {integer
                 set entry to the item at index in entries
                 if (entry's opened >= 0) and (entry shows in state):
                     draw entry index for view on frame in shell moved down 0
+            # The files opened last, on the File menu's Open page: a sentence
+            # while there are none, else the frame as high as its rows, the
+            # first row and its template for every row under it.
+            if shell's opened = 21:
+                set files to the recent rows fitting width by height within state in shell
+                loop index from 0 to count:
+                    set entry to the item at index in entries
+                    if entry's opened = 21:
+                        if (((the length of shell's recentPaths) = 0) and (entry's row = 30)) or ((files > 0) and (entry's row = (40 + files))):
+                            draw entry index for view on frame in shell moved down 0
+                loop place from 0 to files:
+                    set view's step to place
+                    set template to 32
+                    set lower to 0
+                    if place > 0:
+                        set template to 33
+                        set lower to (the rounded value of (((place - 1) as a 64 bit floating-point number) * paint skin recent pitch)) as an integer
+                    loop index from 0 to count:
+                        set entry to the item at index in entries
+                        if (entry's opened = 21) and (entry's row = template):
+                            draw entry index for view on frame in shell moved down lower
             set dirty to @intrinsic("construct", a paint skin box, 0, 0, width, height, 0.0, 0.0)
             set shell's overlayText to the string form of ""
         else if canvasChanged:
@@ -1320,4 +1466,19 @@ function the shell action at {integer:x} {integer:y} for {paint app:app} of {int
                     set reachable to (entry's y < 76.0) or (entry's y >= 911.0)
                 if reachable and (x y lies in (the box of entry in width by height within state)):
                     set found to entry's action
+        # The files opened last: "recent:" and the row's number, newest 0.
+        set files to the recent rows fitting width by height within state in shell
+        if (shell's opened = 21) and (files > 0):
+            loop index from 0 to the length of entries:
+                set entry to the item at index in entries
+                if (entry's kind = paint skin hit) and (entry's opened = 21):
+                    set box to the box of entry in width by height within state
+                    if entry's row = 32:
+                        if x y lies in box:
+                            set found to the string form of "recent:0"
+                    else if entry's row = 33:
+                        loop place from 1 to files:
+                            set lower to (the rounded value of (((place - 1) as a 64 bit floating-point number) * paint skin recent pitch)) as an integer
+                            if x (y - lower) lies in box:
+                                set found to (the string form of "recent:") + (the string form of place)
         return found

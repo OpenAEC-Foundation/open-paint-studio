@@ -5,6 +5,9 @@ import dynlex/paint/skin.dl
 function paint skin history pitch:
     replacement: 33
 
+function paint skin recent pitch:
+    replacement: 41
+
 function fill {a pointer to a paint skin:skin} with the measured shell:
     execute:
         add svg "<svg width=\"32\" height=\"32\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 140 170\"> <title>OpenAEC Foundation — Symbol (transparent background)</title> <!-- No background — for placement on any surface --> <g transform=\"translate(70,82)\"> <polygon points=\"-65,-23 0,15 0,82 -65,45\" fill=\"#D97706\" fill-opacity=\"0.30\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linejoin=\"round\"/> <polygon points=\"0,-58 65,-23 0,15 -65,-23\" fill=\"#D97706\" fill-opacity=\"0.18\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linejoin=\"round\"/> <line x1=\"65\" y1=\"-23\" x2=\"65\" y2=\"45\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linecap=\"round\"/> <line x1=\"0\" y1=\"82\" x2=\"65\" y2=\"45\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linecap=\"round\"/> <line x1=\"-65\" y1=\"45\" x2=\"0\" y2=\"82\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linecap=\"round\"/> <polygon points=\"65,-23 0,15 0,35 65,0\" fill=\"#D97706\" fill-opacity=\"0.12\" stroke=\"none\"/> <line x1=\"0\" y1=\"15\" x2=\"0\" y2=\"35\" stroke=\"#D97706\" stroke-width=\"2.8\" stroke-linecap=\"round\"/> <line x1=\"0\" y1=\"35\" x2=\"65\" y2=\"0\" stroke=\"#F59E0B\" stroke-width=\"2.5\" stroke-linecap=\"round\"/> <line x1=\"0\" y1=\"35\" x2=\"-30\" y2=\"52\" stroke=\"#F59E0B\" stroke-width=\"1.2\" opacity=\"0.35\"/> <line x1=\"65\" y1=\"0\" x2=\"35\" y2=\"17\" stroke=\"#F59E0B\" stroke-width=\"1.2\" opacity=\"0.35\"/> <line x1=\"-30\" y1=\"52\" x2=\"35\" y2=\"17\" stroke=\"#F59E0B\" stroke-width=\"1.2\" opacity=\"0.25\"/> <polygon points=\"-45,-4 -35,-10 -35,-3 -45,3\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> <polygon points=\"-30,-12 -20,-18 -20,-11 -30,-5\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> <polygon points=\"-45,14 -35,8 -35,15 -45,21\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> <polygon points=\"-30,6 -20,0 -20,7 -30,13\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> <polygon points=\"-45,32 -35,26 -35,33 -45,39\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> <polygon points=\"-30,24 -20,18 -20,25 -30,31\" fill=\"none\" stroke=\"#D97706\" stroke-width=\"1.3\" opacity=\"0.7\"/> </g> </svg>" to skin
@@ -135,6 +138,15 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"></path></svg>" to skin
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 5h6\"></path><path d=\"M19 2v6\"></path><path d=\"M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5\"></path><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\"></path><circle cx=\"9\" cy=\"9\" r=\"2\"></circle></svg>" to skin
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"></path></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"42\" viewBox=\"0 0 620 42\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V32.0A10.0,10.0 0 0 1 610.0,42H10.0A10.0,10.0 0 0 1 0,32.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V32.0A9.5,9.5 0 0 1 610.0,41.5H10.0A9.5,9.5 0 0 1 0.5,32.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"83\" viewBox=\"0 0 620 83\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V73.0A10.0,10.0 0 0 1 610.0,83H10.0A10.0,10.0 0 0 1 0,73.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V73.0A9.5,9.5 0 0 1 610.0,82.5H10.0A9.5,9.5 0 0 1 0.5,73.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"124\" viewBox=\"0 0 620 124\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V114.0A10.0,10.0 0 0 1 610.0,124H10.0A10.0,10.0 0 0 1 0,114.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V114.0A9.5,9.5 0 0 1 610.0,123.5H10.0A9.5,9.5 0 0 1 0.5,114.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"165\" viewBox=\"0 0 620 165\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V155.0A10.0,10.0 0 0 1 610.0,165H10.0A10.0,10.0 0 0 1 0,155.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V155.0A9.5,9.5 0 0 1 610.0,164.5H10.0A9.5,9.5 0 0 1 0.5,155.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"206\" viewBox=\"0 0 620 206\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V196.0A10.0,10.0 0 0 1 610.0,206H10.0A10.0,10.0 0 0 1 0,196.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V196.0A9.5,9.5 0 0 1 610.0,205.5H10.0A9.5,9.5 0 0 1 0.5,196.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"247\" viewBox=\"0 0 620 247\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V237.0A10.0,10.0 0 0 1 610.0,247H10.0A10.0,10.0 0 0 1 0,237.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V237.0A9.5,9.5 0 0 1 610.0,246.5H10.0A9.5,9.5 0 0 1 0.5,237.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"288\" viewBox=\"0 0 620 288\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V278.0A10.0,10.0 0 0 1 610.0,288H10.0A10.0,10.0 0 0 1 0,278.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V278.0A9.5,9.5 0 0 1 610.0,287.5H10.0A9.5,9.5 0 0 1 0.5,278.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"620\" height=\"329\" viewBox=\"0 0 620 329\"><path d=\"M10.0,0H610.0A10.0,10.0 0 0 1 620,10.0V319.0A10.0,10.0 0 0 1 610.0,329H10.0A10.0,10.0 0 0 1 0,319.0V10.0A10.0,10.0 0 0 1 10.0,0Z\" fill=\"rgb(255,255,255)\" fill-opacity=\"1\"/><path d=\"M10.0,0.5H610.0A9.5,9.5 0 0 1 619.5,10.0V319.0A9.5,9.5 0 0 1 610.0,328.5H10.0A9.5,9.5 0 0 1 0.5,319.0V10.0A9.5,9.5 0 0 1 10.0,0.5Z\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.121569\" stroke-width=\"1\"/></svg>" to skin
+        add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(54,54,62)\" stroke-opacity=\"0.65098\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"></path><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"></path><circle cx=\"10\" cy=\"12\" r=\"2\"></circle><path d=\"m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22\"></path></svg>" to skin
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"></path><path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"></path><path d=\"M7 3v4a1 1 0 0 0 1 1h7\"></path></svg>" to skin
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"></path><path d=\"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7\"></path><path d=\"M7 3v4a1 1 0 0 0 1 1h7\"></path></svg>" to skin
         add svg "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"rgb(217,119,6)\" stroke-opacity=\"1\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><polyline points=\"17 8 12 3 7 8\"></polyline><line x1=\"12\" x2=\"12\" y1=\"3\" y2=\"15\"></line></svg>" to skin
@@ -584,7 +596,28 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 2 when -1 21 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 264.0 22.0 22.0 showing 127 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 21 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 258.5 113.35 16.0 showing -1 2 13 "36363eff" 0 0 "IFCX-document…" "" to skin
         add kind 3 when -1 21 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 276.5 325.0 15.0 showing -1 0 12 "36363ea6" 0 0 "Een Paint Studio-document met lagen en geschiedenis" "" to skin
+        add kind 3 when -1 21 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 323.0 119.0 13.0 showing -1 4 11 "36363ea6" 0 0 "RECENTE BESTANDEN" "" to skin
+        add kind 3 when -1 21 0 -1 30 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 405.67 15.0 showing -1 0 12 "36363ea6" 0 0 "Nog geen bestanden. Hier komen de laatst geopende afbeeldingen." "" to skin
         add kind 3 when -1 21 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
+        add kind 2 when -1 21 0 -1 41 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 42.0 showing 128 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 42 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 83.0 showing 129 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 43 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 124.0 showing 130 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 44 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 165.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 45 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 206.0 showing 132 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 46 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 247.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 47 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 288.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 21 0 -1 48 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 344.0 620.0 329.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 4 when -1 21 0 -1 32 "" "" anchored 0.0 0.0 0.0 0.0 at 293.0 345.0 618.0 40.0 showing -1 0 0 "00000000" 0 0 "" "recent" to skin
+        add kind 2 when -1 21 0 -1 32 "" "" anchored 0.0 0.0 0.0 0.0 at 305.0 356.0 18.0 18.0 showing 136 0 0 "00000000" 0 0 "" "" to skin
+        add kind 3 when -1 21 0 -1 32 "" "" anchored 0.0 0.0 0.0 0.0 at 333.0 357.0 434.0 16.0 showing -1 1 13 "36363eff" 0 6 "{recentname}" "" to skin
+        add kind 3 when -1 21 0 -1 32 "" "" anchored 0.0 0.0 0.0 0.0 at 777.0 357.5 10.0 15.0 showing -1 0 12 "36363ea6" 0 7 "{recentpath}" "" to skin
+        add kind 3 when -1 21 0 -1 32 "" "" anchored 0.0 0.0 0.0 0.0 at 787.0 358.5 112.0 13.0 showing -1 4 11 "36363ea6" 0 0 "{recentdate}" "" to skin
+        add kind 1 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 293.0 385.0 618.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
+        add kind 4 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 293.0 385.0 618.0 41.0 showing -1 0 0 "00000000" 0 0 "" "recent" to skin
+        add kind 2 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 305.0 397.0 18.0 18.0 showing 136 0 0 "00000000" 0 0 "" "" to skin
+        add kind 3 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 333.0 398.0 434.0 16.0 showing -1 1 13 "36363eff" 0 6 "{recentname}" "" to skin
+        add kind 3 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 777.0 398.5 10.0 15.0 showing -1 0 12 "36363ea6" 0 7 "{recentpath}" "" to skin
+        add kind 3 when -1 21 0 -1 33 "" "" anchored 0.0 0.0 0.0 0.0 at 787.0 399.5 112.0 13.0 showing -1 4 11 "36363ea6" 0 0 "{recentdate}" "" to skin
         add kind 3 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 128.06 52.5 28.26 15.0 showing -1 1 12 "36363eff" 0 0 "Start" "" to skin
         add kind 4 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 109.0 45.0 66.0 30.0 showing -1 0 0 "00000000" 0 0 "" "tab:Start" to skin
         add kind 1 when -1 22 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 76.0 1440.0 835.0 showing -1 0 0 "f5f5f4ff" 0 0 "" "" to skin
@@ -604,7 +637,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 197.0 258.0 40.0 showing -1 0 0 "d977061a" 0 0 "" "" to skin
         add kind 1 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 197.0 3.0 40.0 showing -1 0 0 "d97706ff" 0 0 "" "" to skin
         add kind 4 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 197.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Opslaan" to skin
-        add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 209.0 16.0 16.0 showing 128 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 209.0 16.0 16.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 43.0 209.5 49.0 15.0 showing -1 2 12 "d97706ff" 0 0 "Opslaan" "" to skin
         add kind 4 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 237.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Exporteren" to skin
         add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 249.0 16.0 16.0 showing 117 0 0 "00000000" 0 0 "" "" to skin
@@ -624,7 +657,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:IFCX opslaan" to skin
         add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 183.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 192.0 22.0 22.0 showing 129 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 192.0 22.0 22.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 186.5 85.84 16.0 showing -1 2 13 "36363eff" 0 0 "IFCX opslaan" "" to skin
         add kind 3 when -1 22 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 204.5 212.09 15.0 showing -1 0 12 "36363ea6" 0 0 "Vormen en tekst blijven bewerkbaar" "" to skin
         add kind 3 when -1 22 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
@@ -650,7 +683,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 237.0 258.0 40.0 showing -1 0 0 "d977061a" 0 0 "" "" to skin
         add kind 1 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 237.0 3.0 40.0 showing -1 0 0 "d97706ff" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 237.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Exporteren" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 249.0 16.0 16.0 showing 130 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 249.0 16.0 16.0 showing 139 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 43.0 249.5 66.84 15.0 showing -1 2 12 "d97706ff" 0 0 "Exporteren" "" to skin
         add kind 1 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 277.0 258.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 278.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Formaten" to skin
@@ -667,37 +700,37 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:PNG" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 183.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 192.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 192.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 186.5 29.0 16.0 showing -1 2 13 "36363eff" 0 0 "PNG" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 204.5 166.81 15.0 showing -1 0 12 "36363ea6" 0 0 "Verliesvrij, met transparantie" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 243.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 243.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:JPEG" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 255.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 264.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 264.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 258.5 35.0 16.0 showing -1 2 13 "36363eff" 0 0 "JPEG" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 276.5 212.14 15.0 showing -1 0 12 "36363ea6" 0 0 "Kleine bestanden voor foto’s, op wit" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 315.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 315.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:WebP" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 327.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 336.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 336.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 330.5 37.35 16.0 showing -1 2 13 "36363eff" 0 0 "WebP" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 348.5 210.17 15.0 showing -1 0 12 "36363ea6" 0 0 "Kleine bestanden met transparantie" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 387.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 387.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:SVG" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 399.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 408.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 408.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 402.5 27.5 16.0 showing -1 2 13 "36363eff" 0 0 "SVG" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 420.5 261.75 15.0 showing -1 0 12 "36363ea6" 0 0 "Vectorvormen, voor tekeningen en drukwerk" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 459.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 459.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:IFCX (raster)" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 471.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 480.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 480.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 474.5 81.75 16.0 showing -1 2 13 "36363eff" 0 0 "IFCX (raster)" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 492.5 266.31 15.0 showing -1 0 12 "36363ea6" 0 0 "Een vlakke afbeelding in een IFCX-document" "" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 531.0 620.0 64.0 showing 121 0 0 "00000000" 0 0 "" "" to skin
         add kind 4 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 531.0 620.0 64.0 showing -1 0 0 "00000000" 0 0 "" "tile:IfcImageB" to skin
         add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 308.0 543.0 40.0 40.0 showing 122 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 552.0 22.0 22.0 showing 131 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 317.0 552.0 22.0 22.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 546.5 66.69 16.0 showing -1 2 13 "36363eff" 0 0 "IfcImageB" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 564.5 391.7 15.0 showing -1 0 12 "36363ea6" 0 0 "Binair IFC-beeld: de vlakke afbeelding als gecomprimeerde CBOR" "" to skin
         add kind 3 when -1 23 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
@@ -727,7 +760,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 278.0 258.0 40.0 showing -1 0 0 "d977061a" 0 0 "" "" to skin
         add kind 1 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 278.0 3.0 40.0 showing -1 0 0 "d97706ff" 0 0 "" "" to skin
         add kind 4 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 278.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Formaten" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 290.0 16.0 16.0 showing 132 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 290.0 16.0 16.0 showing 141 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 43.01 290.5 56.61 15.0 showing -1 2 12 "d97706ff" 0 0 "Formaten" "" to skin
         add kind 4 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 318.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "file:Instellingen" to skin
         add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 330.0 16.0 16.0 showing 119 0 0 "00000000" 0 0 "" "" to skin
@@ -737,475 +770,475 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 43.0 370.5 29.77 15.0 showing -1 1 12 "36363eff" 0 0 "Over" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 108.0 102.75 28.0 showing -1 6 22 "36363eff" 0 0 "Formaten" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 140.0 632.75 15.0 showing -1 0 12 "36363ea6" 0 0 "Formaten die de decoders lezen; animaties en bestanden met meerdere pagina’s openen als eerste beeld." "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "3FR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "3G2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "3GP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 171.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 171.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 176.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "A" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 440.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 440.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 448.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "AAI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 480.0 171.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 480.0 171.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 488.0 176.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "APNG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 526.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 526.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 534.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ART" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 566.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 566.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 574.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ARW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 606.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 606.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 614.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ASE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 646.0 171.0 64.0 21.0 showing 136 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 646.0 171.0 64.0 21.0 showing 145 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 654.0 176.0 48.0 11.0 showing -1 4 10 "36363eff" 0 0 "ASEPRITE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 724.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "AVI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 756.0 171.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 756.0 171.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 764.0 176.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "AVIF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 171.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 171.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 810.0 176.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "AVS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 842.0 171.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 842.0 171.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 850.0 176.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "B" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 198.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 198.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 203.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "BAYER" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 344.0 198.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 344.0 198.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 352.0 203.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "BAYERA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 402.0 198.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 402.0 198.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 410.0 203.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "BGR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 442.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 442.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 450.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "BGRA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 488.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 488.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 496.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "BGRO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 534.0 198.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 534.0 198.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 542.0 203.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "BMP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 574.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 574.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 582.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "BMP2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 620.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 620.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 628.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "BMP3" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 666.0 198.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 666.0 198.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 674.0 203.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "C" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 694.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 694.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 702.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "C2PA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 740.0 198.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 740.0 198.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 748.0 203.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CAL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 780.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 780.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 788.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "CALS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 826.0 198.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 826.0 198.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 834.0 203.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CIN" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 866.0 198.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 866.0 198.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 874.0 203.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "CLIP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 225.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 225.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 230.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "CMYK" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 225.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 225.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 346.0 230.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "CMYKA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 390.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 390.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 398.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CR2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 430.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 430.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 438.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CR3" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 470.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 470.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 478.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CRW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 510.0 225.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 510.0 225.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 518.0 230.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "CUBE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 556.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 556.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 564.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CUR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 596.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 596.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 604.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "CUT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 636.0 225.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 636.0 225.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 644.0 230.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "DATA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 682.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 682.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 690.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DCM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 722.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 722.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 730.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DCR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 762.0 225.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 762.0 225.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 770.0 230.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "DCRAW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 822.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DCX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 854.0 225.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 854.0 225.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 862.0 230.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DDS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 252.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 252.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 257.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "DFONT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 344.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 344.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 352.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DNG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 384.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 384.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 392.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "DPX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 424.0 252.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 424.0 252.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 432.0 257.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "DXT1" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 470.0 252.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 470.0 252.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 478.0 257.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "DXT5" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 516.0 252.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 516.0 252.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 524.0 257.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "EPDF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 562.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 562.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 570.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "EPI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 602.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 602.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 610.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "EPT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 642.0 252.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 642.0 252.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 257.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "EPT2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 688.0 252.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 688.0 252.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 257.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "EPT3" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 734.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 734.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 742.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ERF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 774.0 252.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 774.0 252.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 782.0 257.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "EXR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 252.0 64.0 21.0 showing 136 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 252.0 64.0 21.0 showing 145 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 822.0 257.0 48.0 11.0 showing -1 4 10 "36363eff" 0 0 "FARBFELD" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 279.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 279.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 284.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "FAX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 279.0 28.0 21.0 showing 139 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 279.0 28.0 21.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 284.0 12.0 11.0 showing -1 4 10 "36363eff" 0 0 "FF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 366.0 279.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 366.0 279.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 374.0 284.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "FFF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 406.0 279.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 406.0 279.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 414.0 284.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "FITS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 279.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 279.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 284.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "FL32" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 498.0 279.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 498.0 279.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 506.0 284.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "FLV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 538.0 279.0 58.0 21.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 538.0 279.0 58.0 21.0 showing 149 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 546.0 284.0 42.0 11.0 showing -1 4 10 "36363eff" 0 0 "FRACTAL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 602.0 279.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 602.0 279.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 610.0 284.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "FTS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 642.0 279.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 642.0 279.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 284.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "FTXT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 688.0 279.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 688.0 279.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 284.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "G" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 279.0 28.0 21.0 showing 139 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 279.0 28.0 21.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 724.0 284.0 12.0 11.0 showing -1 4 10 "36363eff" 0 0 "G3" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 750.0 279.0 28.0 21.0 showing 139 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 750.0 279.0 28.0 21.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 758.0 284.0 12.0 11.0 showing -1 4 10 "36363eff" 0 0 "G4" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 784.0 279.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 784.0 279.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 792.0 284.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "GIF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 824.0 279.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 824.0 279.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 832.0 284.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "GIF87" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 306.0 64.0 21.0 showing 136 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 306.0 64.0 21.0 showing 145 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 311.0 48.0 11.0 showing -1 4 10 "36363eff" 0 0 "GRADIENT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 362.0 306.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 362.0 306.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 370.0 311.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "GRAY" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 408.0 306.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 408.0 306.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 416.0 311.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "GRAYA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 306.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 306.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 468.0 311.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "GROUP4" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 518.0 306.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 518.0 306.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 526.0 311.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "HALD" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 564.0 306.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 564.0 306.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 311.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "HDR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 604.0 306.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 604.0 306.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 311.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "HEIC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 306.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 306.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 658.0 311.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "HEIF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 306.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 306.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 704.0 311.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "HRZ" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 736.0 306.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 736.0 306.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 744.0 311.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ICB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 776.0 306.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 776.0 306.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 784.0 311.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ICN" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 816.0 306.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 816.0 306.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 824.0 311.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ICO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 856.0 306.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 856.0 306.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 864.0 311.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "ICON" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "IIQ" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "IPL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "J2C" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "J2K" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JNG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 500.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JNX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 540.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JP2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 580.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 620.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 652.0 333.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 652.0 333.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 660.0 338.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPEG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 698.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 698.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 706.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 738.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 738.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 746.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 778.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 778.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 786.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 818.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 818.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 826.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JPT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 858.0 333.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 858.0 333.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 866.0 338.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "JXL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 360.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 360.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 365.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "K" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 320.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 320.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 328.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "K25" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 360.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 368.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "KDC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 400.0 360.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 400.0 360.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 408.0 365.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "M" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 428.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 428.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 436.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "M2V" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 468.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 468.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 476.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "M4V" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 508.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 508.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 516.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MAC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 548.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 548.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 556.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MAP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 588.0 360.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 588.0 360.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 596.0 365.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "MASK" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 634.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 634.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 642.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MAT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 674.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 674.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 682.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MDC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 714.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 714.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 722.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MEF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 754.0 360.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 754.0 360.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 762.0 365.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "MIFF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 800.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 800.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 808.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MKV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 840.0 360.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 840.0 360.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 848.0 365.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MNG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 387.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 387.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 392.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "MONO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 346.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MOS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 378.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 378.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 386.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MOV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 418.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 418.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 426.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MP4" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 458.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 458.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 466.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MPC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 498.0 387.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 498.0 387.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 506.0 392.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "MPEG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 544.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 544.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 552.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MPG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 584.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 584.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 592.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MPO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 624.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 624.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 632.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MRW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 664.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 664.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 672.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MSL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 704.0 387.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 704.0 387.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 712.0 392.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "MSVG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 750.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 750.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 758.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MTV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 790.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 790.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 798.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "MVG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 830.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 830.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 838.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "NEF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 870.0 387.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 870.0 387.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 878.0 392.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "NRW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 414.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 414.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 419.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "NULL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 414.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 414.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 346.0 419.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "O" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 366.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 366.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 374.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "ORF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 406.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 406.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 414.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "OTB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 446.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 446.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 454.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "OTF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 486.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 486.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 494.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PAL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 526.0 414.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 526.0 414.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 534.0 419.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "PALM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 580.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PAM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 414.0 58.0 21.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 414.0 58.0 21.0 showing 149 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 620.0 419.0 42.0 11.0 showing -1 4 10 "36363eff" 0 0 "PATTERN" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 676.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 676.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 684.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PBM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 724.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PCD" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 756.0 414.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 756.0 414.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 764.0 419.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "PCDS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 810.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PCL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 842.0 414.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 842.0 414.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 850.0 419.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PCT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PCX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PDB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PEF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PES" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PFA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 500.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PFB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 540.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PFM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 580.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PGM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 612.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 620.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PGX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 652.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 652.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 660.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PHM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 692.0 441.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 692.0 441.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 700.0 446.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PICON" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 744.0 441.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 744.0 441.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 752.0 446.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "PICT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 790.0 441.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 790.0 441.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 798.0 446.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PIX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 830.0 441.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 830.0 441.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 838.0 446.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PJPEG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 468.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 468.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 473.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "PLASMA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 350.0 468.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 350.0 468.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 358.0 473.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 390.0 468.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 390.0 468.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 398.0 473.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG00" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 442.0 468.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 442.0 468.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 450.0 473.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG24" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 494.0 468.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 494.0 468.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 502.0 473.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG32" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 546.0 468.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 546.0 468.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 554.0 473.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG48" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 598.0 468.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 598.0 468.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 606.0 473.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG64" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 468.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 650.0 468.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 658.0 473.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNG8" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 468.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 696.0 468.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 704.0 473.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PNM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 736.0 468.0 70.0 21.0 showing 141 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 736.0 468.0 70.0 21.0 showing 150 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 744.0 473.0 54.0 11.0 showing -1 4 10 "36363eff" 0 0 "POCKETMOD" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 812.0 468.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 812.0 468.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 820.0 473.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PPM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 852.0 468.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 852.0 468.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 860.0 473.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PSB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PSD" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 495.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 495.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 500.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "PTIF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 378.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 378.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 386.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "PWP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 418.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 418.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 426.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "QOI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 458.0 495.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 458.0 495.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 466.0 500.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "R" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 486.0 495.0 106.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 486.0 495.0 106.0 21.0 showing 151 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 494.0 500.0 90.0 11.0 showing -1 4 10 "36363eff" 0 0 "RADIAL-GRADIENT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 598.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 598.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 606.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RAF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 638.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 638.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 646.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RAS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 678.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 678.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 686.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RAW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 718.0 495.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 718.0 495.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 726.0 500.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RGB" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 758.0 495.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 758.0 495.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 766.0 500.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "RGB565" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 816.0 495.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 816.0 495.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 824.0 500.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "RGBA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 862.0 495.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 862.0 495.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 870.0 500.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "RGBO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RGF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RLA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RLE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RMF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RW2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 500.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "RWL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 532.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 540.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SCR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 522.0 76.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 572.0 522.0 76.0 21.0 showing 152 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 580.0 527.0 60.0 11.0 showing -1 4 10 "36363eff" 0 0 "SCREENSHOT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 654.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 654.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 662.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SCT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 694.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 694.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 702.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SF3" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 734.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 734.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 742.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SFW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 774.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 774.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 782.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SGI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 522.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 814.0 522.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 822.0 527.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SIX" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 854.0 522.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 854.0 522.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 862.0 527.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "SIXEL" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SR2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SRF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SRW" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 549.0 58.0 21.0 showing 140 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 549.0 58.0 21.0 showing 149 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 554.0 42.0 11.0 showing -1 4 10 "36363eff" 0 0 "STEGANO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 476.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 476.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 484.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "STI" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 516.0 549.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 516.0 549.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 524.0 554.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "STRIMG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 574.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 574.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 582.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SUN" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 614.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 614.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 622.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "SVG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 654.0 549.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 654.0 549.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 662.0 554.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "SVGZ" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 700.0 549.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 700.0 549.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 708.0 554.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TGA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 740.0 549.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 740.0 549.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 748.0 554.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "TIFF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 786.0 549.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 786.0 549.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 794.0 554.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "TIFF64" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 844.0 549.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 844.0 549.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 852.0 554.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "TILE" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TIM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 332.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 340.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TM2" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 372.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 380.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TTC" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 412.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 420.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TTF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 452.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 460.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "TXT" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 576.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 492.0 576.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 500.0 581.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "UYVY" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 538.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 538.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 546.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "VDA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 578.0 576.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 578.0 576.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 586.0 581.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "VICAR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 630.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 630.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 638.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "VID" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 670.0 576.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 670.0 576.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 678.0 581.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "VIFF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 576.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 716.0 576.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 724.0 581.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "VIPS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 762.0 576.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 762.0 576.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 770.0 581.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "VST" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 576.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 802.0 576.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 810.0 581.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "WBINFO" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 860.0 576.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 860.0 576.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 868.0 581.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "WBMP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 603.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 603.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 300.0 608.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "WEBM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 603.0 40.0 21.0 showing 135 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 338.0 603.0 40.0 21.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 346.0 608.0 24.0 11.0 showing -1 4 10 "36363eff" 0 0 "WEBP" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 384.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 384.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 392.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "WMV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 424.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 424.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 432.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "WPG" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 464.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 464.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 472.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "X3F" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 504.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 504.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 512.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "XBM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 544.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 544.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 552.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "XCF" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 584.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 584.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 592.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "XPM" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 624.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 624.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 632.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "XPS" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 664.0 603.0 28.0 21.0 showing 139 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 664.0 603.0 28.0 21.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 672.0 608.0 12.0 11.0 showing -1 4 10 "36363eff" 0 0 "XV" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 698.0 603.0 22.0 21.0 showing 134 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 698.0 603.0 22.0 21.0 showing 143 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 706.0 608.0 6.0 11.0 showing -1 4 10 "36363eff" 0 0 "Y" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 726.0 603.0 46.0 21.0 showing 137 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 726.0 603.0 46.0 21.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 734.0 608.0 30.0 11.0 showing -1 4 10 "36363eff" 0 0 "YCBCR" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 778.0 603.0 52.0 21.0 showing 138 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 778.0 603.0 52.0 21.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 786.0 608.0 36.0 11.0 showing -1 4 10 "36363eff" 0 0 "YCBCRA" "" to skin
-        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 836.0 603.0 34.0 21.0 showing 133 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 836.0 603.0 34.0 21.0 showing 142 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 844.0 608.0 18.0 11.0 showing -1 4 10 "36363eff" 0 0 "YUV" "" to skin
         add kind 3 when -1 24 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
         add kind 3 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 128.06 52.5 28.26 15.0 showing -1 1 12 "36363eff" 0 0 "Start" "" to skin
@@ -1240,7 +1273,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 358.0 258.0 40.0 showing -1 0 0 "d977061a" 0 0 "" "" to skin
         add kind 1 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 358.0 3.0 40.0 showing -1 0 0 "d97706ff" 0 0 "" "" to skin
         add kind 4 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 1.0 358.0 258.0 40.0 showing -1 0 0 "00000000" 0 0 "" "page:Over" to skin
-        add kind 2 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 370.0 16.0 16.0 showing 144 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 17.0 370.0 16.0 16.0 showing 153 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 43.0 370.5 29.78 15.0 showing -1 2 12 "d97706ff" 0 0 "Over" "" to skin
         add kind 3 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 108.0 47.63 28.0 showing -1 6 22 "36363eff" 0 0 "Over" "" to skin
         add kind 3 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 140.0 238.59 15.0 showing -1 0 12 "36363ea6" 0 0 "Tekengereedschap in de OpenAEC-stijl." "" to skin
@@ -1251,100 +1284,100 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 4 when -1 25 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 292.0 236.0 212.0 15.0 showing -1 0 0 "00000000" 0 0 "" "cmd:OpenAEC style book · CC BY-SA 4.0" to skin
         add kind 3 when -1 25 0 -1 -1 "" "" anchored 0.96 0.121 0.957 0.086 at 1386.0 914.0 40.0 24.0 showing -1 0 10 "e4e4e7ff" 0 1 "{zoom}%" "" to skin
         add kind 1 when -1 30 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 0.0 1440.0 940.0 showing -1 0 0 "00000088" 0 0 "" "" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 240.0 504.0 460.0 showing 145 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 240.0 504.0 460.0 showing 154 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 491.0 321.0 458.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 514.0 280.5 121.45 23.0 showing -1 3 18 "36363eff" 0 0 "Nieuw canvas" "" to skin
-        add kind 6 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 272.0 40.0 40.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
+        add kind 6 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 272.0 40.0 40.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 903.5 276.5 17.0 30.0 showing -1 0 25 "36363eff" 0 0 "×" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 898.0 278.0 28.0 28.0 showing -1 0 0 "00000000" 0 0 "" "dialog:close" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 346.0 29.0 14.0 showing -1 0 11 "36363eff" 0 0 "Naam" "" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 368.0 410.0 32.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 368.0 410.0 32.0 showing 156 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 368.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "text:new.name" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 368.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:new.name" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 418.0 43.87 14.0 showing -1 0 11 "36363eff" 0 0 "Breedte" "" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 440.0 198.0 32.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 440.0 198.0 32.0 showing 157 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 440.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "number:new.width" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 440.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:new.width" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 418.0 41.89 14.0 showing -1 0 11 "36363eff" 0 0 "Hoogte" "" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 440.0 198.0 32.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 440.0 198.0 32.0 showing 157 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 440.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "number:new.height" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 440.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:new.height" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 488.0 72.0 26.0 showing 149 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 488.0 72.0 26.0 showing 158 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.471 0.2 0.45 0.1 at 515.0 488.0 72.0 26.0 showing -1 0 10 "36363eff" 0 1 "{w} × {h}" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 488.0 72.0 26.0 showing -1 0 0 "00000000" 0 0 "" "preset:1200x800" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 594.0 488.0 76.0 26.0 showing 150 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 594.0 488.0 76.0 26.0 showing 159 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.158 0.5 0.0 at 601.0 495.0 62.0 12.0 showing -1 0 10 "36363eff" 0 0 "1920 × 1080" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 594.0 488.0 76.0 26.0 showing -1 0 0 "00000000" 0 0 "" "preset:1920x1080" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 677.0 488.0 75.0 26.0 showing 151 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 677.0 488.0 75.0 26.0 showing 160 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.154 0.5 0.0 at 684.0 495.0 60.68 12.0 showing -1 0 10 "36363eff" 0 0 "1024 × 1024" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 677.0 488.0 75.0 26.0 showing -1 0 0 "00000000" 0 0 "" "preset:1024x1024" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 759.0 488.0 69.0 26.0 showing 152 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 759.0 488.0 69.0 26.0 showing 161 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.471 0.2 0.45 0.1 at 758.69 488.0 69.0 26.0 showing -1 0 10 "36363eff" 0 1 "{h} × 600" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 759.0 488.0 69.0 26.0 showing -1 0 0 "00000000" 0 0 "" "preset:800x600" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 534.0 69.53 14.0 showing -1 0 11 "36363eff" 0 0 "Achtergrond" "" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 556.0 410.0 42.0 showing 153 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 556.0 410.0 42.0 showing 162 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 556.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:new.background" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 556.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:new.background" to skin
-        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 616.0 120.0 37.0 showing 154 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 616.0 120.0 37.0 showing 163 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 532.0 627.0 86.42 15.0 showing -1 2 12 "ffffffff" 0 0 "Canvas maken" "" to skin
         add kind 4 when -1 30 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 616.0 120.0 37.0 showing -1 0 0 "00000000" 0 0 "" "dialog:new:Canvas maken" to skin
         add kind 1 when -1 31 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 0.0 1440.0 940.0 showing -1 0 0 "00000088" 0 0 "" "" to skin
-        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 340.0 504.0 260.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 340.0 504.0 260.0 showing 164 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 491.0 421.0 458.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 514.0 380.5 149.27 23.0 showing -1 3 18 "36363eff" 0 0 "Formaat wijzigen" "" to skin
-        add kind 6 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 372.0 40.0 40.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
+        add kind 6 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 372.0 40.0 40.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 903.5 376.5 17.0 30.0 showing -1 0 25 "36363eff" 0 0 "×" "" to skin
         add kind 4 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 898.0 378.0 28.0 28.0 showing -1 0 0 "00000000" 0 0 "" "dialog:close" to skin
         add kind 3 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 446.0 43.87 14.0 showing -1 0 11 "36363eff" 0 0 "Breedte" "" to skin
-        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 468.0 198.0 32.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 468.0 198.0 32.0 showing 157 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 468.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "number:resize.width" to skin
         add kind 4 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 468.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:resize.width" to skin
         add kind 3 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 446.0 41.89 14.0 showing -1 0 11 "36363eff" 0 0 "Hoogte" "" to skin
-        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 468.0 198.0 32.0 showing 148 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 468.0 198.0 32.0 showing 157 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 468.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "number:resize.height" to skin
         add kind 4 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 727.0 468.0 198.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:resize.height" to skin
-        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 516.0 102.0 37.0 showing 156 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 516.0 102.0 37.0 showing 165 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 532.0 527.0 68.18 15.0 showing -1 2 12 "ffffffff" 0 0 "Toepassen" "" to skin
         add kind 4 when -1 31 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 516.0 102.0 37.0 showing -1 0 0 "00000000" 0 0 "" "dialog:resize:Toepassen" to skin
         add kind 1 when -1 32 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 0.0 1440.0 940.0 showing -1 0 0 "00000088" 0 0 "" "" to skin
-        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 228.0 504.0 484.0 showing 157 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 228.0 504.0 484.0 showing 166 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 491.0 309.0 458.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 514.0 268.5 137.06 23.0 showing -1 3 18 "36363eff" 0 0 "Kleurcorrecties" "" to skin
-        add kind 6 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 260.0 40.0 40.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
+        add kind 6 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 260.0 40.0 40.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 903.5 264.5 17.0 30.0 showing -1 0 25 "36363eff" 0 0 "×" "" to skin
         add kind 4 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 898.0 266.0 28.0 28.0 showing -1 0 0 "00000000" 0 0 "" "dialog:close" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 337.0 410.0 21.0 showing -1 0 12 "36363ea6" 0 3 "Vormen en tekst blijven bewerkbaar. Selecteer om te verplaatsen; sleep de hoek om te schalen. Rasterfilters maken de afbeelding plat." "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 388.0 60.17 14.0 showing -1 0 11 "36363eff" 0 0 "Helderheid" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 410.0 8.0 14.0 showing -1 0 11 "36363eff" 0 0 "{adjust.brightness}" "" to skin
-        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 434.0 406.0 14.0 showing 158 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 434.0 406.0 14.0 showing 167 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 434.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "range:adjust.brightness:-100:100" to skin
         add kind 4 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 434.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "drag:adjust.brightness" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 468.0 48.0 14.0 showing -1 0 11 "36363eff" 0 0 "Contrast" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 490.0 8.0 14.0 showing -1 0 11 "36363eff" 0 0 "{adjust.contrast}" "" to skin
-        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 514.0 406.0 14.0 showing 158 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 514.0 406.0 14.0 showing 167 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 514.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "range:adjust.contrast:-100:100" to skin
         add kind 4 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 514.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "drag:adjust.contrast" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 548.0 64.44 14.0 showing -1 0 11 "36363eff" 0 0 "Verzadiging" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 570.0 20.0 14.0 showing -1 0 11 "36363eff" 0 0 "{adjust.saturation}" "" to skin
-        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 594.0 406.0 14.0 showing 158 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 594.0 406.0 14.0 showing 167 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 594.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "range:adjust.saturation:0:200" to skin
         add kind 4 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 517.0 594.0 406.0 14.0 showing -1 0 0 "00000000" 0 0 "" "drag:adjust.saturation" to skin
-        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 628.0 102.0 37.0 showing 156 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 628.0 102.0 37.0 showing 165 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 532.0 639.0 68.18 15.0 showing -1 2 12 "ffffffff" 0 0 "Toepassen" "" to skin
         add kind 4 when -1 32 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 628.0 102.0 37.0 showing -1 0 0 "00000000" 0 0 "" "dialog:adjust:Toepassen" to skin
         add kind 1 when -1 33 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 0.0 1440.0 940.0 showing -1 0 0 "00000088" 0 0 "" "" to skin
-        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 193.0 504.0 554.0 showing 159 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 193.0 504.0 554.0 showing 168 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 491.0 274.0 458.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 514.0 233.5 104.5 23.0 showing -1 3 18 "36363eff" 0 0 "Instellingen" "" to skin
-        add kind 6 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 225.0 40.0 40.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
+        add kind 6 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 225.0 40.0 40.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 903.5 229.5 17.0 30.0 showing -1 0 25 "36363eff" 0 0 "×" "" to skin
         add kind 4 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 898.0 231.0 28.0 28.0 showing -1 0 0 "00000000" 0 0 "" "dialog:close" to skin
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 299.0 36.0 14.0 showing -1 0 11 "36363eff" 0 0 "Thema" "" to skin
-        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 321.0 410.0 42.0 showing 153 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 321.0 410.0 42.0 showing 162 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 321.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:settings.theme" to skin
         add kind 4 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 321.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:settings.theme" to skin
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 381.0 21.19 14.0 showing -1 0 11 "36363eff" 0 0 "Taal" "" to skin
-        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 403.0 410.0 42.0 showing 153 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 403.0 410.0 42.0 showing 162 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 403.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:settings.language" to skin
         add kind 4 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 403.0 410.0 42.0 showing -1 0 0 "00000000" 0 0 "" "select:settings.language" to skin
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 463.0 81.56 17.0 showing -1 3 13 "36363eff" 0 0 "Sneltoetsen" "" to skin
@@ -1358,34 +1391,34 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 3 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 687.0 177.86 12.0 showing -1 0 10 "36363eff" 0 0 "OpenAEC style book · CC BY-SA 4.0" "" to skin
         add kind 1 when -1 33 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 698.0 178.0 1.0 showing -1 0 0 "36363eff" 0 0 "" "" to skin
         add kind 1 when -1 34 0 -1 -1 "" "" anchored 0.0 1.0 0.0 1.0 at 0.0 0.0 1440.0 940.0 showing -1 0 0 "00000088" 0 0 "" "" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 226.0 504.0 488.0 showing 160 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 468.0 226.0 504.0 488.0 showing 169 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 491.0 307.0 458.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 514.0 266.5 79.0 23.0 showing -1 3 18 "36363eff" 0 0 "API · MCP" "" to skin
-        add kind 6 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 258.0 40.0 40.0 showing 146 0 0 "00000000" 0 0 "" "" to skin
+        add kind 6 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 892.0 258.0 40.0 40.0 showing 155 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 903.5 262.5 17.0 30.0 showing -1 0 25 "36363eff" 0 0 "×" "" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 898.0 264.0 28.0 28.0 showing -1 0 0 "00000000" 0 0 "" "dialog:close" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 335.0 410.0 21.0 showing -1 0 12 "36363ea6" 0 3 "Start pnpm api. Kopieer het token uit .paint-data/token. API en MCP delen documenten; verstuur of laad om wijzigingen uit te wisselen." "" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 386.0 410.0 35.0 showing 161 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 386.0 410.0 35.0 showing 170 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 526.0 397.0 154.0 13.0 showing -1 4 11 "36363eff" 0 0 "http://127.0.0.1:47831" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 436.0 54.65 14.0 showing -1 0 11 "36363eff" 0 0 "API-token" "" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 458.0 410.0 32.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 458.0 410.0 32.0 showing 156 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 458.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "password:api.token" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 458.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:api.token" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 511.0 192.0 34.0 showing 162 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 511.0 192.0 34.0 showing 171 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 573.02 521.0 75.95 14.0 showing -1 0 11 "36363e59" 0 0 "API verbinden" "" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 511.0 192.0 34.0 showing -1 0 0 "00000000" 0 0 "" "dialog:api:API verbinden" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 721.0 508.0 204.0 37.0 showing 163 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 721.0 508.0 204.0 37.0 showing 172 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 777.13 519.0 91.73 15.0 showing -1 2 12 "ffffff59" 0 0 "Naar API sturen" "" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 721.0 508.0 204.0 37.0 showing -1 0 0 "00000000" 0 0 "" "dialog:api:Naar API sturen" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 561.0 72.79 14.0 showing -1 0 11 "36363eff" 0 0 "Document-ID" "" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 583.0 410.0 32.0 showing 147 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 583.0 410.0 32.0 showing 156 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 583.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "text:api.document" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 583.0 410.0 32.0 showing -1 0 0 "00000000" 0 0 "" "focus:api.document" to skin
-        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 633.0 410.0 34.0 showing 164 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 633.0 410.0 34.0 showing 173 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 682.77 643.0 74.44 14.0 showing -1 0 11 "36363e59" 0 0 "Van API laden" "" to skin
         add kind 4 when -1 34 0 -1 -1 "" "" anchored 0.5 0.0 0.5 0.0 at 515.0 633.0 410.0 34.0 showing -1 0 0 "00000000" 0 0 "" "dialog:api:Van API laden" to skin
-        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 81.0 90.0 76.0 66.0 showing 165 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 47.0 128.0 303.0 382.0 showing 166 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 81.0 90.0 76.0 66.0 showing 174 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 47.0 128.0 303.0 382.0 showing 175 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 178.5 24.0 14.0 showing -1 1 11 "36363eff" 0 0 "PNG" "" to skin
         add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 169.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:PNG" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 213.5 30.0 14.0 showing -1 1 11 "36363eff" 0 0 "JPEG" "" to skin
@@ -1402,56 +1435,56 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 394.0 221.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 122.0 410.5 72.91 14.0 showing -1 1 11 "36363eff" 0 0 "IFCX opslaan" "" to skin
         add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 401.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:IFCX opslaan" to skin
-        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 410.0 15.0 15.0 showing 167 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 410.0 15.0 15.0 showing 176 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 122.0 445.5 77.86 14.0 showing -1 1 11 "36363eff" 0 0 "Nieuw canvas" "" to skin
         add kind 4 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 88.0 436.0 221.0 33.0 showing -1 0 0 "00000000" 0 0 "" "menu:Nieuw canvas" to skin
-        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 445.0 15.0 15.0 showing 168 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 0 0 -1 -1 "" "" anchored 0.0 0.0 0.0 0.0 at 99.0 445.0 15.0 15.0 showing 177 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1262.0 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
         add kind 3 when 0 0 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1374.5 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 516.0 119.0 326.0 304.0 showing 169 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 516.0 119.0 326.0 304.0 showing 178 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 166.0 232.0 140.0 showing -1 0 0 "00000000" 0 0 "" "colorfield" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 166.0 232.0 140.0 showing -1 0 0 "00000000" 0 0 "" "drag:color.field" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 316.0 232.0 12.0 showing -1 0 0 "00000000" 0 0 "" "colorhue" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 316.0 232.0 12.0 showing -1 0 0 "00000000" 0 0 "" "drag:color.hue" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 344.0 32.0 32.0 showing 170 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 344.0 32.0 32.0 showing 179 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 563.0 344.0 32.0 32.0 showing -1 0 0 "00000000" 0 0 "" "colorpreview" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 601.0 338.0 19.0 11.0 showing -1 1 9 "36363ea6" 0 0 "HEX" "" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 601.0 352.0 61.0 24.0 showing 171 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 601.0 352.0 61.0 24.0 showing 180 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 601.0 352.0 61.0 24.0 showing -1 0 0 "00000000" 0 0 "" "text:color.hex" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 601.0 352.0 61.0 24.0 showing -1 0 0 "00000000" 0 0 "" "focus:color.hex" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 668.2 338.0 6.0 11.0 showing -1 1 9 "36363ea6" 0 0 "R" "" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 668.0 352.0 38.0 24.0 showing 172 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 668.0 352.0 38.0 24.0 showing 181 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 668.0 352.0 38.0 24.0 showing -1 0 0 "00000000" 0 0 "" "number:color.red" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 668.0 352.0 38.0 24.0 showing -1 0 0 "00000000" 0 0 "" "focus:color.red" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 712.47 338.0 6.0 11.0 showing -1 1 9 "36363ea6" 0 0 "G" "" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 712.0 352.0 39.0 24.0 showing 173 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 712.0 352.0 39.0 24.0 showing 182 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 712.0 352.0 39.0 24.0 showing -1 0 0 "00000000" 0 0 "" "number:color.green" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 712.0 352.0 39.0 24.0 showing -1 0 0 "00000000" 0 0 "" "focus:color.green" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 756.73 338.0 6.0 11.0 showing -1 1 9 "36363ea6" 0 0 "B" "" to skin
-        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 757.0 352.0 38.0 24.0 showing 172 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 757.0 352.0 38.0 24.0 showing 181 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 757.0 352.0 38.0 24.0 showing -1 0 0 "00000000" 0 0 "" "number:color.blue" to skin
         add kind 4 when 0 1 0 -1 -1 "" "" anchored 0.075 0.0 0.0 0.0 at 757.0 352.0 38.0 24.0 showing -1 0 0 "00000000" 0 0 "" "focus:color.blue" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1262.0 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
         add kind 3 when 0 1 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1374.5 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 809.0 138.0 148.0 24.0 showing 174 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 775.0 134.0 303.0 232.0 showing 175 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 809.0 138.0 148.0 24.0 showing 183 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 775.0 134.0 303.0 232.0 showing 184 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 851.0 185.0 65.94 14.0 showing -1 1 11 "36363eff" 0 0 "90° draaien" "" to skin
         add kind 4 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 816.0 176.0 221.0 32.0 showing -1 0 0 "00000000" 0 0 "" "menu:90° draaien" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 184.0 16.0 16.0 showing 176 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 184.0 16.0 16.0 showing 185 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 851.0 220.0 73.94 14.0 showing -1 1 11 "36363eff" 0 0 "Links draaien" "" to skin
         add kind 4 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 816.0 210.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Links draaien" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 219.0 16.0 16.0 showing 177 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 219.0 16.0 16.0 showing 186 0 0 "00000000" 0 0 "" "" to skin
         add kind 1 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 816.0 250.0 221.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 851.0 266.0 121.95 14.0 showing -1 1 11 "36363eff" 0 0 "Horizontaal spiegelen" "" to skin
         add kind 4 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 816.0 256.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Horizontaal spiegelen" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 265.0 16.0 16.0 showing 178 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 265.0 16.0 16.0 showing 187 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 851.0 301.0 107.69 14.0 showing -1 1 11 "36363eff" 0 0 "Verticaal spiegelen" "" to skin
         add kind 4 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 816.0 292.0 221.0 32.0 showing -1 0 0 "00000000" 0 0 "" "menu:Verticaal spiegelen" to skin
-        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 300.0 16.0 16.0 showing 179 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 2 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 827.0 300.0 16.0 16.0 showing 188 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1262.0 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
         add kind 3 when 0 2 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1374.5 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
-        add kind 2 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 962.0 110.0 126.0 26.0 showing 180 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 928.0 108.0 303.0 184.0 showing 181 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 962.0 110.0 126.0 26.0 showing 189 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 928.0 108.0 303.0 184.0 showing 190 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 979.97 158.0 73.87 14.0 showing -1 1 11 "36363eff" 0 0 "Grijswaarden" "" to skin
         add kind 4 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 969.0 148.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Grijswaarden" to skin
         add kind 3 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 979.97 193.0 91.33 14.0 showing -1 1 11 "36363eff" 0 0 "Kleuren omkeren" "" to skin
@@ -1460,22 +1493,22 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 4 when 0 3 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 969.0 218.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Sepia" to skin
         add kind 3 when 0 3 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1262.0 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
         add kind 3 when 0 3 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1374.5 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
-        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 962.0 138.0 126.0 24.0 showing 182 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 928.0 134.0 303.0 170.0 showing 183 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 962.0 138.0 126.0 24.0 showing 191 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 928.0 134.0 303.0 170.0 showing 192 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 974.97 194.5 68.39 14.0 showing -1 1 11 "36363eff" 0 0 "Achtergrond" "" to skin
-        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 1077.0 184.0 107.0 36.0 showing 184 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 1077.0 184.0 107.0 36.0 showing 193 0 0 "00000000" 0 0 "" "" to skin
         add kind 5 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 1077.0 184.0 107.0 36.0 showing -1 0 0 "00000000" 0 0 "" "select" to skin
         add kind 4 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 1077.0 184.0 107.0 36.0 showing -1 0 0 "00000000" 0 0 "" "background" to skin
         add kind 3 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 1002.97 239.0 84.75 14.0 showing -1 1 11 "36363e59" 0 0 "Canvas wissen" "" to skin
         add kind 4 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 969.0 230.0 221.0 32.0 showing -1 0 0 "00000000" 0 0 "" "menu:Canvas wissen" to skin
-        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 980.0 238.0 15.0 16.0 showing 185 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 4 0 -1 -1 "" "" anchored 0.146 0.0 0.0 0.0 at 980.0 238.0 15.0 16.0 showing 194 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 4 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1262.0 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
         add kind 3 when 0 4 0 -1 -1 "" "" anchored 1.0 0.0 0.0 0.0 at 1374.5 334.0 10.8 11.0 showing -1 0 9 "36363ea6" 0 0 "px" "" to skin
-        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.171 0.0 0.0 0.0 at 1113.0 110.0 115.0 26.0 showing 186 0 0 "00000000" 0 0 "" "" to skin
-        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1079.0 108.0 303.0 336.0 showing 187 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.171 0.0 0.0 0.0 at 1113.0 110.0 115.0 26.0 showing 195 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1079.0 108.0 303.0 336.0 showing 196 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1154.97 158.0 35.84 14.0 showing -1 1 11 "36363eff" 0 0 "Raster" "" to skin
         add kind 4 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1120.0 148.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Raster" to skin
-        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1131.0 157.0 16.0 16.0 showing 188 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1131.0 157.0 16.0 16.0 showing 197 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1130.97 193.0 70.84 14.0 showing -1 1 11 "36363eff" 0 0 "Ware grootte" "" to skin
         add kind 4 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1120.0 184.0 221.0 32.0 showing -1 0 0 "00000000" 0 0 "" "menu:Ware grootte" to skin
         add kind 3 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1154.97 228.0 7.0 14.0 showing -1 1 11 "36363eff" 0 0 "−" "" to skin
@@ -1487,7 +1520,7 @@ function fill {a pointer to a paint skin:skin} with the measured shell:
         add kind 1 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1120.0 292.0 221.0 1.0 showing -1 0 0 "36363e1f" 0 0 "" "" to skin
         add kind 3 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1154.97 309.0 87.0 14.0 showing -1 1 11 "36363eff" 0 0 "Eigenschappen" "" to skin
         add kind 4 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1120.0 300.0 221.0 32.0 showing -1 0 0 "00000000" 0 0 "" "menu:Eigenschappen" to skin
-        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1131.0 308.0 16.0 16.0 showing 189 0 0 "00000000" 0 0 "" "" to skin
+        add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1131.0 308.0 16.0 16.0 showing 198 0 0 "00000000" 0 0 "" "" to skin
         add kind 3 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1154.97 344.0 70.6 14.0 showing -1 1 11 "36363eff" 0 0 "Focusmodus" "" to skin
         add kind 4 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1120.0 334.0 221.0 34.0 showing -1 0 0 "00000000" 0 0 "" "menu:Focusmodus" to skin
         add kind 2 when 0 5 0 -1 -1 "" "" anchored 0.65 0.0 0.0 0.0 at 1131.0 343.0 16.0 16.0 showing 93 0 0 "00000000" 0 0 "" "" to skin
