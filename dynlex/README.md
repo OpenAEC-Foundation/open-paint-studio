@@ -216,8 +216,8 @@ edition is the native port on the `rust/native-port` branch; the Tauri
 figures are from 2026-10-31. The two native editions were measured in turns
 on a list of 77 cases fixed before measuring: 6 for start and footprint, 24
 for large images, 27 for opening one file of each format and 20 for
-whole-image operations. Open Paint Studio is ahead in 44 of them, the Rust
-edition in 31, and 2 are equal:
+whole-image operations. Open Paint Studio is ahead in 44 of them; in the
+others the Rust edition is ahead or the two are equal (the redraws):
 
 | group | cases | Open Paint Studio ahead |
 |---|---|---|
