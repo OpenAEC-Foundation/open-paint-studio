@@ -12,9 +12,11 @@ import { renderDocument } from './render';
 import { draftStore, saveFile, isDesktop } from './storage';
 import { labels, type Label } from './labels';
 import { operationBounds, transformedOperation, type Matrix, type Bounds } from '../shared/geometry';
+import { transformDocument, filterDocument, type TransformAction, type FilterKind } from './documentCommands';
 import { documentSvg } from '../shared/svg';
-import { adjustPixels, type Adjustments } from '../shared/adjustments';
+import type { Adjustments } from '../shared/adjustments';
 import { decodeFile, bytesToDataUrl, supportedFormats, imageFileAccept } from './images';
+import { installSiteAppTools, type PaintHost } from './siteAppTools';
 
 type Tool = Exclude<Operation['type'], 'image'> | 'picker' | 'crop' | 'select';
 const tools: { id: Tool; key: string; icon: ComponentType<{ size?: number }> }[] = [
@@ -68,6 +70,40 @@ export default function App() {
     if (!future.length) return;
     setPast(p => [...p, doc]); setDoc(future[0]); setFuture(f => f.slice(1));
   }, [doc, future]);
+  // The assistant of the site edits this document (siteAppTools.ts, browser build only). Its calls can follow each
+  // other before React renders, so the host keeps the latest document and history in a ref.
+  const live = useRef({ doc, past, future, tool, color, size, opacity, filled, busy, loaded });
+  live.current = { doc, past, future, tool, color, size, opacity, filled, busy, loaded };
+  useEffect(() => {
+    const host: PaintHost = {
+      document: () => live.current.doc,
+      commit(next) {
+        const { doc: before, past: history } = live.current, nextPast = [...history.slice(-39), before];
+        live.current = { ...live.current, doc: next, past: nextPast, future: [] };
+        setPast(nextPast); setFuture([]); setDoc(next); setSelection(null); setTransient(null);
+      },
+      undo() {
+        const { doc: current, past: history, future: ahead } = live.current;
+        if (!history.length) return false;
+        const previous = history[history.length - 1], nextPast = history.slice(0, -1), nextFuture = [current, ...ahead];
+        live.current = { ...live.current, doc: previous, past: nextPast, future: nextFuture };
+        setPast(nextPast); setFuture(nextFuture); setDoc(previous); setSelection(null); setTransient(null);
+        return true;
+      },
+      canUndo: () => live.current.past.length > 0,
+      canRedo: () => live.current.future.length > 0,
+      settings: () => ({ tool: live.current.tool, color: live.current.color, size: live.current.size, opacity: live.current.opacity / 100, filled: live.current.filled }),
+      busy: () => live.current.busy || !live.current.loaded,
+      render: renderDocument,
+      async capture(document, width, height) {
+        const rendered = await renderDocument(document), small = window.document.createElement('canvas');
+        small.width = width; small.height = height;
+        const ctx = small.getContext('2d')!; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(rendered, 0, 0, width, height);
+        return small.toDataURL('image/png');
+      },
+    };
+    return installSiteAppTools(host);
+  }, []);
   useEffect(() => {
     let active = true;
     draftStore().then(saved => { if (saved && active) setDoc(saved); }).catch(fail).finally(() => { if (active) setLoaded(true); });
@@ -327,24 +363,14 @@ export default function App() {
     if(textBox.index!==undefined)commit({...doc,operations:doc.operations.map((operation,i)=>i===textBox.index?op:operation)});else add(op);
     setTextBox(null);
   }
-  async function transform(action:'rotate'|'rotateLeft'|'flip'|'flipVertical'|'resize'|'crop',from?:Point,to?:Point){
+  async function transform(action:TransformAction,from?:Point,to?:Point){
     setBusy(true);
     try{
-      const quarter=action==='rotate'||action==='rotateLeft';
-      let w=quarter?doc.height:action==='resize'?newWidth:doc.width,h=quarter?doc.width:action==='resize'?newHeight:doc.height,x=0,y=0;
-      if(action==='crop'&&from&&to){x=Math.max(0,Math.min(doc.width,Math.min(from.x,to.x)));y=Math.max(0,Math.min(doc.height,Math.min(from.y,to.y)));w=Math.min(doc.width,Math.max(from.x,to.x))-x;h=Math.min(doc.height,Math.max(from.y,to.y))-y;if(w<1||h<1)throw new Error('Select a crop region first');}
-      newDocument(w,h,doc.name);
-      const matrices:Record<typeof action,Matrix>={rotate:[0,1,-1,0,w,0],rotateLeft:[0,-1,1,0,0,h],flip:[-1,0,0,1,w,0],flipVertical:[1,0,0,-1,0,h],resize:[w/doc.width,0,0,h/doc.height,0,0],crop:[1,0,0,1,-x,-y]};
-      let sourceOperations=doc.operations;
-      const lastFill=doc.operations.findLastIndex(op=>op.type==='fill');
-      if(action==='crop'&&lastFill>=0){const prefix=await renderDocument({...doc,background:'transparent',operations:doc.operations.slice(0,lastFill+1)});sourceOperations=[{type:'image',data:prefix.toDataURL('image/png'),sourceSize:{width:doc.width,height:doc.height}},...doc.operations.slice(lastFill+1)];}
-      let operations=sourceOperations.map(op=>transformedOperation(op,matrices[action],{width:doc.width,height:doc.height}));
-      if(!doc.retainVectors){const image=await renderDocument({...doc,width:w,height:h,operations,background:'transparent'});operations=[{type:'image',data:image.toDataURL('image/png'),sourceSize:{width:w,height:h}}];}
-      commit({...doc,width:w,height:h,operations});setSelection(null);setModal('');if(action==='crop')setTool('brush');
+      commit(await transformDocument(doc,action,renderDocument,{width:newWidth,height:newHeight,from,to}));setSelection(null);setModal('');if(action==='crop')setTool('brush');
     }catch(error){fail(error);}finally{setBusy(false);}
   }
-  async function filterImage(kind:'adjust'|'grayscale'|'invert'|'sepia'){
-    setBusy(true);try{const image=await renderDocument(doc),ctx=image.getContext('2d')!,pixels=ctx.getImageData(0,0,doc.width,doc.height);adjustPixels(pixels.data,kind==='adjust'?corrections:{brightness:0,contrast:0,saturation:100},kind);ctx.putImageData(pixels,0,0);commit({...doc,operations:[{type:'image',data:image.toDataURL('image/png'),sourceSize:{width:doc.width,height:doc.height}}]});setSelection(null);setModal('');}catch(error){fail(error);}finally{setBusy(false);}
+  async function filterImage(kind:FilterKind){
+    setBusy(true);try{commit(await filterDocument(doc,kind,renderDocument,corrections));setSelection(null);setModal('');}catch(error){fail(error);}finally{setBusy(false);}
   }
   async function exportOther(format:'svg'|'jpeg'|'webp'|'ifcx'|'ifcxb'){
     try{
