@@ -211,18 +211,33 @@ Where it differs, it is in what is not ported:
 
 ## Compared with the Tauri build and the Rust edition
 
-Measured on 2026-10-31 on the same machine (Ryzen 7 9700X), on Xvfb. The Rust
-edition is the native port on the `rust/native-port` branch.
+Measured on the same machine (Ryzen 7 9700X, 16 threads), on Xvfb. The Rust
+edition is the native port on the `rust/native-port` branch; the Tauri
+figures are from 2026-10-31. The two native editions were measured in turns
+on a list of 77 cases fixed before measuring: 6 for start and footprint, 24
+for large images, 27 for opening one file of each format and 20 for
+whole-image operations. Open Paint Studio is ahead in 44 of them, the Rust
+edition in 31, and 2 are equal:
 
-**Start and footprint** (`bench/startup.py`, `bench/first_frame.py`)
+| group | cases | Open Paint Studio ahead |
+|---|---|---|
+| start and footprint | 6 | 0 |
+| large images | 24 | 2 |
+| opening each format | 27 | 22 |
+| whole-image operations | 20 | 20 |
+
+**Start and footprint** (`bench/startup.py`, `bench/first_frame.py`, and the
+Rust edition's `events.py`; 2026-11-07)
 
 | | Tauri build | Rust edition | Open Paint Studio |
 |---|---|---|---|
-| window drawn after start | 1.05–1.19 s | 26 ms | 23 ms |
+| window drawn after start | 1.05–1.19 s | 15 ms | 23–24 ms |
 | processes | 3 | 1 | 1 |
-| memory, whole process tree (PSS) | 237 MB | 39 MB | 22 MB |
+| memory, whole process tree (PSS) | 237 MB | 20–23 MB | 22–23 MB |
 | idle CPU after start-up | 0.1 % | 0.0 % | 0.0 % |
-| CPU per mouse move / per brush-drag event | — | 1.2 / 4.1 ms | 0.07 / 0.14 ms |
+| CPU per mouse move / per brush-drag event | — | 0.03 / 0.09–0.10 ms | 0.08 / 0.12–0.13 ms |
+| program | 19 MB + 16 MB web build + WebKitGTK | 0.77 MB | 1.22 MB + 108 KB fonts |
+| optimised build after one change | 21.7 s | 3.8 s | 8.1 s |
 
 The first frame's 88 icons are rasterised together over the cores, and blur
 filters use the three box passes SVG specifies, so a large shadow costs the
@@ -232,16 +247,51 @@ same at any radius.
 up). For Tauri: the editor's own `decodeFile` path (`src/images.ts`) run
 verbatim in WebKitGTK by `bench/webkit_decode.py`. For Open Paint Studio:
 `bench/large.dl`; for Rust its `large` example. Decoding is until the pixels
-are ready to edit; redraw is one frame at a new zoom level.
+are ready to edit; redraw is one frame at a new zoom level. The two native
+editions: medians of three runs in turns, 2026-11-07.
 
 | image | Tauri: decode / first frame / redraw | Rust: decode / first frame / redraw, peak | Open Paint Studio: decode / first frame / redraw, peak |
 |---|---|---|---|
-| 4K JPEG, 8.3 MP | 1861 / 180 / 32 ms | 47 / 8 / 5 ms, 123 MB | 36 / 6 / 4 ms, 70 MB |
-| 4K PNG | 2073 / 192 / 32 ms | 90 / 8 / 5 ms, 123 MB | 65 / 6 / 4 ms, 91 MB |
-| 8K JPEG, 33 MP | 2220 / 178 / 32 ms (kept at 8.4 MP) | 128 / 8 / 6 ms, 317 MB | 118 / 6 / 4 ms, 206 MB |
-| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 314 / 8 / 6 ms, 317 MB | 195 / 6 / 4 ms, 281 MB |
-| 16K JPEG, 133 MP | refused: more than 64 megapixels | 439 / 8 / 6 ms, 1.10 GB | 428 / 7 / 4 ms, 0.75 GB |
-| 16384² JPEG, 268 MP | refused | 831 / 8 / 6 ms, 2.16 GB | 751 / 7 / 4 ms, 1.49 GB |
+| 4K JPEG, 8.3 MP | 1861 / 180 / 32 ms | 18 / 5 / 3 ms, 73 MB | 32 / 5 / 3 ms, 70 MB |
+| 4K PNG | 2073 / 192 / 32 ms | 57 / 4 / 3 ms, 87 MB | 61 / 6 / 3 ms, 91 MB |
+| 8K JPEG, 33 MP | 2220 / 178 / 32 ms (kept at 8.4 MP) | 53 / 6 / 3 ms, 171 MB | 107 / 6 / 3 ms, 206 MB |
+| 8K PNG | 2577 / 174 / 32 ms (kept at 8.4 MP) | 209 / 5 / 3 ms, 257 MB | 192 / 6 / 3 ms, 281 MB |
+| 16K JPEG, 133 MP | refused: more than 64 megapixels | 190 / 5 / 3 ms, 0.56 GB | 377 / 6 / 3 ms, 0.75 GB |
+| 16384² JPEG, 268 MP | refused | 417 / 5 / 3 ms, 1.10 GB | 686 / 6 / 3 ms, 1.49 GB |
+
+The Rust edition decodes JPEG with libjpeg-turbo's vector code and is 1.6 to
+2 times as fast there. These figures are from before the PNG and deflate
+changes of 2026-11-11; `bench/large.dl` does not compile with the current
+compiler, so they were not measured again.
+
+**Opening each format** (`bench/open_images.dl`, one 3840×2160 file per
+format; for Rust a small program that calls its edition's own open
+function, which reads JPEG and PNG itself and the rest through gdk-pixbuf).
+File read until the pixels are ready to edit, medians of three runs in
+turns, 2026-11-11, in ms:
+
+| file | Rust edition | Open Paint Studio |
+|---|---|---|
+| AVIF | **162** | 690 |
+| BMP, 24-bit / 32-bit | 44 / 48 | **18** / **34** |
+| GIF | 95 | **42** |
+| JPEG 2000, lossless / lossy | 1832 / 308 | **320** / **145** |
+| JPEG, baseline / 4:4:4 / grey / progressive | **17** / **21** / **16** / **47** | 34 / 44 / 26 / 67 |
+| JPEG, CMYK | 82 | **80** |
+| PNG, RGB / RGBA | 57 / 66 | **49** / **53** |
+| PNG, grey / palette / 16-bit / interlaced | 24 / 27 / 44 / 89 | **19** / **24** / **21** / **58** |
+| PPM | 36 | **27** |
+| QOI | 63 | **61** |
+| TGA, plain / run-length | 42 / 51 | **23** / **28** |
+| TIFF, raw / LZW / deflate | 56 / 149 / 109 | **25** / **117** / **76** |
+| WebP, lossy / lossless / with alpha | 151 / 128 / 173 | **102** / **117** / **115** |
+
+CMYK JPEG and QOI are within 3 %, inside the spread between runs. The
+lossless WebP decoder reads a whole literal pixel from four table lookups
+on a bit buffer held in registers and undoes each prediction mode in a loop
+of its own with per-channel arithmetic on whole words; the lossy decoder
+runs the loop filter and the colour conversion on a second thread behind
+the reconstruction of the macroblocks.
 
 The JPEG decoder runs the inverse DCT and colour conversion over all cores.
 The PNG decoder inflates on one thread (eight input bytes at a time, a
@@ -267,6 +317,17 @@ results byte for byte the same as on one thread (`bench/pixel_ops.dl`,
 | half size / grow 1.5× | 81 / 578 → 12 / 87 ms | 361 / 2443 → 44 / 323 ms |
 | quarter turn / flip | 9 / 3 → 4 / 3 ms | 55 / 31 → 31 / 15 ms |
 | colour correction in the editor, with its undo step | 72 → 24 ms | 301 → 88 ms |
+
+Against the Rust edition, which runs these on one thread (the same image,
+medians of three runs in turns, 2026-11-11, Rust → Open Paint Studio):
+
+| operation | 4K | 8K |
+|---|---|---|
+| colour correction | 76 → 22 ms | 286 → 61 ms |
+| grayscale / invert / sepia | 73 / 56 / 63 → 17 / 14 / 21 ms | 261 / 215 / 256 → 61 / 41 / 60 ms |
+| half size / grow 1.5× | 112 / 1168 → 28 / 134 ms | 516 / 4017 → 87 / 482 ms |
+| quarter turn right / left | 29 / 28 → 9 / 10 ms | 149 / 150 → 40 / 41 ms |
+| flip horizontal / vertical | 24 / 21 → 7 / 8 ms | 157 / 81 → 24 / 18 ms |
 
 **Code** (the browser editor at `3cb049c`)
 
