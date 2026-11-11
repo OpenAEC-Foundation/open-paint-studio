@@ -64,6 +64,19 @@ window.__measureAll = async (withHistory) => {
   const pages = [...document.querySelectorAll('.backstage-page')];
   for (let i = 0; i < pages.length; i++) { pages[i].click(); await new Promise(r => setTimeout(r, i === 4 ? 1500 : 250)); out[`${sz}-backstage${i}`] = __dump4(); }
   document.querySelector('.backstage-back').click(); await new Promise(r => setTimeout(r, 250));
+  // The Open page with three files opened before: the rows of its list.
+  { const recent = (run) => new Promise((resolve, reject) => { const open = indexedDB.open('openaec-paint-recent', 1);
+      open.onupgradeneeded = () => { for (const store of ['recent', 'recentData']) open.result.createObjectStore(store); };
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => { const tx = open.result.transaction(['recent', 'recentData'], 'readwrite'); run(tx.objectStore('recent'), tx.objectStore('recentData')); tx.oncomplete = () => { open.result.close(); resolve(); }; tx.onerror = () => reject(tx.error); }; });
+    const files = [['gevel.png', 482133, new Date(2026, 10, 3, 14, 5)], ['plan.jpg', 1260480, new Date(2026, 10, 2, 9, 30)], ['kozijn.webp', 73412, new Date(2026, 9, 28, 16, 42)]]
+      .map(([name, size, opened]) => ({ id: `${name}|${size}`, name, size, opened: opened.getTime() }));
+    await recent((list, data) => { for (const f of files) { list.put(f, f.id); data.put(new ArrayBuffer(8), f.id); } });
+    file.click(); await new Promise(r => setTimeout(r, 300));
+    document.querySelectorAll('.backstage-page')[1].click(); await new Promise(r => setTimeout(r, 400));
+    out[`${sz}-recent`] = __dump4();
+    await recent((list, data) => { for (const f of files) { list.delete(f.id); data.delete(f.id); } });
+    document.querySelector('.backstage-back').click(); await new Promise(r => setTimeout(r, 250)); }
   // The dialogs, each opened the way a user opens it, closed with Escape.
   const escape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   const byText = text => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text);

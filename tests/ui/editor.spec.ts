@@ -257,3 +257,18 @@ test('Ctrl+A selects all objects without selecting page text and preserves text 
   await text.fill('Een tekst');await text.press('Control+a');await text.press('Backspace');
   await expect(text).toHaveValue('');
 });
+test('Open lists the files opened last and opens one again', async ({ page }) => {
+  const first = createCanvas(100, 80), second = createCanvas(60, 40);
+  first.getContext('2d').fillRect(0, 0, 100, 80); second.getContext('2d').fillRect(0, 0, 60, 40);
+  page.on('dialog', dialog => void dialog.accept());
+  await page.goto('/'); await expect(page.getByText('Concept opgeslagen op dit apparaat', { exact: true })).toBeVisible();
+  const input = page.locator('input[type=file][accept^="image/"]'), width = page.locator('.dimension-pair > div').first(), rows = page.locator('.backstage-recent-row');
+  const openPage = async () => { await page.getByRole('button', { name: 'Bestand', exact: true }).click(); await page.locator('.backstage-page').filter({ hasText: 'Openen' }).click(); };
+  await openPage(); await expect(page.locator('.backstage-recent-empty')).toBeVisible(); await page.keyboard.press('Escape');
+  await input.setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: first.toBuffer('image/png') }); await expect(width).toContainText('100', { timeout: 25000 });
+  await input.setInputFiles({ name: 'plan.png', mimeType: 'image/png', buffer: second.toBuffer('image/png') }); await expect(width).toContainText('60', { timeout: 25000 });
+  await openPage(); await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('plan.png'); await expect(rows.nth(1)).toContainText('photo.png'); await expect(rows.nth(1)).toContainText('PNG ·');
+  await rows.nth(1).click(); await expect(width).toContainText('100', { timeout: 25000 }); await expect(page.locator('.backstage-page')).toHaveCount(0);
+  await openPage(); await expect(rows).toHaveCount(2); await expect(rows.nth(0)).toContainText('photo.png');
+});

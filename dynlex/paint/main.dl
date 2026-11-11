@@ -106,7 +106,10 @@ function the first existing font path:
 function the asset folder:
     execute:
         set here to the string form of "dynlex/assets"
-        if @intrinsic("call", "libc", "access", an integer, the data of (here + (the string form of "/fonts/inter-latin-400-normal.woff2")), 4) = 0:
+        # Held in a variable: the data of a string made in the call itself is
+        # released before the call.
+        set probe to here + (the string form of "/fonts/inter-latin-400-normal.woff2")
+        if @intrinsic("call", "libc", "access", an integer, the data of probe, 4) = 0:
             return here
         set link to a new string buffer containing 4096 bytes
         set length to @intrinsic("call", "libc", "readlink", a C long integer, "/proc/self/exe", the data of link, 4095 as a word sized integer) as an integer
@@ -115,6 +118,134 @@ function the asset folder:
             if ((the character at index in link) as an integer) = 47:
                 set cut to index
         return (the substring of link from 0 spanning cut bytes) + (the string form of "/../assets")
+
+# --- The files opened last: in the user's configuration folder, one line
+# each (the date and time to the minute, a space, the whole path), the newest
+# first. ---
+
+function paint recent file limit:
+    replacement: 8
+
+function the recent files folder:
+    execute:
+        set given to @intrinsic("call", "libc", "getenv", a pointer, "XDG_CONFIG_HOME")
+        if given != 0 as a pointer:
+            set base to the string form of (given as a C string)
+            if base's length > 0:
+                return base + (the string form of "/openaec-paint-studio")
+        set home to @intrinsic("call", "libc", "getenv", a pointer, "HOME")
+        if home = 0 as a pointer:
+            return the string form of ""
+        return (the string form of (home as a C string)) + (the string form of "/.config/openaec-paint-studio")
+
+function the current minute spelled:
+    execute:
+        set clock to @intrinsic("call", "libc", "calloc", a pointer to a C long integer, 2 as a word sized integer, 8 as a word sized integer)
+        ignore @intrinsic("call", "libc", "clock_gettime", an integer, 0, clock)
+        set fields to @intrinsic("call", "libc", "calloc", a pointer to an integer, 16 as a word sized integer, 4 as a word sized integer)
+        ignore @intrinsic("call", "libc", "localtime_r", a pointer, clock, fields)
+        set stamp to a new string buffer containing 16 bytes
+        ignore @intrinsic("call", "libc", "strftime", a word sized integer, the data of stamp, 17 as a word sized integer, "%Y-%m-%d %H:%M", fields)
+        @intrinsic("call", "libc", "free", nothing, clock)
+        @intrinsic("call", "libc", "free", nothing, fields)
+        return stamp
+
+# The list as the file has it; the list in memory stays when there is no file.
+function load the recent files into {a pointer to a paint shell:shell}:
+    execute:
+        set store to the recent files folder
+        if store's length = 0:
+            return nothing
+        set listed to store + (the string form of "/recent")
+        set handle to @intrinsic("call", "libc", "fopen", a pointer, the data of listed, "r")
+        if handle = 0 as a pointer:
+            return nothing
+        clear shell's recentPaths
+        clear shell's recentDates
+        # Room for the date and the longest path a system gives (4096 bytes).
+        set line to a new string buffer containing 8192 bytes
+        set reading to true
+        loop while reading and ((the length of shell's recentPaths) < paint recent file limit):
+            set got to @intrinsic("call", "libc", "fgets", a pointer, the data of line, 8192, handle)
+            if got = 0 as a pointer:
+                set reading to false
+            else:
+                set length to the length of ((the data of line) as a C string)
+                loop while (length > 0) and ((((the character at (length - 1) in line) as an integer) = 10) or (((the character at (length - 1) in line) as an integer) = 13)):
+                    set length to length - 1
+                if (length > 17) and (((the character at 16 in line) as an integer) = 32):
+                    append (the substring of line from 0 spanning 16 bytes) to shell's recentDates
+                    append (the substring of line from 17 spanning (length - 17) bytes) to shell's recentPaths
+        ignore @intrinsic("call", "libc", "fclose", an integer, handle)
+
+function keep the recent files of {a pointer to a paint shell:shell}:
+    execute:
+        set store to the recent files folder
+        if store's length = 0:
+            return nothing
+        # The folder, and the one it is in when this user has none yet; for
+        # this user only (mode 0700), as configuration folders are.
+        set cut to 0
+        loop index from 0 to store's length:
+            if ((the character at index in store) as an integer) = 47:
+                set cut to index
+        set above to the substring of store from 0 spanning cut bytes
+        ignore @intrinsic("call", "libc", "mkdir", an integer, the data of above, 448)
+        ignore @intrinsic("call", "libc", "mkdir", an integer, the data of store, 448)
+        set text to the string form of ""
+        loop index from 0 to the length of shell's recentPaths:
+            set text to ((text + (the item at index in shell's recentDates)) + (the string form of " ")) + ((the item at index in shell's recentPaths) + (the string form of "\n"))
+        # Written beside the list and moved over it, so that a reader never
+        # finds half a list.
+        set target to store + (the string form of "/recent")
+        set fresh to target + (the string form of ".new")
+        if write (text's length) bytes from ((the data of text) as pointer) to file fresh:
+            ignore @intrinsic("call", "libc", "rename", an integer, the data of fresh, the data of target)
+
+# The file comes first in the list, once, under its whole path: the program
+# may start in another folder next time.
+function remember {string:path} as a recent file in {a pointer to a paint shell:shell}:
+    execute:
+        # A copy: the path may be one of the list's own, which is read again.
+        set given to the substring of path from 0 spanning path's length bytes
+        set whole to given
+        set resolved to @intrinsic("call", "libc", "realpath", a pointer, the data of given, 0 as a pointer)
+        if resolved != 0 as a pointer:
+            set spelled to the string form of (resolved as a C string)
+            set whole to the substring of spelled from 0 spanning spelled's length bytes
+            @intrinsic("call", "libc", "free", nothing, resolved)
+        # One line each in the file: a path with a line break is not kept.
+        loop index from 0 to whole's length:
+            if (((the character at index in whole) as an integer) = 10) or (((the character at index in whole) as an integer) = 13):
+                return nothing
+        # Another window of the program may have opened files since.
+        load the recent files into shell
+        set index to 0
+        loop while index < (the length of shell's recentPaths):
+            if ((the item at index in shell's recentPaths) = whole) or ((the item at index in shell's recentPaths) = given):
+                remove item index from shell's recentPaths
+                remove item index from shell's recentDates
+            else:
+                set index to index + 1
+        insert whole into shell's recentPaths at index 0
+        insert (the current minute spelled) into shell's recentDates at index 0
+        loop while (the length of shell's recentPaths) > paint recent file limit:
+            remove item (paint recent file limit) from shell's recentPaths
+            remove item (paint recent file limit) from shell's recentDates
+        keep the recent files of shell
+
+function forget recent file {string:path} in {a pointer to a paint shell:shell}:
+    execute:
+        set given to the substring of path from 0 spanning path's length bytes
+        load the recent files into shell
+        set index to 0
+        loop while index < (the length of shell's recentPaths):
+            if (the item at index in shell's recentPaths) = given:
+                remove item index from shell's recentPaths
+                remove item index from shell's recentDates
+            else:
+                set index to index + 1
+        keep the recent files of shell
 
 # --- Colour choice through zenity; the current colour when cancelled. ---
 
@@ -359,6 +490,7 @@ if ((shell's regular) is loaded) = false:
     print "The interface fonts are missing (dynlex/assets/fonts)." as a line
     close window
     return 1
+load the recent files into (the address of shell)
 # The text tool writes with the system's DejaVu Sans, the interface's fallback face.
 set typeface to the face numbered 5 in (the address of shell)
 set icon to the paint image opened from ((the asset folder) + (the string form of "/icon/open-paint-studio-64.png"))
@@ -370,7 +502,8 @@ set app to a new paint app 1200 by 800
 set state to the address of app
 set arguments to the command line arguments
 if arguments' length > 0:
-    ignore open (the argument at 0 in arguments) in state
+    if open (the argument at 0 in arguments) in state:
+        remember (the argument at 0 in arguments) as a recent file in (the address of shell)
     set app's history to a new paint history
     clear app's steps
 
@@ -519,6 +652,17 @@ loop while window remains open:
                     set command to paint save ifcimage command
                 else:
                     set shell's status to (name + (the string form of " hoort bij de browsereditie"))
+            else if action has (the string form of "recent:") at offset 0:
+                set recentIndex to the integer in (the substring of action from 7 spanning (action's length - 7) bytes)
+                if recentIndex < (the length of shell's recentPaths):
+                    set listed to the item at recentIndex in shell's recentPaths
+                    set recentPath to the substring of listed from 0 spanning listed's length bytes
+                    if open recentPath in state:
+                        set fitted to false
+                        remember recentPath as a recent file in (the address of shell)
+                    else:
+                        # Gone or unreadable: the message says so, the list drops it.
+                        forget recent file recentPath in (the address of shell)
             else if action = (the string form of "dialog:close"):
                 set shell's opened to -1
             else if action has (the string form of "focus:") at offset 0:
@@ -766,17 +910,21 @@ loop while window remains open:
         if chosen's length > 0:
             if open chosen in state:
                 set fitted to false
+                remember chosen as a recent file in (the address of shell)
     else if ((command = paint save command) and (app's path's length > 0)) and ((the paint format of app's path) != paint format unknown):
         ignore save state to app's path
     else if (command = paint save command) or (command = paint save as command):
         set chosen to the path to save
         if chosen's length > 0:
-            ignore save state to chosen
+            if save state to chosen:
+                remember chosen as a recent file in (the address of shell)
     else if command = paint save ifcimage command:
         set chosen to the path to save an ifcimage
         if chosen's length > 0:
             if (save state to chosen) = false:
                 set app's message to the string form of "IfcImageB niet opgeslagen: het formaat houdt afbeeldingen tot 4096 pixels per zijde en 8 megapixel"
+            else:
+                remember chosen as a recent file in (the address of shell)
     else if command = paint zoom in command:
         zoom state to (((the rounded value of (app's zoom * 100.0)) as an integer) + 10) percent around centerX centerY in width by height in (the address of shell)
         set canvasChanged to true

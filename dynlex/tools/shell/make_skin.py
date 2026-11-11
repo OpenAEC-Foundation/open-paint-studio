@@ -248,6 +248,8 @@ def action(item, details, dialog=None):
     c = item["click"]
     label, title, text = c["label"], c["title"], c["text"].split("\n")[0].strip()
     cls = c.get("cls", "")
+    if "backstage-recent-row" in cls:
+        return "recent"
     if "backstage-page" in cls:
         return f"page:{text}"
     if "backstage-tile" in cls:
@@ -444,7 +446,9 @@ def with_followers(es):
 # --- DynLex output ---
 FACES = {"inter400": 0, "inter500": 1, "inter600": 2, "grotesk": 3, "mono": 4, "fallback": 5, "grotesk500": 6}
 KINDS = {"rect": 1, "image": 2, "text": 3, "hit": 4, "control": 5, "ring": 6}
-ALIGN = {"l": 0, "c": 1, "r": 2, "wrap": 3, "follow": 4, "wrapc": 5}
+# "clip" ends in an ellipsis where the text passes its width; "followclip"
+# follows like "follow" (w the gap) and ends in one before its x.
+ALIGN = {"l": 0, "c": 1, "r": 2, "wrap": 3, "follow": 4, "wrapc": 5, "clip": 6, "followclip": 7}
 
 def num(v):
     v = float(v)
@@ -527,12 +531,55 @@ def main():
     # The File pages (opened 20 + page) and the dialogs (opened 30 + dialog),
     # over any tab. A dialog brings the browser's ::backdrop (#0008) and only
     # what is inside the <dialog>.
+    # The Open page lists the files opened before: measured with three files.
+    # What the page shows only without them (the sentence of the empty list)
+    # is row 30, the first row's elements are row 32 and the second row's
+    # row 33, the template of every row under the first; the frame around
+    # the rows is one image per number of files, row 40 + files.
+    recent = None
+    recent_pitch = 41
+    if (measured / f"{W0}x{H0}-recent.json").exists():
+        recent = entries("recent", Sizes("recent", Sizes("backstage1")), details)
+        recent_keys = set(key(e) for e in recent)
     page = 0
     while (measured / f"{W0}x{H0}-backstage{page}.json").exists():
         back = entries(f"backstage{page}", Sizes(f"backstage{page}"), details)
+        back_keys = set(key(e) for e in back)
         for e, p in zip(back, back.paths):
             if key(e) not in base_keys:
-                out.append((Cond(opened=20 + page), e, p))
+                empty = page == 1 and recent is not None and key(e) not in recent_keys
+                out.append((Cond(opened=20 + page, row=30 if empty else -1), e, p))
+        if page == 1 and recent is not None:
+            raw = load(f"{W0}x{H0}-recent")
+            row_paths = [it["p"] for it in raw if "backstage-recent-row" in it.get("click", {}).get("cls", "")]
+            tops = [next(it["r"][1] for it in raw if it["p"] == rp) for rp in row_paths]
+            recent_pitch = tops[2] - tops[1]
+            frame_path = row_paths[0].rsplit("/", 1)[0]
+            frame = next(it for it in raw if it["p"] == frame_path)
+            date_x = next(e[2] for e, p in zip(recent, recent.paths) if p.startswith(row_paths[0] + "/time:"))
+            for e, p in zip(recent, recent.paths):
+                if key(e) in back_keys or key(e) in base_keys:
+                    continue
+                if p == frame_path:
+                    # As high as its rows: the first 40, the others a line more.
+                    x, y, w, h = snapped(frame["r"])
+                    for files in range(1, 9):
+                        high = h - round((len(row_paths) - files) * recent_pitch)
+                        svg, m = box_svg(frame["box"], w, high)
+                        out.append((Cond(opened=21, row=40 + files), ("image", e[1], x - m, y - m, w + 2 * m, high + 2 * m, svg), ""))
+                    continue
+                for k in (0, 1):
+                    if p == row_paths[k] or p.startswith(row_paths[k] + "/"):
+                        e = list(e)
+                        if e[0] == "text" and "/strong:" in p:
+                            # The name: up to where the date's column starts.
+                            e[4], e[10], e[11] = date_x - 20 - e[2], "clip", "{recentname}"
+                        elif e[0] == "text" and "/span:" in p:
+                            # The folder: after the name, up to the date's column.
+                            e[2], e[4], e[10], e[11] = date_x - 10, 10, "followclip", "{recentpath}"
+                        elif e[0] == "text":
+                            e[11] = "{recentdate}"
+                        out.append((Cond(opened=21, row=32 + k), tuple(e), ""))
         page += 1
     for number, name in enumerate(DIALOGS):
         if not (measured / f"{W0}x{H0}-dialog-{name}.json").exists():
@@ -618,6 +665,7 @@ def main():
         f.write("# do not edit. The shell's elements in paint order: see paint/skin.dl.\n")
         f.write("import dynlex/paint/skin.dl\n\n")
         f.write(f"function paint skin history pitch:\n    replacement: {pitch:g}\n\n")
+        f.write(f"function paint skin recent pitch:\n    replacement: {recent_pitch:g}\n\n")
         f.write("function fill {a pointer to a paint skin:skin} with the measured shell:\n    execute:\n")
         for svg, n in sorted(svgs.items(), key=lambda kv: kv[1]):
             f.write(f"        add svg {dl_string(svg)} to skin\n")
