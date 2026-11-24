@@ -55,3 +55,13 @@ test('API enforces auth, origins, validation, persistence and revision conflicts
     const { DocumentStore } = await import('../services/store.js'); assert.equal(new DocumentStore(join(directory, 'documents')).get(created.id).revision, 3);
   } finally { await new Promise<void>(r => server.close(() => r())); rmSync(directory, { recursive: true, force: true }); }
 });
+test('rectangle and straight line edges are pixel-aligned with no partial alpha for odd line widths', async () => {
+  const rect: Operation = { type: 'rectangle', from: { x: 8, y: 8 }, to: { x: 50, y: 50 }, color: '#000000', size: 5, opacity: 1, filled: false };
+  const line: Operation = { type: 'line', from: { x: 10, y: 60 }, to: { x: 50, y: 60 }, color: '#000000', size: 3, opacity: 1, filled: false };
+  const at = await pixels([rect, line]);
+  const solid = (x: number, y: number) => { const p = at(x, y); return p[0] === 0 && p[3] === 255; };
+  const blank = (x: number, y: number) => at(x, y).slice(0, 3).every(v => v === 255);
+  assert.ok(blank(5, 30) && solid(6, 30) && solid(10, 30) && blank(11, 30), 'vertical rectangle edge covers whole pixels');
+  assert.ok(blank(30, 5) && solid(30, 6) && solid(30, 10) && blank(30, 11), 'horizontal rectangle edge covers whole pixels');
+  assert.ok(blank(30, 58) && solid(30, 59) && solid(30, 61) && blank(30, 62), 'straight line covers whole pixels');
+});
