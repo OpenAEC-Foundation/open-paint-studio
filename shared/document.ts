@@ -67,7 +67,8 @@ export function drawOperation(ctx: CanvasRenderingContext2D, op: Operation) {
 
 export function floodFill(ctx: CanvasRenderingContext2D, at: Point, hex: string) {
   const { width, height } = ctx.canvas;
-  const x = Math.floor(at.x), y = Math.floor(at.y);
+  const m = ctx.getTransform(); // canvas may be rendered at higher resolution than the document
+  const x = Math.floor(at.x * m.a), y = Math.floor(at.y * m.d);
   if (x < 0 || x >= width || y < 0 || y >= height) return;
   const img = ctx.getImageData(0, 0, width, height), data = img.data;
   const start = (y * width + x) * 4;

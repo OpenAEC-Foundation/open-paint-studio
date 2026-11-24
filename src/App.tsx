@@ -38,6 +38,9 @@ export default function App() {
   const t = useCallback((key: Label) => labels[language][key], [language]);
   const [tab, setTab] = useState('home'), [fileOpen, setFileOpen] = useState(false), [modal, setModal] = useState('');
   const [zoom, setZoom] = useState(75), [grid, setGrid] = useState(false), [position, setPosition] = useState<Point>({ x: 0, y: 0 });
+  // Draw at physical screen resolution (zoom x devicePixelRatio) so lines stay crisp instead of being bitmap-scaled by CSS.
+  const displayScale = Math.min(Math.max(0.1, zoom / 100 * (window.devicePixelRatio || 1)), Math.sqrt(16_000_000 / (doc.width * doc.height)));
+  const pixelWidth = Math.max(1, Math.round(doc.width * displayScale)), pixelHeight = Math.max(1, Math.round(doc.height * displayScale));
   const [draftStatus, setDraftStatus] = useState<Label>('saving'), [loaded, setLoaded] = useState(false), [toast, setToast] = useState('');
   const [text, setText] = useState('OpenAEC'), [newWidth, setNewWidth] = useState(1200), [newHeight, setNewHeight] = useState(800), [newName, setNewName] = useState('Untitled'), [newBackground, setNewBackground] = useState('#ffffff');
   const [token, setToken] = useState(''), [remote, setRemote] = useState<{ id: string; revision: number } | null>(null), [remoteId, setRemoteId] = useState(''), [remoteList, setRemoteList] = useState<{ id: string; name: string; revision: number }[]>([]), [apiBusy, setApiBusy] = useState(false);
@@ -115,14 +118,14 @@ export default function App() {
   }, [doc, loaded]);
   useEffect(() => {
     let active = true; ready.current = false;
-    renderDocument(transient??doc).then(rendered => {
+    renderDocument(transient??doc, undefined, displayScale).then(rendered => {
       if (!active || !canvas.current) return;
-      canvas.current.width = doc.width; canvas.current.height = doc.height;
+      canvas.current.width = rendered.width; canvas.current.height = rendered.height;
       canvas.current.getContext('2d')!.drawImage(rendered, 0, 0);
       ready.current = true;
     }).catch(fail);
     return () => { active = false; };
-  }, [doc, transient, fail]);
+  }, [doc, transient, fail, displayScale]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); }, [toast]);
 
   const save = useCallback(async () => {
@@ -208,7 +211,7 @@ export default function App() {
       if (e.key === 'Escape' && !e.isComposing) {
         e.preventDefault();
         gesture.current = null; objectDrag.current = null;
-        preview.current?.getContext('2d')?.clearRect(0, 0, doc.width, doc.height);
+        clearPreview();
         setTextBox(null); setTransient(null); setFileOpen(false); setModal('');
         setTool('select');
         if ((e.target as HTMLElement).matches('input, textarea, select')) (e.target as HTMLElement).blur();
@@ -223,7 +226,7 @@ export default function App() {
         if (key === 'a') {
           window.getSelection()?.removeAllRanges();
           gesture.current = null; objectDrag.current = null; setTransient(null);
-          preview.current?.getContext('2d')?.clearRect(0, 0, doc.width, doc.height);
+          clearPreview();
           setTool('select'); setSelection('all');
         }
         if (key === 's') void save();
@@ -244,10 +247,15 @@ export default function App() {
     const rect = e.currentTarget.getBoundingClientRect();
     return { x: Math.round((e.clientX - rect.left) * doc.width / rect.width), y: Math.round((e.clientY - rect.top) * doc.height / rect.height) };
   }
+  function clearPreview() {
+    const c = preview.current, ctx = c?.getContext('2d'); if (!c || !ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
+  }
   function previewGesture() {
     const ctx = preview.current?.getContext('2d'); if (!ctx) return;
-    ctx.clearRect(0, 0, doc.width, doc.height);
+    clearPreview();
     if (!gesture.current) return;
+    ctx.setTransform(displayScale, 0, 0, displayScale, 0, 0);
     if (gesture.current.type === 'eraser') drawOperation(ctx, { ...gesture.current, type: 'brush', color: doc.background === 'transparent' ? '#a1a1aa' : doc.background });
     else drawOperation(ctx, gesture.current);
   }
@@ -270,7 +278,7 @@ export default function App() {
       return;
     }
     if (tool === 'picker') {
-      const pixel = canvas.current!.getContext('2d')!.getImageData(Math.max(0, Math.min(doc.width - 1, at.x)), Math.max(0, Math.min(doc.height - 1, at.y)), 1, 1).data;
+      const pixel = canvas.current!.getContext('2d')!.getImageData(Math.max(0, Math.min(canvas.current!.width - 1, Math.round(at.x * canvas.current!.width / doc.width))), Math.max(0, Math.min(canvas.current!.height - 1, Math.round(at.y * canvas.current!.height / doc.height))), 1, 1).data;
       setColor('#' + Array.from(pixel.slice(0, 3)).map(c => c.toString(16).padStart(2, '0')).join('')); setTool('brush'); return;
     }
     if (tool === 'fill') { add({ type: 'fill', at, color }); return; }
@@ -309,7 +317,7 @@ export default function App() {
   function pointerUp(e: PointerEvent<HTMLCanvasElement>) {
     if(objectDrag.current){const drag=objectDrag.current;objectDrag.current=null;setTransient(null);if(drag.next.some((op,i)=>op!==drag.operations[i]))commit({...doc,operations:doc.operations.map((op,i)=>{const index=drag.indices.indexOf(i);return index<0?op:drag.next[index];})});}
     const op = gesture.current; gesture.current = null;
-    preview.current?.getContext('2d')?.clearRect(0, 0, doc.width, doc.height);
+    clearPreview();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
     if (op) { try { if (tool === 'crop' && 'from' in op) void transform('crop', op.from, op.to); else add(op); } catch (error) { fail(error); } }
   }
@@ -470,9 +478,9 @@ export default function App() {
       <main ref={workspace} className="canvas-workspace">
         <div className="workspace-topline"><span>{t('canvas')} <ChevronRight size={12}/> {doc.name}</span><div className="canvas-view-controls"><span>{doc.width} × {doc.height} px</span><button onClick={()=>setFocus(!focus)} aria-label={t('fullscreen')} title={t('fullscreen')}><Maximize2 size={15}/><span>{t('fullscreen')}</span></button></div></div>
         <div className="canvas-scroll"><div className="canvas-margin"><div className="artboard" style={{ width: doc.width * zoom / 100, height: doc.height * zoom / 100 } as CSSProperties}>
-          <canvas ref={canvas} className="drawing" aria-label={t('canvas')} width={doc.width} height={doc.height}/>
+          <canvas ref={canvas} className="drawing" aria-label={t('canvas')} width={pixelWidth} height={pixelHeight}/>
           {grid && <div className="grid-overlay" style={{ backgroundSize: `${20 * zoom / 100}px ${20 * zoom / 100}px` }}/>}
-          <canvas ref={preview} className={`drawing input-canvas tool-${tool}`} width={doc.width} height={doc.height} aria-label="Drawing surface" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { gesture.current = null; objectDrag.current=null;setTransient(null);previewGesture(); }}/>
+          <canvas ref={preview} className={`drawing input-canvas tool-${tool}`} width={pixelWidth} height={pixelHeight} aria-label="Drawing surface" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { gesture.current = null; objectDrag.current=null;setTransient(null);previewGesture(); }}/>
           {selectedBounds&&<div className="selection-outline" style={{left:selectedBounds.x*zoom/100,top:selectedBounds.y*zoom/100,width:selectedBounds.width*zoom/100,height:selectedBounds.height*zoom/100}}><i/><i/><i/><i/></div>}
           {textBox&&<div className="inline-text-editor" style={{left:Math.min(textBox.at.x*zoom/100,Math.max(0,doc.width*zoom/100-250)),top:textBox.at.y*zoom/100}}><textarea autoFocus aria-label={t('textInput')} placeholder={t('textInput')} maxLength={2000} rows={3} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();applyText();}}} style={{fontFamily:textFont,fontWeight:textBold?'bold':'normal',fontSize:Math.max(14,size*zoom/100),color}}/><div><button onClick={applyText}><CheckCheck size={14}/>{t('textDone')}</button><button onClick={()=>setTextBox(null)}>{t('cancel')}</button></div></div>}
           <span className="canvas-corner"/>
