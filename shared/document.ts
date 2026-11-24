@@ -56,7 +56,16 @@ export function drawOperation(ctx: CanvasRenderingContext2D, op: Operation) {
     op.text.split('\n').forEach((line, i) => ctx.fillText(line, op.at.x, op.at.y + i * op.size * 1.3));
   } else if ('from' in op) {
     ctx.beginPath();
-    const { from: a, to: b } = op;
+    let { from: a, to: b } = op;
+    // Align straight edges to device pixels so they are crisp instead of straddling two pixels.
+    const m = ctx.getTransform(), upright = m.b === 0 && m.c === 0 && m.a > 0 && m.d > 0;
+    if (upright && (op.type === 'rectangle' || (op.type === 'line' && (a.x === b.x || a.y === b.y)))) {
+      const fillOnly = op.type !== 'line' && op.filled, w = Math.max(1, Math.round(op.size * m.a));
+      if (!fillOnly) ctx.lineWidth = w / m.a;
+      const half = !fillOnly && w % 2 === 1 ? 0.5 : 0;
+      const snap = (p: Point): Point => ({ x: (Math.round(m.a * p.x + m.e - half) + half - m.e) / m.a, y: (Math.round(m.d * p.y + m.f - half) + half - m.f) / m.d });
+      a = snap(a); b = snap(b);
+    }
     if (op.type === 'line') { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
     if (op.type === 'rectangle') ctx.rect(a.x, a.y, b.x - a.x, b.y - a.y);
     if (op.type === 'ellipse') ctx.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
